@@ -198,10 +198,18 @@ Populations of 24 agents were simulated for 100 steps (burn-in 10). Three condit
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\textwidth]{plots/e2/paper_e2_figure_e2_1.pdf}
-\caption{Experiment~2: population dynamics and non-collapse across conditions. (a) Mean consonance over time with 95\% confidence intervals; the vertical marker indicates the programmed phase switch. (b) Unique pitch bins at the end of the run (95\% CI), quantifying non-collapse. (c) Representative seed trajectories in semitone units. (b-alt) Mean nearest-neighbor distance (95\% CI), revealing pronounced collapse when repulsion is removed.}
+\includegraphics[trim={0 375 525 0},clip,width=0.49\textwidth]{plots/e2/paper_e2_figure_e2_1.pdf}\hfill
+\includegraphics[trim={0 0 525 375},clip,width=0.49\textwidth]{plots/e2/paper_e2_figure_e2_1.pdf}
+\caption{Experiment~2: population dynamics. (a) Mean consonance over time (95\% CI); the vertical marker indicates the programmed phase switch. (c) Representative seed trajectories in semitone units.}
 \label{fig:e2-dynamics}
 \end{figure*}
+
+\begin{figure}[t]
+\centering
+\includegraphics[trim={0 338 0 0},clip,width=0.9\columnwidth]{plots/e2/paper_e2_diversity_summary_ci95.pdf}
+\caption{Experiment~2: non-collapse metrics (95\% CI). Left: unique pitch bins at end of run. Right: mean nearest-neighbor distance (st), revealing pronounced collapse when repulsion is removed.}
+\label{fig:e2-diversity}
+\end{figure}
 
 \textbf{Diversity.} Unique pitch bins averaged 20.0 (baseline) versus 13.4 (no repulsion). Nearest-neighbor distances halved under no-repulsion, indicating collapse.
 
