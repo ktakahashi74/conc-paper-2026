@@ -211,10 +211,17 @@ These results show that hill-climbing enriches consonant interval structure, whi
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\textwidth]{plots/e2/paper_e2_figure_e2_2.pdf}
-\caption{Experiment~2: emergent interval structure. (a) Pairwise interval histogram for the baseline condition (mean with 95\% CI). (b) Overlay of baseline and ablations, displaying how hill-climbing and repulsion redistribute interval mass. (c) Consonant mass for $T=\{3,4,7\}$ semitones (95\% CI), and (c-alt) for an expanded consonant set, summarizing systematic enrichment under hill-climbing and the destabilizing effect of removing repulsion.}
+\includegraphics[trim={0 375 0 0},clip,width=\textwidth]{plots/e2/paper_e2_figure_e2_2.pdf}
+\caption{Experiment~2: emergent interval structure. (a) Pairwise interval histogram for the baseline condition (mean with 95\% CI). (b) Overlay of baseline and ablations, displaying how hill-climbing and repulsion redistribute interval mass.}
 \label{fig:e2-intervals}
 \end{figure*}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.82\columnwidth]{plots/e2/paper_e2_consonant_mass_summary.pdf}
+\caption{Experiment~2: consonant interval mass (95\% CI) for $T=\{3,4,7\}$ semitones (top) and expanded set $T=\{0,3,4,5,7,8,9\}$ (bottom). Hill-climbing systematically enriches consonant mass; removing repulsion destabilizes the distribution.}
+\label{fig:e2-consonant-mass}
+\end{figure}
 
 \subsection{Experiment 3: Consonance as Selection Pressure}
 
@@ -241,7 +248,7 @@ The order parameter \citep{kuramoto1984} approached unity only in the coupled co
 \includegraphics[width=0.49\textwidth]{plots/e5/paper_e5_plv_over_time.pdf}
 
 \medskip
-\includegraphics[width=0.60\textwidth]{plots/e5/paper_e5_seed_sweep.pdf}
+\includegraphics[width=0.35\textwidth]{plots/e5/paper_e5_seed_sweep.pdf}
 \caption{Experiment~4: rhythmic entrainment under external forcing (“kick”). Top-left: Kuramoto order parameter $r(t)$ for main and control conditions; pre-kick overlap reflects $k_{\mathrm{eff}}=0$, while the kick rapidly drives the main condition toward near-unity coherence. Top-right: phase-locking value (PLV) to the kick; the main condition converges to PLV $\approx 1$ whereas the control remains near baseline. Bottom: seed sweep summary of post-kick PLV mean, demonstrating robustness across runs. Vertical markers indicate burn-in end, kick onset, and evaluation start.}
 \label{fig:e5-entrainment}
 \end{figure*}
