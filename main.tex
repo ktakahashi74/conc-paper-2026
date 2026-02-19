@@ -105,9 +105,9 @@ This paper introduces \textit{Conchordal}, an artificial life system in which so
 
 \section{Introduction}
 
-Artificial life has traditionally unfolded in spatial, chemical, or symbolic domains. Yet sound—despite its rich physical structure and deep entanglement with biological perception—remains largely unexplored as a primary computational medium for life-like dynamics. Conchordal advances a different premise: that psychoacoustic structure itself may constitute an ecological landscape in which adaptive agents evolve, interact, and synchronize.
+Artificial life has traditionally unfolded in spatial, chemical, or symbolic domains \citep{langton1989,bedau2000}. Yet sound—despite its rich physical structure and deep entanglement with biological perception—remains largely unexplored as a primary computational medium for life-like dynamics \citep{miranda2002,eldridge2009}. Conchordal advances a different premise: that psychoacoustic structure itself may constitute an ecological landscape in which adaptive agents evolve, interact, and synchronize.
 
-Rather than encoding harmony or rhythm as compositional rules, Conchordal defines a continuous field derived from perceptual acoustics. Agents do not “compose”; they seek locally advantageous regions of a cognitive landscape shaped by harmonicity and roughness. Consonance, in this system, is neither aesthetic nor normative; it is ecological. When linked to metabolism, it becomes a resource. When coupled to temporal oscillators, it enables entrainment.
+Rather than encoding harmony or rhythm as compositional rules, Conchordal defines a continuous field derived from perceptual acoustics \citep{conchordal2025}. Agents do not “compose”; they seek locally advantageous regions of a cognitive landscape shaped by harmonicity and roughness. Consonance, in this system, is neither aesthetic nor normative; it is ecological. When linked to metabolism, it becomes a resource. When coupled to temporal oscillators, it enables entrainment.
 
 The present study evaluates whether such a system satisfies core artificial life criteria: (i) self-organization under environmental constraints, (ii) selection mediated by resource dynamics, and (iii) synchronization through interaction and external forcing. Four experiments address these criteria.
 
@@ -115,19 +115,19 @@ The present study evaluates whether such a system satisfies core artificial life
 
 \subsection{Log-Frequency Representation}
 
-All spectral relations are computed in log$_2$ frequency space. This coordinate system renders frequency ratios translationally invariant: intervals correspond to additive displacements. Such invariance is essential for modeling perceptual similarity structured by integer ratios rather than absolute frequency.
+All spectral relations are computed in log$_2$ frequency space. This coordinate system renders frequency ratios translationally invariant: intervals correspond to additive displacements. Such invariance is essential for modeling perceptual similarity structured by integer ratios rather than absolute frequency \citep{glasberg1990}.
 
 Let $x = \log_2(f)$. Intervals become $\Delta x = \log_2(f_2/f_1)$. This representation allows harmonic templates and interference kernels to be defined as convolutional operations across a continuous domain.
 
 \subsection{Harmonicity}
 
-Harmonicity $H(x)$ is computed via projection onto harmonic templates corresponding to virtual fundamental hypotheses. For each candidate fundamental $x_0$, harmonics at $x_0 + \log_2(n)$ are evaluated against spectral energy. Downward and upward projections are combined with a mirror-weight parameter to accommodate asymmetries in perceived root inference.
+Harmonicity $H(x)$ is computed via projection onto harmonic templates corresponding to virtual fundamental hypotheses \citep{terhardt1979,parncutt1988}. For each candidate fundamental $x_0$, harmonics at $x_0 + \log_2(n)$ are evaluated against spectral energy. Downward and upward projections are combined with a mirror-weight parameter to accommodate asymmetries in perceived root inference.
 
 The harmonicity field is normalized to $H_{01} \in [0,1]$.
 
 \subsection{Roughness}
 
-Roughness $R(x)$ is estimated from pairwise spectral interactions weighted by a critical-band kernel. Close frequency separations within the equivalent rectangular bandwidth produce maximal interference; separations outside this band diminish interaction strength. The aggregate roughness is normalized to $R_{01} \in [0,1]$.
+Roughness $R(x)$ is estimated from pairwise spectral interactions weighted by a critical-band kernel \citep{plomp1965}. Close frequency separations within the equivalent rectangular bandwidth \citep{glasberg1990} produce maximal interference; separations outside this band diminish interaction strength. The aggregate roughness is normalized to $R_{01} \in [0,1]$.
 
 \subsection{Consonance Field}
 
@@ -175,13 +175,13 @@ Each agent contains a phase oscillator:
 \dot{\phi_i} = \omega_i + \frac{K}{N}\sum_j \sin(\phi_j - \phi_i) + F(t).
 \end{equation}
 
-Here $K$ is coupling strength and $F(t)$ is an optional external forcing term (“kick”). Phase locking is quantified via the Kuramoto order parameter $r(t)$ and phase-locking value (PLV).
+Here $K$ is coupling strength and $F(t)$ is an optional external forcing term (“kick”). Phase locking is quantified via the Kuramoto order parameter $r(t)$ \citep{kuramoto1984,strogatz2000} and phase-locking value (PLV) \citep{lachaux1999}.
 
 \section{Experimental Results}
 
 \subsection{Experiment 1: Landscape Attractors}
 
-Scanning a single anchor frequency across log-frequency space reveals that harmonicity peaks at simple integer ratios (2:1, 3:2, 4:3, 5:4), while roughness exhibits corresponding troughs. The composite consonance field displays clear attractor basins at these ratios.
+Scanning a single anchor frequency across log-frequency space reveals that harmonicity peaks at simple integer ratios (2:1, 3:2, 4:3, 5:4), while roughness exhibits corresponding troughs \citep{helmholtz1877,sethares1993}. The composite consonance field displays clear attractor basins at these ratios.
 
 No discrete scale was imposed. The attractors emerge solely from psychoacoustic structure.
 
@@ -207,7 +207,7 @@ Populations of 24 agents were simulated for 100 steps (burn-in 10). Three condit
 
 \textbf{Interval Structure.} The mass of consonant intervals \{3,4,7 semitones\} was 0.1596 in baseline, reduced to 0.1384 without hill-climbing. Entropy increased under no-hill (less structure) and decreased under no-repulsion (degenerate concentration).
 
-These results show that hill-climbing enriches consonant interval structure, while repulsion prevents monophonic collapse. Self-organized harmonic distributions arise from the landscape–agent interaction.
+These results show that hill-climbing enriches consonant interval structure, while repulsion prevents monophonic collapse \citep{reynolds1987}. Self-organized harmonic distributions arise from the landscape–agent interaction.
 
 \begin{figure*}[t]
 \centering
@@ -233,7 +233,7 @@ When recharge was disabled, correlations vanished (Pearson $r = 0.028$; log-rank
 
 Simulations over 40 seconds introduced an external forcing (``kick'') at 16 seconds. Before forcing, main and control conditions overlapped (PLV $\approx 0.225$). After forcing, the main condition rapidly converged to PLV $\approx 0.993$ ($\pm 0.021$), while control remained near baseline ($\approx 0.226$).
 
-The order parameter approached unity only in the coupled condition. Synchronization therefore emerges from dynamical interaction rather than spontaneous drift.
+The order parameter \citep{kuramoto1984} approached unity only in the coupled condition. Synchronization therefore emerges from dynamical interaction rather than spontaneous drift.
 
 \begin{figure*}[t]
 \centering
@@ -250,11 +250,11 @@ The order parameter approached unity only in the coupled condition. Synchronizat
 
 Conchordal demonstrates that psychoacoustic structure can support artificial life phenomena without recourse to symbolic encoding or predefined tonal systems. Three properties are notable.
 
-First, consonance is not imposed but computed from physical and perceptual principles. The attractors of Experiment~1 reflect integer-ratio periodicity inherent to harmonic spectra.
+First, consonance is not imposed but computed from physical and perceptual principles \citep{helmholtz1877,plomp1965}. The attractors of Experiment~1 reflect integer-ratio periodicity inherent to harmonic spectra \citep{terhardt1979}.
 
 Second, harmonic structure in populations (Experiment~2) arises from local optimization and density constraints. No global coordination or compositional rule is required.
 
-Third, when consonance modulates energy (Experiment~3), ecological selection appears. Agents that occupy more consonant regions survive longer. Removing recharge abolishes the effect, confirming causality.
+Third, when consonance modulates energy (Experiment~3), ecological selection appears \citep{bedau2000}. Agents that occupy more consonant regions survive longer. Removing recharge abolishes the effect, confirming causality.
 
 Finally, temporal synchronization (Experiment~4) shows that rhythmic coherence can be induced through oscillator coupling, linking pitch ecology and temporal order within one framework.
 
@@ -273,5 +273,8 @@ Conchordal establishes a psychoacoustic artificial life environment in which con
 \bigskip
 
 \noindent\textbf{Keywords:} Artificial Life, Psychoacoustics, Consonance, Self-Organization, Synchronization, Computational Music Systems
+
+\bibliographystyle{apalike}
+\bibliography{conc}
 
 \end{document}
