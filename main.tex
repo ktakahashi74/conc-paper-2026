@@ -109,7 +109,7 @@ Artificial life has traditionally unfolded in spatial, chemical, or symbolic dom
 
 Rather than encoding harmony or rhythm as compositional rules, Conchordal defines a continuous field derived from perceptual acoustics. Agents do not “compose”; they seek locally advantageous regions of a cognitive landscape shaped by harmonicity and roughness. Consonance, in this system, is neither aesthetic nor normative; it is ecological. When linked to metabolism, it becomes a resource. When coupled to temporal oscillators, it enables entrainment.
 
-The present study evaluates whether such a system satisfies core artificial life criteria: (i) self-organization under environmental constraints, (ii) selection mediated by resource dynamics, and (iii) synchronization through interaction and external forcing. Four experiments (E1, E2, E3, E5) address these criteria.
+The present study evaluates whether such a system satisfies core artificial life criteria: (i) self-organization under environmental constraints, (ii) selection mediated by resource dynamics, and (iii) synchronization through interaction and external forcing. Four experiments address these criteria.
 
 \section{The Psychoacoustic Landscape}
 
@@ -179,7 +179,7 @@ Here $K$ is coupling strength and $F(t)$ is an optional external forcing term (�
 
 \section{Experimental Results}
 
-\subsection{E1: Landscape Attractors}
+\subsection{Experiment 1: Landscape Attractors}
 
 Scanning a single anchor frequency across log-frequency space reveals that harmonicity peaks at simple integer ratios (2:1, 3:2, 4:3, 5:4), while roughness exhibits corresponding troughs. The composite consonance field displays clear attractor basins at these ratios.
 
@@ -188,18 +188,18 @@ No discrete scale was imposed. The attractors emerge solely from psychoacoustic 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{plots/e1/paper_e1_landscape_scan_anchor220.pdf}
-\caption{E1 psychoacoustic landscape scan around an anchor tone (220\,Hz). Top: harmonicity potential $H(f)$ as a function of $\log_2(f/f_{\mathrm{anchor}})$, exhibiting pronounced maxima near simple integer ratios. Middle: roughness state $R_{01}(f)$. Bottom: composite consonance score $C(f)$, whose sharp maxima reveal attractor basins without any presupposed scale or harmonic rule.}
+\caption{Experiment~1: psychoacoustic landscape scan around an anchor tone (220\,Hz). Top: harmonicity potential $H(f)$ as a function of $\log_2(f/f_{\mathrm{anchor}})$, exhibiting pronounced maxima near simple integer ratios. Middle: roughness state $R_{01}(f)$. Bottom: composite consonance score $C(f)$, whose sharp maxima reveal attractor basins without any presupposed scale or harmonic rule.}
 \label{fig:e1-landscape}
 \end{figure*}
 
-\subsection{E2: Self-Organized Polyphony}
+\subsection{Experiment 2: Self-Organized Polyphony}
 
 Populations of 24 agents were simulated for 100 steps (burn-in 10). Three conditions were compared: baseline, no hill-climb, and no repulsion.
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{plots/e2/paper_e2_figure_e2_1.pdf}
-\caption{E2 population dynamics and non-collapse across conditions. (a) Mean consonance over time with 95\% confidence intervals; the vertical marker indicates the programmed phase switch. (b) Unique pitch bins at the end of the run (95\% CI), quantifying non-collapse. (c) Representative seed trajectories in semitone units. (b-alt) Mean nearest-neighbor distance (95\% CI), revealing pronounced collapse when repulsion is removed.}
+\caption{Experiment~2: population dynamics and non-collapse across conditions. (a) Mean consonance over time with 95\% confidence intervals; the vertical marker indicates the programmed phase switch. (b) Unique pitch bins at the end of the run (95\% CI), quantifying non-collapse. (c) Representative seed trajectories in semitone units. (b-alt) Mean nearest-neighbor distance (95\% CI), revealing pronounced collapse when repulsion is removed.}
 \label{fig:e2-dynamics}
 \end{figure*}
 
@@ -212,11 +212,11 @@ These results show that hill-climbing enriches consonant interval structure, whi
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{plots/e2/paper_e2_figure_e2_2.pdf}
-\caption{E2 emergent interval structure. (a) Pairwise interval histogram for the baseline condition (mean with 95\% CI). (b) Overlay of baseline and ablations, displaying how hill-climbing and repulsion redistribute interval mass. (c) Consonant mass for $T=\{3,4,7\}$ semitones (95\% CI), and (c-alt) for an expanded consonant set, summarizing systematic enrichment under hill-climbing and the destabilizing effect of removing repulsion.}
+\caption{Experiment~2: emergent interval structure. (a) Pairwise interval histogram for the baseline condition (mean with 95\% CI). (b) Overlay of baseline and ablations, displaying how hill-climbing and repulsion redistribute interval mass. (c) Consonant mass for $T=\{3,4,7\}$ semitones (95\% CI), and (c-alt) for an expanded consonant set, summarizing systematic enrichment under hill-climbing and the destabilizing effect of removing repulsion.}
 \label{fig:e2-intervals}
 \end{figure*}
 
-\subsection{E3: Consonance as Selection Pressure}
+\subsection{Experiment 3: Consonance as Selection Pressure}
 
 Across 1000 pooled runs, early consonance (first 20 ticks) strongly predicted lifetime under baseline recharge (Pearson $r = 0.7096$; Spearman $\rho = 0.4513$; log-rank $p < 0.001$). Median survival differed markedly between high- and low-consonance groups (372 vs. 339).
 
@@ -225,11 +225,11 @@ When recharge was disabled, correlations vanished (Pearson $r = 0.028$; log-rank
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{plots/e3/paper_e3_firstk_survival_compare_pooled.pdf}
-\caption{E3 consonance-dependent metabolism induces selection. Kaplan--Meier survival curves for agents split by early consonance (median split of $C_{\mathrm{state01,firstK}}$, pooled; $n_{\mathrm{high}}=500$, $n_{\mathrm{low}}=500$). Left: baseline recharge yields a pronounced survival advantage for high-consonance agents (median 372 vs.\ 339 steps; log-rank $p<0.001$). Right: removing recharge eliminates the effect (median 199 vs.\ 197; log-rank $p=0.330$).}
+\caption{Experiment~3: consonance-dependent metabolism induces selection. Kaplan--Meier survival curves for agents split by early consonance (median split of $C_{\mathrm{state01,firstK}}$, pooled; $n_{\mathrm{high}}=500$, $n_{\mathrm{low}}=500$). Left: baseline recharge yields a pronounced survival advantage for high-consonance agents (median 372 vs.\ 339 steps; log-rank $p<0.001$). Right: removing recharge eliminates the effect (median 199 vs.\ 197; log-rank $p=0.330$).}
 \label{fig:e3-selection}
 \end{figure*}
 
-\subsection{E5: Rhythmic Entrainment}
+\subsection{Experiment 4: Rhythmic Entrainment}
 
 Simulations over 40 seconds introduced an external forcing (``kick'') at 16 seconds. Before forcing, main and control conditions overlapped (PLV $\approx 0.225$). After forcing, the main condition rapidly converged to PLV $\approx 0.993$ ($\pm 0.021$), while control remained near baseline ($\approx 0.226$).
 
@@ -242,7 +242,7 @@ The order parameter approached unity only in the coupled condition. Synchronizat
 
 \medskip
 \includegraphics[width=0.60\textwidth]{plots/e5/paper_e5_seed_sweep.pdf}
-\caption{E5 rhythmic entrainment under external forcing (“kick”). Top-left: Kuramoto order parameter $r(t)$ for main and control conditions; pre-kick overlap reflects $k_{\mathrm{eff}}=0$, while the kick rapidly drives the main condition toward near-unity coherence. Top-right: phase-locking value (PLV) to the kick; the main condition converges to PLV $\approx 1$ whereas the control remains near baseline. Bottom: seed sweep summary of post-kick PLV mean, demonstrating robustness across runs. Vertical markers indicate burn-in end, kick onset, and evaluation start.}
+\caption{Experiment~4: rhythmic entrainment under external forcing (“kick”). Top-left: Kuramoto order parameter $r(t)$ for main and control conditions; pre-kick overlap reflects $k_{\mathrm{eff}}=0$, while the kick rapidly drives the main condition toward near-unity coherence. Top-right: phase-locking value (PLV) to the kick; the main condition converges to PLV $\approx 1$ whereas the control remains near baseline. Bottom: seed sweep summary of post-kick PLV mean, demonstrating robustness across runs. Vertical markers indicate burn-in end, kick onset, and evaluation start.}
 \label{fig:e5-entrainment}
 \end{figure*}
 
@@ -250,13 +250,13 @@ The order parameter approached unity only in the coupled condition. Synchronizat
 
 Conchordal demonstrates that psychoacoustic structure can support artificial life phenomena without recourse to symbolic encoding or predefined tonal systems. Three properties are notable.
 
-First, consonance is not imposed but computed from physical and perceptual principles. The attractors of E1 reflect integer-ratio periodicity inherent to harmonic spectra.
+First, consonance is not imposed but computed from physical and perceptual principles. The attractors of Experiment~1 reflect integer-ratio periodicity inherent to harmonic spectra.
 
-Second, harmonic structure in populations (E2) arises from local optimization and density constraints. No global coordination or compositional rule is required.
+Second, harmonic structure in populations (Experiment~2) arises from local optimization and density constraints. No global coordination or compositional rule is required.
 
-Third, when consonance modulates energy (E3), ecological selection appears. Agents that occupy more consonant regions survive longer. Removing recharge abolishes the effect, confirming causality.
+Third, when consonance modulates energy (Experiment~3), ecological selection appears. Agents that occupy more consonant regions survive longer. Removing recharge abolishes the effect, confirming causality.
 
-Finally, temporal synchronization (E5) shows that rhythmic coherence can be induced through oscillator coupling, linking pitch ecology and temporal order within one framework.
+Finally, temporal synchronization (Experiment~4) shows that rhythmic coherence can be induced through oscillator coupling, linking pitch ecology and temporal order within one framework.
 
 Collectively, these findings position sound as a viable non-traditional medium for artificial life, satisfying criteria of self-organization, selection, and synchronization.
 

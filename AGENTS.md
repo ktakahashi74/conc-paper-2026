@@ -40,6 +40,17 @@ Experiment runner lives at `../conchordal/examples/paper/`. Key files:
 
 See `../conchordal/examples/paper/README.md` for run instructions and available options.
 
+### Experiment ID Mapping
+
+The paper uses sequential numbering (Experiment 1–4). The internal experiment IDs in the codebase differ. E4 is excluded from the paper.
+
+| Paper | Internal ID | Topic |
+|---|---|---|
+| Experiment 1 | E1 | Landscape Attractors |
+| Experiment 2 | E2 | Self-Organized Polyphony |
+| Experiment 3 | E3 | Consonance as Selection Pressure |
+| Experiment 4 | E5 | Rhythmic Entrainment |
+
 ### Plots Symlink
 
 `plots/` in this repo is a local symlink to `../conchordal/examples/paper/plots/`. It is listed in `.gitignore` and not tracked. Each collaborator should create the symlink locally or copy figures as needed.
