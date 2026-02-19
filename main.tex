@@ -72,14 +72,14 @@
 % allocated, place \setlength\titlebox{<new height>} after the
 % \documentclass line where <new height> is 2.25in
 
-\newcommand{\optionalpaperfigure}[2]{%
-\IfFileExists{#1}{%
-\includegraphics[width=#2]{#1}%
-}{%
-\fbox{\parbox[c][0.22\textheight][c]{0.9\columnwidth}{\centering
-Missing figure:\\\texttt{\detokenize{#1}}}}%
-}%
-}
+%% \newcommand{\optionalpaperfigure}[2]{%
+%% \IfFileExists{#1}{%
+%% \includegraphics[width=#2]{#1}%
+%% }{%
+%% \fbox{\parbox[c][0.22\textheight][c]{0.9\columnwidth}{\centering
+%% Missing figure:\\\texttt{\detokenize{#1}}}}%
+%% }%
+%% }
 
 
 
