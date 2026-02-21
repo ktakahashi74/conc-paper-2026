@@ -25,20 +25,20 @@ Conchordal is a Rust project (`../conchordal/Cargo.toml`). Main source is under 
 |---|---|---|
 | Core DSP | `../conchordal/src/core/` | Landscape, NSGT, roughness/harmonicity kernels, ERB |
 | ALife Engine | `../conchordal/src/life/` | Individual, PitchCore, ArticulationCore, metabolism |
-| Scenarios | `../conchordal/examples/` | Rhai scripts for experiments |
+| Scenarios | `../conchordal/examples/` | General Rhai scripts used by the system |
 
 ### Paper Experiment Code
 
-Experiment runner lives at `../conchordal/examples/paper/`. Key files:
+Experiment runner lives in this repository at `examples/paper/`.
 
 | File | Role |
 |---|---|
-| `paper_plots.rs` | Plot generation logic for all experiments |
-| `sim.rs` | Simulation harness shared across experiments |
-| `main.rs` | CLI entry point (`cargo run --example paper -- --exp <name>`) |
-| `scenarios/*.rhai` | Rhai scenario scripts used by each experiment |
+| `examples/paper/paper_plots.rs` | Plot generation logic for all experiments |
+| `examples/paper/sim.rs` | Simulation harness shared across experiments |
+| `examples/paper/main.rs` | CLI entry point (`cargo run --bin paper -- --exp <name>`) |
+| `examples/paper/scenarios/*.rhai` | Rhai scenario scripts used by each experiment |
 
-See `../conchordal/examples/paper/README.md` for run instructions and available options.
+See `examples/paper/README.md` for run instructions and available options.
 
 ### Experiment ID Mapping
 
@@ -50,7 +50,3 @@ The paper uses sequential numbering (Experiment 1–4). The internal experiment 
 | Experiment 2 | E2 | Self-Organized Polyphony |
 | Experiment 3 | E3 | Consonance as Selection Pressure |
 | Experiment 4 | E5 | Rhythmic Entrainment |
-
-### Plots Symlink
-
-`plots/` in this repo is a local symlink to `../conchordal/examples/paper/plots/`. It is listed in `.gitignore` and not tracked. Each collaborator should create the symlink locally or copy figures as needed.

@@ -26,3 +26,9 @@ plots
 # OS
 .DS_Store
 Thumbs.db
+
+# Paper generator outputs
+examples/paper/plots/
+examples/paper/.paper_plots.lock/
+examples/paper/*.tar
+examples/paper/*.tar.gz

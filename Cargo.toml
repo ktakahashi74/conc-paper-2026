@@ -1,0 +1,14 @@
+[package]
+name = "conc-paper-tools"
+version = "0.1.0"
+edition = "2024"
+autoexamples = false
+
+[[bin]]
+name = "paper"
+path = "examples/paper/main.rs"
+
+[dependencies]
+conchordal = { path = "../conchordal" }
+plotters = "0.3"
+rand = "0.9"
