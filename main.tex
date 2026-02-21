@@ -131,20 +131,16 @@ Roughness $R(x)$ is estimated from pairwise spectral interactions weighted by a 
 
 \subsection{Consonance Field}
 
-Consonance integrates harmonicity and roughness:
+Harmonicity and roughness are independent perceptual dimensions; there is no unique psychoacoustically justified rule for collapsing them into a single consonance value \citep{parncutt1988,sethares1993}. Moreover, different downstream tasks demand different trade-off shapes—a hill-climbing acceptance rule benefits from sharp peaks, whereas a sampling distribution requires broader, graded support. To accommodate this, we adopt a bilinear kernel that spans a family of fusion rules with minimal parameters:
 
 \begin{equation}
-C_{\text{score}} = \alpha H_{01} - w(H_{01}) R_{01},
+C_{\text{score}} = a H_{01} + b R_{01} + c H_{01} R_{01} + d.
 \end{equation}
 
-\begin{equation}
-w(H_{01}) = w_0 + w_1 (1 - H_{01}).
-\end{equation}
-
-Thus, roughness is penalized more heavily when harmonic support is weak. A sigmoidal transformation produces a bounded decision field:
+The coefficient $b < 0$ penalizes roughness, while $c > 0$ attenuates that penalty when harmonicity is high—reflecting the perceptual observation that roughness is less aversive in strongly harmonic contexts. Setting $c = 0$ recovers a simple weighted difference $H - R$; nonzero $c$ introduces multiplicative gating. A sigmoidal transformation then produces a bounded decision field:
 
 \begin{equation}
-C_{\text{state}} = \sigma(\beta (C_{\text{score}} - \theta)).
+C_{\text{level01}} = \sigma(\beta (C_{\text{score}} - \theta)).
 \end{equation}
 
 This field constitutes the ecological landscape in which agents move.
@@ -162,7 +158,7 @@ Ablation conditions remove either the hill-climbing mechanism or the repulsion t
 Agents possess energy $E$. Dynamics follow:
 
 \begin{equation}
-E' = E - c_b \Delta t - c_a I_{\text{attack}} + r \cdot C_{\text{state}} \cdot I_{\text{attack}},
+E' = E - c_b \Delta t - c_a I_{\text{attack}} + r \cdot C_{\text{level01}} \cdot I_{\text{attack}},
 \end{equation}
 
 where $c_b$ is basal cost, $c_a$ attack cost, and $r$ recharge coefficient. In the baseline condition, recharge scales with consonance; in the ablation condition, recharge is set to zero. Agents perish when $E$ falls below threshold.
@@ -188,7 +184,7 @@ No discrete scale was imposed. The attractors emerge solely from psychoacoustic 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{plots/e1/paper_e1_landscape_scan_anchor220.pdf}
-\caption{Psychoacoustic landscape scan around an anchor tone (220\,Hz). Top: harmonicity potential $H(f)$ as a function of $\log_2(f/f_{\mathrm{anchor}})$, exhibiting pronounced maxima near simple integer ratios. Middle: roughness state $R_{01}(f)$. Bottom: composite consonance score $C(f)$, whose sharp maxima reveal attractor basins without any presupposed scale or harmonic rule.}
+\caption{Psychoacoustic landscape scan around an anchor tone (220\,Hz). From top: harmonicity potential $H(f)$, exhibiting pronounced maxima near simple integer ratios; roughness state $R_{01}(f)$; composite consonance score $C_{\text{score}}(f)$, whose sharp maxima reveal attractor basins; and the Boltzmann-softmax pitch-selection density $C_{\text{density}}(f)$, illustrating how the same kernel output is reshaped into a broader sampling distribution for stochastic pitch proposals.}
 \label{fig:e1-landscape}
 \end{figure*}
 
@@ -240,7 +236,7 @@ When recharge was disabled, correlations vanished (Pearson $r = 0.028$; log-rank
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{plots/e3/paper_e3_firstk_survival_compare_pooled.pdf}
-\caption{Consonance-dependent metabolism induces selection. Kaplan--Meier survival curves for agents split by early consonance (median split of $C_{\mathrm{state01,firstK}}$, pooled; $n_{\mathrm{high}}=500$, $n_{\mathrm{low}}=500$). Left: baseline recharge yields a pronounced survival advantage for high-consonance agents (median 372 vs.\ 339 steps; log-rank $p<0.001$). Right: removing recharge eliminates the effect (median 199 vs.\ 197; log-rank $p=0.330$).}
+\caption{Consonance-dependent metabolism induces selection. Kaplan--Meier survival curves for agents split by early consonance (median split of $C_{\mathrm{level01,firstK}}$, pooled; $n_{\mathrm{high}}=500$, $n_{\mathrm{low}}=500$). Left: baseline recharge yields a pronounced survival advantage for high-consonance agents (median 372 vs.\ 339 steps; log-rank $p<0.001$). Right: removing recharge eliminates the effect (median 199 vs.\ 197; log-rank $p=0.330$).}
 \label{fig:e3-selection}
 \end{figure}
 
