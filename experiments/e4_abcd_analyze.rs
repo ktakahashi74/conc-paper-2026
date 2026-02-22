@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use plotters::prelude::*;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
-const DEFAULT_INPUT: &str = "examples/paper/plots/e4/paper_e4_abcd_trace.csv";
-const DEFAULT_OUTDIR: &str = "examples/paper/plots/e4";
+const DEFAULT_INPUT: &str = "experiments/plots/e4/paper_e4_abcd_trace.csv";
+const DEFAULT_OUTDIR: &str = "experiments/plots/e4";
 const DEFAULT_MAX_LAG: i32 = 10;
 const BOOTSTRAP_ITERS: usize = 4000;
 const BOOTSTRAP_SEED: u64 = 0xE4AB_CD00;

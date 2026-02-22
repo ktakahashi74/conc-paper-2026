@@ -28,7 +28,7 @@ plots
 Thumbs.db
 
 # Paper generator outputs
-examples/paper/plots/
-examples/paper/.paper_plots.lock/
-examples/paper/*.tar
-examples/paper/*.tar.gz
+experiments/plots/
+experiments/.paper_plots.lock/
+experiments/*.tar
+experiments/*.tar.gz

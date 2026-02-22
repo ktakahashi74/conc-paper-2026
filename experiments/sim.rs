@@ -1165,30 +1165,15 @@ fn sanitize_neighbor_step_cents(step: f32) -> f32 {
 fn make_landscape_params(
     space: &Log2Space,
     fs: f32,
-    roughness_weight_scale: f32,
+    _roughness_weight_scale: f32,
 ) -> LandscapeParams {
-    const BASE_ROUGHNESS_FLOOR: f32 = 0.35;
-    const BASE_ROUGHNESS_WEIGHT: f32 = 0.5;
-    let wr = sanitize_roughness_weight_scale(roughness_weight_scale);
-    let w0 = BASE_ROUGHNESS_FLOOR * wr;
-    let w1 = BASE_ROUGHNESS_WEIGHT * wr;
     LandscapeParams {
         fs,
         max_hist_cols: 1,
         roughness_kernel: RoughnessKernel::new(KernelParams::default(), 0.005),
         harmonicity_kernel: HarmonicityKernel::new(space, HarmonicityParams::default()),
-        consonance_kernel: ConsonanceKernel {
-            a: 1.0,
-            b: -(w0 + w1),
-            c: w1,
-            d: 0.0,
-        },
-        consonance_representation: ConsonanceRepresentationParams {
-            beta: 2.0,
-            theta: 0.0,
-            temperature: 1.0,
-            epsilon: 1e-6,
-        },
+        consonance_kernel: ConsonanceKernel::default(),
+        consonance_representation: ConsonanceRepresentationParams::default(),
         roughness_scalar_mode: RoughnessScalarMode::Total,
         roughness_half: 0.1,
         loudness_exp: 1.0,
@@ -1336,7 +1321,7 @@ fn sample_e4_initial_pitch_log2(
     let mut weights = Vec::with_capacity(max_idx - min_idx + 1);
     for i in min_idx..=max_idx {
         let w = landscape
-            .consonance_level01
+            .consonance_weight
             .get(i)
             .copied()
             .unwrap_or(0.0)

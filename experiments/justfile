@@ -1,8 +1,8 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
-set working-directory := "../.."
+set working-directory := ".."
 
 default:
-	@just --justfile examples/paper/justfile --list
+	@just --justfile experiments/justfile --list
 
 paper *args:
 	cargo run --bin paper -- {{args}}
@@ -12,7 +12,7 @@ paper-check:
 	cargo check --all-targets
 	cargo test --bins
 
-svg2pdf dir="examples/paper/plots":
+svg2pdf dir="experiments/plots":
 	@if command -v rsvg-convert >/dev/null 2>&1; then \
 		find "{{dir}}" -type f -name '*.svg' -print0 | \
 		while IFS= read -r -d '' svg; do \
@@ -34,9 +34,9 @@ svg2pdf dir="examples/paper/plots":
 
 paper-pdf *args:
 	cargo run --bin paper -- {{args}}
-	just --justfile examples/paper/justfile svg2pdf
+	just --justfile experiments/justfile svg2pdf
 
-tar out="examples/paper/plots.tar" dir="examples/paper/plots":
+tar out="experiments/plots.tar" dir="experiments/plots":
 	@if [ ! -d "{{dir}}" ]; then \
 		echo "error: directory not found: {{dir}}"; \
 		exit 1; \
@@ -45,5 +45,5 @@ tar out="examples/paper/plots.tar" dir="examples/paper/plots":
 	@echo "write {{out}}"
 
 clean:
-	rm -rf examples/paper/plots
-	rm -rf examples/paper/.paper_plots.lock
+	rm -rf experiments/plots
+	rm -rf experiments/.paper_plots.lock

@@ -2,7 +2,7 @@
 
 Example runner for generating plots used in the paper.
 
-Paper scenarios used for headless behavioral checks are under `examples/paper/scenarios/`.
+Paper scenarios used for headless behavioral checks are under `experiments/scenarios/`.
 
 ## Run
 
@@ -10,19 +10,22 @@ Paper scenarios used for headless behavioral checks are under `examples/paper/sc
 cargo run --bin paper
 ```
 
+`--exp` を省略した場合は論文向けの既定セット `e1,e2,e3,e5` のみ実行します。
+`e4` は `--exp e4` を明示した場合にのみ実行されます。
+
 ## Just recipes
 
 ```bash
-just --justfile examples/paper/justfile paper --exp e2
+just --justfile experiments/justfile paper --exp e2
 ```
 
 ```bash
-just --justfile examples/paper/justfile paper-pdf --exp e2
+just --justfile experiments/justfile paper-pdf --exp e2
 ```
 
 `paper-pdf` runs the plot generator and converts all emitted SVG files in
-`examples/paper/plots/` to PDF. Conversion uses `rsvg-convert` or `inkscape`.
-`paper` rejects concurrent runs with a lock at `examples/paper/.paper_plots.lock`.
+`experiments/plots/` to PDF. Conversion uses `rsvg-convert` or `inkscape`.
+`paper` rejects concurrent runs with a lock at `experiments/.paper_plots.lock`.
 If a previous run crashed, remove that lock directory and retry.
 
 ## Build check
@@ -54,10 +57,6 @@ cargo run --bin paper -- --exp e4 --e4-hist on
 ```
 
 ```bash
-cargo run --bin paper -- --exp e4 --e4-legacy on
-```
-
-```bash
 cargo run --bin paper -- --exp e4 --e4-debug-fit-metrics on
 ```
 
@@ -69,18 +68,13 @@ cargo run --bin paper -- --exp e4 --e4-env-partials 9 --e4-env-decay 0.8
 cargo run --bin paper -- --exp e4 --e4-dyn-exploration 0.9 --e4-dyn-persistence 0.1 --e4-dyn-step-cents 75
 ```
 
-```bash
-cargo run --bin paper -- --exp e2 --e2-phase normal
-```
-
-Default E2 phase is `dissonance_then_consonance` when `--e2-phase` is omitted.
-E4 legacy outputs are disabled by default and are emitted only with `--e4-legacy on`.
+E2 uses the `dissonance_then_consonance` phase schedule.
 E4 fit debug CSV outputs are disabled by default and emitted only with `--e4-debug-fit-metrics on`.
 
-Outputs are written to `examples/paper/plots/<exp>/` (for example, `examples/paper/plots/e2/`).
+Outputs are written to `experiments/plots/<exp>/` (for example, `experiments/plots/e2/`).
 Plot images are emitted as `.svg` files (vector output).
 Default behavior: only selected experiment directories are cleared and regenerated.
-Use `--clean` to clear `examples/paper/plots` entirely before generation.
+Use `--clean` to clear `experiments/plots` entirely before generation.
 
 ## Manual verification
 
@@ -90,7 +84,7 @@ cargo check --bins
 cargo check --all-targets
 cargo test --bins
 cargo run --bin paper -- --clean --exp e4
-find examples/paper/plots/e4 -maxdepth 1 -type f | rg 'delta_bind|root_fit|ceiling_fit|e4_fit_metrics|paper_e4_fit_metrics|e4_bind_metrics|e4_bind_summary' || true
+find experiments/plots/e4 -maxdepth 1 -type f | rg 'binding_metrics|binding_summary|harmonic_tilt|binding_phase_diagram' || true
 ```
 
 Primary E4 outputs to verify:
@@ -99,15 +93,12 @@ Primary E4 outputs to verify:
 - `paper_e4_harmonic_tilt.png`
 - `paper_e4_binding_phase_diagram.png`
 
-Secondary output:
-- `paper_e4_fingerprint_heatmap.png` (fingerprint view)
-
 Use `--clean` when you need strict reproducibility from a fully fresh `plots` tree.
 
 ## Paper scenarios (headless demos)
 
 ```bash
-cargo run -- --nogui examples/paper/scenarios/e1_landscape_scan_demo.rhai
+cargo run -- --nogui experiments/scenarios/e1_landscape_scan_demo.rhai
 ```
 
 Files:

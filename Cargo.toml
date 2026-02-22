@@ -6,7 +6,7 @@ autoexamples = false
 
 [[bin]]
 name = "paper"
-path = "examples/paper/main.rs"
+path = "experiments/main.rs"
 
 [dependencies]
 conchordal = { path = "../conchordal" }

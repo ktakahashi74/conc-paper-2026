@@ -63,6 +63,8 @@ const E2_DIVERSITY_BIN_ST: f32 = 0.25;
 const E2_STEP_SEMITONES_SWEEP: [f32; 4] = [0.125, 0.25, 0.5, 1.0];
 const E2_LAZY_MOVE_PROB: f32 = 0.65;
 const E2_SEMITONE_EPS: f32 = 1e-6;
+const E2_EMIT_KBINS_SWEEP_SUMMARY: bool = false;
+const E2_EMIT_CONSONANT_MASS_STATS: bool = false;
 const E2_SEEDS: [u64; 20] = [
     0xC0FFEE_u64,
     0xA5A5A5A5_u64,
@@ -185,7 +187,6 @@ const E4_DYNAMICS_STEP_SEMITONES: f32 = E2_STEP_SEMITONES;
 const E4_DYNAMICS_PEAK_TOP_N: usize = 64;
 const E4_ABCD_TRACE_STEPS: u32 = E4_DYNAMICS_PROBE_STEPS;
 const E4_DIAG_PEAK_TOP_K: usize = 8;
-const E4_LEGACY_DEFAULT: bool = false;
 const E4_DEBUG_FIT_METRICS_DEFAULT: bool = false;
 const E4_PARTIALS_SWEEP: [u32; 3] = [3, 6, 9];
 const E4_DECAY_SWEEP: [f32; 3] = [0.6, 1.0, 1.4];
@@ -222,8 +223,8 @@ const E5_SEEDS: [u64; 5] = [
     0xC0FFEE_u64 + 3,
     0xC0FFEE_u64 + 4,
 ];
-const PAPER_PLOTS_LOCK_DIR: &str = "examples/paper/.paper_plots.lock";
-const PAPER_PLOTS_BASE_DIR: &str = "examples/paper/plots";
+const PAPER_PLOTS_LOCK_DIR: &str = "experiments/.paper_plots.lock";
+const PAPER_PLOTS_BASE_DIR: &str = "experiments/plots";
 
 fn log_output_path(path: &Path) {
     println!("write {}", path.display());
@@ -313,36 +314,24 @@ enum Experiment {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum E2PhaseMode {
-    Normal,
     DissonanceThenConsonance,
 }
 
 impl E2PhaseMode {
     fn label(self) -> &'static str {
-        match self {
-            E2PhaseMode::Normal => "normal",
-            E2PhaseMode::DissonanceThenConsonance => "dissonance_then_consonance",
-        }
+        "dissonance_then_consonance"
     }
 
     fn score_sign(self, step: usize) -> f32 {
-        match self {
-            E2PhaseMode::Normal => 1.0,
-            E2PhaseMode::DissonanceThenConsonance => {
-                if step < E2_PHASE_SWITCH_STEP {
-                    -1.0
-                } else {
-                    1.0
-                }
-            }
+        if step < E2_PHASE_SWITCH_STEP {
+            -1.0
+        } else {
+            1.0
         }
     }
 
     fn switch_step(self) -> Option<usize> {
-        match self {
-            E2PhaseMode::Normal => None,
-            E2PhaseMode::DissonanceThenConsonance => Some(E2_PHASE_SWITCH_STEP),
-        }
+        Some(E2_PHASE_SWITCH_STEP)
     }
 }
 
@@ -373,6 +362,15 @@ impl Experiment {
             Experiment::E2,
             Experiment::E3,
             Experiment::E4,
+            Experiment::E5,
+        ]
+    }
+
+    fn paper_default() -> Vec<Experiment> {
+        vec![
+            Experiment::E1,
+            Experiment::E2,
+            Experiment::E3,
             Experiment::E5,
         ]
     }
@@ -408,7 +406,7 @@ impl Drop for PaperRunLock {
 
 fn usage() -> String {
     [
-        "Usage: paper [--exp E1,E2,...] [--clean[=on|off]] [--e4-hist on|off] [--e4-kernel-gate on|off] [--e4-wr on|off] [--e4-legacy on|off] [--e4-debug-fit-metrics on|off] [--e4-env-partials N] [--e4-env-decay X] [--e4-dyn-exploration X] [--e4-dyn-persistence X] [--e4-dyn-step-cents X] [--e2-phase mode]",
+        "Usage: paper [--exp E1,E2,...] [--clean[=on|off]] [--e4-hist on|off] [--e4-kernel-gate on|off] [--e4-wr on|off] [--e4-debug-fit-metrics on|off] [--e4-env-partials N] [--e4-env-decay X] [--e4-dyn-exploration X] [--e4-dyn-persistence X] [--e4-dyn-step-cents X]",
         "Examples:",
         "  paper --exp 2",
         "  paper --exp all",
@@ -418,22 +416,20 @@ fn usage() -> String {
         "  paper --exp e4 --e4-hist on",
         "  paper --exp e4 --e4-kernel-gate on",
         "  paper --exp e4 --e4-wr on",
-        "  paper --exp e4 --e4-legacy on",
         "  paper --exp e4 --e4-debug-fit-metrics on",
         "  paper --exp e4 --e4-env-partials 9 --e4-env-decay 0.8",
         "  paper --exp e4 --e4-dyn-exploration 0.9 --e4-dyn-persistence 0.1",
         "  paper --exp e4 --e4-dyn-step-cents 75",
-        "  paper --exp e2 --e2-phase dissonance_then_consonance",
-        "If no experiment is specified, all (E1-E5) run.",
+        "If no experiment is specified, paper defaults (E1,E2,E3,E5) run.",
+        "Use --exp e4 to run E4 explicitly.",
         "E4 histogram dumps default to off (use --e4-hist on to enable).",
         "E4 kernel gate plot default to off (use --e4-kernel-gate on to enable).",
         "E4 wr probe default to off (use --e4-wr on to enable).",
-        "E4 legacy outputs default to off (main manuscript panels remain available; use --e4-legacy on to enable old supplemental plots).",
         "E4 fit debug CSV default to off (use --e4-debug-fit-metrics on to enable).",
-        "E2 phase modes: normal | dissonance_then_consonance (default)",
-        "Outputs are written to examples/paper/plots/<exp>/ (e.g. examples/paper/plots/e2).",
+        "E2 uses dissonance_then_consonance phase schedule.",
+        "Outputs are written to experiments/plots/<exp>/ (e.g. experiments/plots/e2).",
         "By default only selected experiment dirs are overwritten.",
-        "Use --clean to clear examples/paper/plots before running.",
+        "Use --clean to clear experiments/plots before running.",
     ]
     .join("\n")
 }
@@ -473,28 +469,6 @@ fn parse_experiments(args: &[String]) -> Result<Vec<Experiment>, String> {
             continue;
         }
         if arg.starts_with("--e4-wr=") {
-            i += 1;
-            continue;
-        }
-        if arg == "--e2-phase" {
-            if i + 1 >= args.len() {
-                return Err(format!("Missing value after {arg}\n{}", usage()));
-            }
-            i += 2;
-            continue;
-        }
-        if arg.starts_with("--e2-phase=") {
-            i += 1;
-            continue;
-        }
-        if arg == "--e4-legacy" {
-            if i + 1 >= args.len() {
-                return Err(format!("Missing value after {arg}\n{}", usage()));
-            }
-            i += 2;
-            continue;
-        }
-        if arg.starts_with("--e4-legacy=") {
             i += 1;
             continue;
         }
@@ -745,41 +719,6 @@ fn parse_e4_wr(args: &[String]) -> Result<bool, String> {
     }
 }
 
-fn parse_e4_legacy(args: &[String]) -> Result<bool, String> {
-    let mut value: Option<String> = None;
-    let mut i = 0;
-    while i < args.len() {
-        let arg = args[i].as_str();
-        if arg == "--e4-legacy" {
-            if i + 1 >= args.len() {
-                return Err(format!("Missing value after {arg}\n{}", usage()));
-            }
-            value = Some(args[i + 1].clone());
-            i += 2;
-            continue;
-        }
-        if let Some(rest) = arg.strip_prefix("--e4-legacy=") {
-            value = Some(rest.to_string());
-            i += 1;
-            continue;
-        }
-        i += 1;
-    }
-
-    let Some(value) = value else {
-        return Ok(E4_LEGACY_DEFAULT);
-    };
-    let normalized = value.to_ascii_lowercase();
-    match normalized.as_str() {
-        "on" | "true" | "1" | "yes" => Ok(true),
-        "off" | "false" | "0" | "no" => Ok(false),
-        _ => Err(format!(
-            "Invalid --e4-legacy value '{value}'. Use on/off.\n{}",
-            usage()
-        )),
-    }
-}
-
 fn parse_e4_debug_fit_metrics(args: &[String]) -> Result<bool, String> {
     let mut value: Option<String> = None;
     let mut i = 0;
@@ -898,41 +837,6 @@ fn parse_e4_dyn_step_cents(args: &[String]) -> Result<Option<f32>, String> {
     parse_f32_cli_opt(args, "--e4-dyn-step-cents")
 }
 
-fn parse_e2_phase(args: &[String]) -> Result<E2PhaseMode, String> {
-    let mut value: Option<String> = None;
-    let mut i = 0;
-    while i < args.len() {
-        let arg = args[i].as_str();
-        if arg == "--e2-phase" {
-            if i + 1 >= args.len() {
-                return Err(format!("Missing value after {arg}\n{}", usage()));
-            }
-            value = Some(args[i + 1].clone());
-            i += 2;
-            continue;
-        }
-        if let Some(rest) = arg.strip_prefix("--e2-phase=") {
-            value = Some(rest.to_string());
-            i += 1;
-            continue;
-        }
-        i += 1;
-    }
-
-    let Some(value) = value else {
-        return Ok(E2PhaseMode::DissonanceThenConsonance);
-    };
-    let normalized = value.to_ascii_lowercase();
-    match normalized.as_str() {
-        "normal" => Ok(E2PhaseMode::Normal),
-        "dissonance_then_consonance" | "dtc" => Ok(E2PhaseMode::DissonanceThenConsonance),
-        _ => Err(format!(
-            "Invalid --e2-phase value '{value}'. Use normal or dissonance_then_consonance.\n{}",
-            usage()
-        )),
-    }
-}
-
 fn parse_clean(args: &[String]) -> Result<bool, String> {
     let mut clean_flag = false;
     let mut clean_value: Option<String> = None;
@@ -1003,18 +907,17 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
     let e4_hist_enabled = parse_e4_hist(&args).map_err(io::Error::other)?;
     let e4_kernel_gate_enabled = parse_e4_kernel_gate(&args).map_err(io::Error::other)?;
     let e4_wr_enabled = parse_e4_wr(&args).map_err(io::Error::other)?;
-    let e4_legacy_enabled = parse_e4_legacy(&args).map_err(io::Error::other)?;
     let e4_debug_fit_enabled = parse_e4_debug_fit_metrics(&args).map_err(io::Error::other)?;
     let e4_env_partials = parse_e4_env_partials(&args).map_err(io::Error::other)?;
     let e4_env_decay = parse_e4_env_decay(&args).map_err(io::Error::other)?;
     let e4_dyn_exploration = parse_e4_dyn_exploration(&args).map_err(io::Error::other)?;
     let e4_dyn_persistence = parse_e4_dyn_persistence(&args).map_err(io::Error::other)?;
     let e4_dyn_step_cents = parse_e4_dyn_step_cents(&args).map_err(io::Error::other)?;
-    let e2_phase_mode = parse_e2_phase(&args).map_err(io::Error::other)?;
+    let e2_phase_mode = E2PhaseMode::DissonanceThenConsonance;
     let clean_all = parse_clean(&args).map_err(io::Error::other)?;
     let experiments = parse_experiments(&args).map_err(io::Error::other)?;
     let experiments = if experiments.is_empty() {
-        Experiment::all()
+        Experiment::paper_default()
     } else {
         experiments
     };
@@ -1027,7 +930,7 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
 
     let base_dir = Path::new(PAPER_PLOTS_BASE_DIR);
     debug_assert!(
-        base_dir.ends_with(Path::new("examples/paper/plots")),
+        base_dir.ends_with(Path::new("experiments/plots")),
         "refusing to clear unexpected path: {}",
         base_dir.display()
     );
@@ -1084,7 +987,6 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
                             e4_hist_enabled,
                             e4_kernel_gate_enabled,
                             e4_wr_enabled,
-                            e4_legacy_enabled,
                             e4_debug_fit_enabled,
                         )
                         .map_err(|err| io::Error::other(err.to_string()))
@@ -1183,12 +1085,7 @@ fn plot_e1_landscape_scan(
         max_hist_cols: 1,
         roughness_kernel: roughness_kernel.clone(),
         harmonicity_kernel: harmonicity_kernel.clone(),
-        consonance_kernel: ConsonanceKernel {
-            a: 1.0,
-            b: -0.85,
-            c: 0.5,
-            d: 0.0,
-        },
+        consonance_kernel: ConsonanceKernel::default(),
         consonance_representation: ConsonanceRepresentationParams {
             beta: E2_C_LEVEL_BETA,
             theta: E2_C_LEVEL_THETA,
@@ -1729,10 +1626,12 @@ fn plot_e2_emergent_harmony(
             baseline_stats.n,
         ),
     )?;
-    write_with_log(
-        out_dir.join("paper_e2_kbins_sweep_summary.csv"),
-        e2_kbins_sweep_csv(space, anchor_hz, phase_mode),
-    )?;
+    if E2_EMIT_KBINS_SWEEP_SUMMARY {
+        write_with_log(
+            out_dir.join("paper_e2_kbins_sweep_summary.csv"),
+            e2_kbins_sweep_csv(space, anchor_hz, phase_mode),
+        )?;
+    }
 
     let sweep_mean_path = out_dir.join("paper_e2_mean_c_level_over_time_seeds.svg");
     render_series_plot_with_band(
@@ -2081,10 +1980,12 @@ fn plot_e2_emergent_harmony(
         out_dir.join("paper_e2_consonant_mass_summary.csv"),
         consonant_mass_summary_csv(&consonant_rows),
     )?;
-    write_with_log(
-        out_dir.join("paper_e2_consonant_mass_stats.csv"),
-        consonant_mass_stats_csv(&consonant_rows),
-    )?;
+    if E2_EMIT_CONSONANT_MASS_STATS {
+        write_with_log(
+            out_dir.join("paper_e2_consonant_mass_stats.csv"),
+            consonant_mass_stats_csv(&consonant_rows),
+        )?;
+    }
     let consonant_mass_plot = out_dir.join("paper_e2_consonant_mass_summary.svg");
     render_consonant_mass_summary_plot(&consonant_mass_plot, &consonant_rows)?;
 
@@ -2411,6 +2312,9 @@ fn run_e2_once(
         .map(|_| Vec::with_capacity(E2_SWEEPS))
         .collect::<Vec<_>>();
     let mut backtrack_targets = agent_indices.clone();
+    let use_nohill = matches!(condition, E2Condition::NoHillClimb);
+    let mut nohill_env_loo = Vec::new();
+    let mut nohill_density_loo = Vec::new();
 
     let mut anchor_shift = E2AnchorShiftStats {
         step: E2_ANCHOR_SHIFT_STEP,
@@ -2473,32 +2377,6 @@ fn run_e2_once(
 
         let mean_c = mean_at_indices(&c_score_scan, &agent_indices);
         let mean_c_level = mean_at_indices(&c_level_scan, &agent_indices);
-        let use_nohill = matches!(condition, E2Condition::NoHillClimb);
-        let mut env_loo = if use_nohill {
-            vec![0.0f32; env_scan.len()]
-        } else {
-            Vec::new()
-        };
-        let mut density_loo = if use_nohill {
-            vec![0.0f32; density_scan.len()]
-        } else {
-            Vec::new()
-        };
-        let mean_c_score_loo_current = if use_nohill {
-            mean_c_score_loo_at_indices_with_prev_reused(
-                space,
-                &workspace,
-                &env_scan,
-                &density_scan,
-                &du_scan,
-                &agent_indices,
-                &agent_indices,
-                &mut env_loo,
-                &mut density_loo,
-            )
-        } else {
-            f32::NAN
-        };
         mean_c_series.push(mean_c);
         mean_c_level_series.push(mean_c_level);
 
@@ -2531,6 +2409,7 @@ fn run_e2_once(
                 &env_scan,
                 &density_scan,
                 &du_scan,
+                &c_score_scan,
                 &log2_ratio_scan,
                 min_idx,
                 max_idx,
@@ -2557,6 +2436,7 @@ fn run_e2_once(
                 &env_scan,
                 &density_scan,
                 &du_scan,
+                &c_score_scan,
                 &log2_ratio_scan,
                 min_idx,
                 max_idx,
@@ -2615,28 +2495,23 @@ fn run_e2_once(
             &positions_before_update,
             &agent_indices,
         );
-
-        let mean_c_score_loo_chosen = if use_nohill {
-            mean_c_score_loo_at_indices_with_prev_reused(
-                space,
-                &workspace,
-                &env_scan,
-                &density_scan,
-                &du_scan,
-                &positions_before_update,
-                &agent_indices,
-                &mut env_loo,
-                &mut density_loo,
-            )
-        } else {
-            stats.mean_c_score_chosen_loo
-        };
-        stats.mean_c_score_current_loo = if use_nohill {
-            mean_c_score_loo_current
-        } else {
-            stats.mean_c_score_current_loo
-        };
-        stats.mean_c_score_chosen_loo = mean_c_score_loo_chosen;
+        if use_nohill {
+            let (mean_c_score_loo_current, mean_c_score_loo_chosen) =
+                mean_c_score_loo_pair_at_indices_with_prev_reused(
+                    space,
+                    &workspace,
+                    &env_scan,
+                    &density_scan,
+                    &du_scan,
+                    &positions_before_update,
+                    &positions_before_update,
+                    &agent_indices,
+                    &mut nohill_env_loo,
+                    &mut nohill_density_loo,
+                );
+            stats.mean_c_score_current_loo = mean_c_score_loo_current;
+            stats.mean_c_score_chosen_loo = mean_c_score_loo_chosen;
+        }
         let condition_label = match condition {
             E2Condition::Baseline => "baseline",
             E2Condition::NoRepulsion => "norep",
@@ -3992,7 +3867,6 @@ fn plot_e4_mirror_sweep(
     emit_hist_files: bool,
     emit_kernel_gate: bool,
     emit_wr_probe: bool,
-    emit_legacy_outputs: bool,
     emit_debug_fit_metrics: bool,
 ) -> Result<(), Box<dyn Error>> {
     let primary_bin = E4_BIN_WIDTHS[0];
@@ -4001,166 +3875,24 @@ fn plot_e4_mirror_sweep(
     if !emit_debug_fit_metrics {
         purge_e4_fit_debug_outputs(out_dir)?;
     }
-    if !emit_legacy_outputs {
-        purge_e4_legacy_outputs(out_dir)?;
-        let weights = build_weight_grid(E4_WEIGHT_COARSE_STEP);
-        let (_run_records, hist_records, _tail_rows, tail_agent_rows, tail_landscape_rows) =
-            run_e4_sweep_for_weights(
-                out_dir,
-                anchor_hz,
-                &weights,
-                &E4_SEEDS,
-                primary_bin,
-                &E4_EPS_CENTS,
-                emit_hist_files,
-                true,
-            )?;
-
-        let tail_landscape_csv_path = out_dir.join("e4_tail_landscape.csv");
-        write_with_log(
-            &tail_landscape_csv_path,
-            e4_tail_landscape_csv(&tail_landscape_rows),
+    purge_e4_legacy_outputs(out_dir)?;
+    let weights = build_weight_grid(E4_WEIGHT_COARSE_STEP);
+    let (_run_records, hist_records, _tail_rows, tail_agent_rows, tail_landscape_rows) =
+        run_e4_sweep_for_weights(
+            out_dir,
+            anchor_hz,
+            &weights,
+            &E4_SEEDS,
+            primary_bin,
+            &E4_EPS_CENTS,
+            emit_hist_files,
+            true,
         )?;
 
-        let bind_metrics = e4_binding_metrics_from_tail_landscape(&tail_landscape_rows);
-        let bind_summary = e4_binding_summary_rows(&bind_metrics);
-        let binding_metrics_path = out_dir.join("e4_binding_metrics.csv");
-        write_with_log(&binding_metrics_path, e4_binding_metrics_csv(&bind_metrics))?;
-        let binding_summary_path = out_dir.join("e4_binding_summary.csv");
-        write_with_log(&binding_summary_path, e4_binding_summary_csv(&bind_summary))?;
-        let binding_metrics_raw_path = out_dir.join("paper_e4_binding_metrics_raw.csv");
-        write_with_log(
-            &binding_metrics_raw_path,
-            e4_binding_metrics_raw_csv(&bind_metrics),
-        )?;
-        let binding_metrics_summary_path = out_dir.join("paper_e4_binding_metrics_summary.csv");
-        write_with_log(
-            &binding_metrics_summary_path,
-            e4_binding_metrics_summary_csv(&bind_summary),
-        )?;
-
-        let binding_phase_png_path = out_dir.join("paper_e4_binding_phase_diagram.png");
-        render_e4_binding_phase_diagram_png(&binding_phase_png_path, &bind_summary)?;
-        let harmonic_tilt_png_path = out_dir.join("paper_e4_harmonic_tilt.png");
-        render_e4_harmonic_tilt_png(&harmonic_tilt_png_path, &bind_summary)?;
-        let harmonic_tilt_scatter_path = out_dir.join("paper_e4_harmonic_tilt_scatter.png");
-        render_e4_harmonic_tilt_scatter_png(&harmonic_tilt_scatter_path, &bind_metrics)?;
-        let overtone_rate_path = out_dir.join("paper_e4_overtone_regime_rate.png");
-        render_e4_overtone_regime_rate_png(&overtone_rate_path, &bind_metrics)?;
-        let bind_main_path = out_dir.join("paper_e4_bind_vs_weight.svg");
-        render_e4_bind_vs_weight(&bind_main_path, &bind_summary)?;
-        let fingerprint_path = out_dir.join("paper_e4_interval_fingerprint_heatmap.svg");
-        render_e4_interval_heatmap(&fingerprint_path, &hist_records, primary_bin)?;
-        run_e4_step_and_hysteresis_protocol(out_dir, anchor_hz, primary_eps)?;
-        write_e4_env_2d_sweep_outputs(out_dir, &tail_agent_rows, anchor_hz)?;
-        if emit_debug_fit_metrics {
-            write_e4_debug_fit_outputs(out_dir, &tail_agent_rows)?;
-        }
-        if emit_wr_probe {
-            plot_e4_mirror_sweep_wr_cut(out_dir, anchor_hz)?;
-        }
-
-        if emit_kernel_gate {
-            let kernel_gate_path = out_dir.join("paper_e4_kernel_gate.svg");
-            render_e4_kernel_gate(&kernel_gate_path, anchor_hz)?;
-        }
-
-        return Ok(());
-    }
-
-    let coarse_weights = build_weight_grid(E4_WEIGHT_COARSE_STEP);
-    let (
-        mut run_records,
-        mut hist_records,
-        mut tail_rows,
-        mut tail_agent_rows,
-        mut tail_landscape_rows,
-    ) = run_e4_sweep_for_weights(
-        out_dir,
-        anchor_hz,
-        &coarse_weights,
-        &E4_SEEDS,
-        primary_bin,
-        &E4_EPS_CENTS,
-        emit_hist_files,
-        true,
-    )?;
-
-    let mut weights = coarse_weights.clone();
-    let fine_weights = refine_weights_from_sign_change(&run_records, primary_bin, primary_eps);
-    for w in fine_weights {
-        if !weights.iter().any(|&x| (x - w).abs() < 1e-6) {
-            weights.push(w);
-        }
-    }
-    weights.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-
-    let fine_only: Vec<f32> = weights
-        .iter()
-        .copied()
-        .filter(|w| !coarse_weights.iter().any(|c| (c - w).abs() < 1e-6))
-        .collect();
-
-    if !fine_only.is_empty() {
-        let (more_runs, more_hists, more_tail, more_tail_agents, more_tail_landscape) =
-            run_e4_sweep_for_weights(
-                out_dir,
-                anchor_hz,
-                &fine_only,
-                &E4_SEEDS,
-                primary_bin,
-                &E4_EPS_CENTS,
-                emit_hist_files,
-                true,
-            )?;
-        run_records.extend(more_runs);
-        hist_records.extend(more_hists);
-        tail_rows.extend(more_tail);
-        tail_agent_rows.extend(more_tail_agents);
-        tail_landscape_rows.extend(more_tail_landscape);
-    }
-
-    for &bin_width in E4_BIN_WIDTHS.iter().skip(1) {
-        let (more_runs, more_hists, more_tail, _more_tail_agents, _more_tail_landscape) =
-            run_e4_sweep_for_weights(
-                out_dir,
-                anchor_hz,
-                &weights,
-                &E4_SEEDS,
-                bin_width,
-                &E4_EPS_CENTS,
-                emit_hist_files,
-                false,
-            )?;
-        run_records.extend(more_runs);
-        hist_records.extend(more_hists);
-        tail_rows.extend(more_tail);
-    }
-
-    let runs_csv_path = out_dir.join("e4_mirror_sweep_runs.csv");
-    write_with_log(&runs_csv_path, e4_runs_csv(&run_records))?;
-    let tail_csv_path = out_dir.join("paper_e4_tail_interval_timeseries.csv");
-    write_with_log(&tail_csv_path, e4_tail_interval_csv(&tail_rows))?;
-    let tail_agents_csv_path = out_dir.join("e4_tail_agents.csv");
-    write_with_log(&tail_agents_csv_path, e4_tail_agents_csv(&tail_agent_rows))?;
     let tail_landscape_csv_path = out_dir.join("e4_tail_landscape.csv");
     write_with_log(
         &tail_landscape_csv_path,
         e4_tail_landscape_csv(&tail_landscape_rows),
-    )?;
-
-    let summaries = summarize_e4_runs(&run_records);
-    let summary_csv_path = out_dir.join("e4_mirror_sweep_summary.csv");
-    write_with_log(&summary_csv_path, e4_summary_csv(&summaries))?;
-    let meta_diff_path = out_dir.join("paper_e4_protocol_meta_diff.csv");
-    write_with_log(
-        &meta_diff_path,
-        e4_protocol_meta_diff_csv(anchor_hz, primary_bin, primary_eps),
-    )?;
-    let fixed_check_path = out_dir.join("paper_e4_fixed_except_mirror_check.csv");
-    write_with_log(
-        &fixed_check_path,
-        e4_fixed_except_mirror_check_csv(&run_records, &tail_agent_rows),
     )?;
 
     let bind_metrics = e4_binding_metrics_from_tail_landscape(&tail_landscape_rows);
@@ -4179,86 +3911,7 @@ fn plot_e4_mirror_sweep(
         &binding_metrics_summary_path,
         e4_binding_metrics_summary_csv(&bind_summary),
     )?;
-    let fingerprint_rows = e4_fingerprint_rows_from_tail_agents(&tail_agent_rows);
-    let fingerprint_raw_path = out_dir.join("paper_e4_fingerprint_raw.csv");
-    write_with_log(
-        &fingerprint_raw_path,
-        e4_fingerprint_raw_csv(&fingerprint_rows),
-    )?;
-    let fingerprint_summary = e4_fingerprint_summary_rows(&fingerprint_rows);
-    let fingerprint_summary_path = out_dir.join("paper_e4_fingerprint_summary.csv");
-    write_with_log(
-        &fingerprint_summary_path,
-        e4_fingerprint_summary_csv(&fingerprint_summary),
-    )?;
 
-    let delta_effects = e4_delta_effects_from_summary(&summaries);
-    let delta_effects_path = out_dir.join("e4_delta_effects.csv");
-    write_with_log(&delta_effects_path, e4_delta_effects_csv(&delta_effects))?;
-
-    let regression_rows = e4_regression_rows(&summaries);
-    let regression_path = out_dir.join("e4_regression.csv");
-    write_with_log(&regression_path, e4_regression_csv(&regression_rows))?;
-
-    let endpoint_rows = e4_endpoint_effect_rows(&run_records);
-    let endpoint_path = out_dir.join("e4_endpoint_effect.csv");
-    write_with_log(&endpoint_path, e4_endpoint_effect_csv(&endpoint_rows))?;
-
-    let seed_slopes = e4_seed_slopes_rows(&run_records);
-    let seed_slopes_path = out_dir.join("e4_seed_slopes.csv");
-    write_with_log(&seed_slopes_path, e4_seed_slopes_csv(&seed_slopes))?;
-
-    let run_level_rows = e4_run_level_regression_rows(&run_records);
-    let run_level_path = out_dir.join("e4_run_level_regression.csv");
-    write_with_log(
-        &run_level_path,
-        e4_run_level_regression_csv(&run_level_rows),
-    )?;
-
-    let seed_slope_meta = e4_seed_slope_meta_rows(&seed_slopes);
-    let seed_slope_meta_path = out_dir.join("e4_seed_slope_meta.csv");
-    write_with_log(
-        &seed_slope_meta_path,
-        e4_seed_slope_meta_csv(&seed_slope_meta),
-    )?;
-
-    let third_mass_rows = e4_total_third_mass_rows(&run_records);
-    let third_mass_path = out_dir.join("e4_total_third_mass.csv");
-    write_with_log(&third_mass_path, e4_total_third_mass_csv(&third_mass_rows))?;
-
-    let overlay_path = out_dir.join(format!(
-        "paper_e4_hist_overlay_bw{}.svg",
-        format_float_token(primary_bin)
-    ));
-    render_e4_hist_overlay(&overlay_path, &hist_records, primary_bin, &E4_REP_WEIGHTS)?;
-    let fig1_soft_path = out_dir.join("paper_e4_figure1_mirror_vs_delta_t_soft.svg");
-    render_e4_figure1_mirror_vs_delta_t(
-        &fig1_soft_path,
-        &run_records,
-        primary_bin,
-        primary_eps,
-        "soft",
-        "main",
-    )?;
-    let fig1_hard_path = out_dir.join("paper_e4_figure1_mirror_vs_delta_t_hard_appendix.svg");
-    render_e4_figure1_mirror_vs_delta_t(
-        &fig1_hard_path,
-        &run_records,
-        primary_bin,
-        primary_eps,
-        "hard",
-        "appendix",
-    )?;
-    let fig2_path = out_dir.join("paper_e4_figure2_interval_hist_cents_triptych.svg");
-    render_e4_figure2_interval_hist_triptych(&fig2_path, &hist_records, primary_bin)?;
-    let fig3_path = out_dir.join("paper_e4_figure3_interval_cents_heatmap.svg");
-    render_e4_interval_heatmap(&fig3_path, &hist_records, primary_bin)?;
-    let bind_main_path = out_dir.join("paper_e4_bind_vs_weight.svg");
-    render_e4_bind_vs_weight(&bind_main_path, &bind_summary)?;
-    let binding_components_path = out_dir.join("paper_e4_binding_components_vs_weight.svg");
-    render_e4_binding_components_vs_weight(&binding_components_path, &bind_summary)?;
-    let fingerprint_path = out_dir.join("paper_e4_interval_fingerprint_heatmap.svg");
-    render_e4_interval_heatmap(&fingerprint_path, &hist_records, primary_bin)?;
     let binding_phase_png_path = out_dir.join("paper_e4_binding_phase_diagram.png");
     render_e4_binding_phase_diagram_png(&binding_phase_png_path, &bind_summary)?;
     let harmonic_tilt_png_path = out_dir.join("paper_e4_harmonic_tilt.png");
@@ -4267,56 +3920,18 @@ fn plot_e4_mirror_sweep(
     render_e4_harmonic_tilt_scatter_png(&harmonic_tilt_scatter_path, &bind_metrics)?;
     let overtone_rate_path = out_dir.join("paper_e4_overtone_regime_rate.png");
     render_e4_overtone_regime_rate_png(&overtone_rate_path, &bind_metrics)?;
-    let fingerprint_heatmap_png_path = out_dir.join("paper_e4_fingerprint_heatmap.png");
-    render_e4_fingerprint_heatmap_png(&fingerprint_heatmap_png_path, &fingerprint_summary)?;
+    let bind_main_path = out_dir.join("paper_e4_bind_vs_weight.svg");
+    render_e4_bind_vs_weight(&bind_main_path, &bind_summary)?;
+    let fingerprint_path = out_dir.join("paper_e4_interval_fingerprint_heatmap.svg");
+    render_e4_interval_heatmap(&fingerprint_path, &hist_records, primary_bin)?;
+    run_e4_step_and_hysteresis_protocol(out_dir, anchor_hz, primary_eps)?;
     write_e4_env_2d_sweep_outputs(out_dir, &tail_agent_rows, anchor_hz)?;
     if emit_debug_fit_metrics {
         write_e4_debug_fit_outputs(out_dir, &tail_agent_rows)?;
     }
-
-    for &bin_width in &E4_BIN_WIDTHS {
-        let bw_token = format_float_token(bin_width);
-        for &eps_cents in &E4_EPS_CENTS {
-            let eps_token = fmt_eps_token(eps_cents);
-            let delta_path = out_dir.join(format!(
-                "paper_e4_delta_vs_weight_bw{bw_token}_eps{eps_token}.svg"
-            ));
-            render_e4_delta_plot(&delta_path, &summaries, bin_width, eps_cents)?;
-
-            let spaghetti_path = out_dir.join(format!(
-                "paper_e4_delta_spaghetti_bw{bw_token}_eps{eps_token}.svg"
-            ));
-            render_e4_delta_spaghetti(
-                &spaghetti_path,
-                &run_records,
-                &summaries,
-                bin_width,
-                eps_cents,
-            )?;
-
-            let major_minor_path = out_dir.join(format!(
-                "paper_e4_major_minor_vs_weight_bw{bw_token}_eps{eps_token}.svg"
-            ));
-            render_e4_major_minor_plot(&major_minor_path, &summaries, bin_width, eps_cents)?;
-
-            let third_mass_path = out_dir.join(format!(
-                "paper_e4_third_mass_vs_weight_bw{bw_token}_eps{eps_token}.svg"
-            ));
-            render_e4_third_mass_plot(&third_mass_path, &summaries, bin_width, eps_cents)?;
-
-            let rate_path = out_dir.join(format!(
-                "paper_e4_major_minor_rate_vs_weight_bw{bw_token}_eps{eps_token}.svg"
-            ));
-            render_e4_major_minor_rate_plot(&rate_path, &summaries, bin_width, eps_cents)?;
-        }
-
-        let heatmap_path = out_dir.join(format!("paper_e4_interval_heatmap_bw{bw_token}.svg"));
-        render_e4_interval_heatmap(&heatmap_path, &hist_records, bin_width)?;
+    if emit_wr_probe {
+        plot_e4_mirror_sweep_wr_cut(out_dir, anchor_hz)?;
     }
-
-    let legacy_path = out_dir.join("paper_e4_mirror_sweep.svg");
-    render_e4_major_minor_plot(&legacy_path, &summaries, primary_bin, primary_eps)?;
-    run_e4_step_and_hysteresis_protocol(out_dir, anchor_hz, primary_eps)?;
 
     if emit_kernel_gate {
         let kernel_gate_path = out_dir.join("paper_e4_kernel_gate.svg");
@@ -9988,7 +9603,7 @@ fn e4_validation_markdown() -> String {
         "",
         "## Timing diagnosis (ABCD trace)",
         "- Generate trace: `cargo run --example paper -- --exp e4 --e4-wr on`",
-        "- Analyze lag: `cargo run --example paper -- --e4-abcd-analyze --input examples/paper/plots/e4/paper_e4_abcd_trace.csv --outdir examples/paper/plots/e4`",
+        "- Analyze lag: `cargo run --example paper -- --e4-abcd-analyze --input experiments/plots/e4/paper_e4_abcd_trace.csv --outdir experiments/plots/e4`",
         "- Inspect: `e4_abcd_summary_by_mirror.csv`, `e4_abcd_summary_overall.md` and 3 PNG files.",
     ]
     .join("\n")
@@ -13563,12 +13178,7 @@ fn build_consonance_workspace(space: &Log2Space) -> ConsonanceWorkspace {
         max_hist_cols: 1,
         roughness_kernel,
         harmonicity_kernel,
-        consonance_kernel: ConsonanceKernel {
-            a: 1.0,
-            b: -0.85,
-            c: 0.5,
-            d: 0.0,
-        },
+        consonance_kernel: ConsonanceKernel::default(),
         consonance_representation: ConsonanceRepresentationParams {
             beta: E2_C_LEVEL_BETA,
             theta: E2_C_LEVEL_THETA,
@@ -13941,7 +13551,6 @@ fn update_one_agent_scored_loo(
     lambda: f32,
     sigma: f32,
     temperature: f32,
-    update_allowed: bool,
     block_backtrack: bool,
     backtrack_targets: Option<&[usize]>,
     u01: f32,
@@ -13978,54 +13587,50 @@ fn update_one_agent_scored_loo(
         None
     };
 
-    let (chosen_idx, chosen_score, chosen_repulsion, accepted_worse) = if update_allowed {
-        let start = (agent_idx as isize - k as isize).max(min_idx as isize) as usize;
-        let end = (agent_idx as isize + k as isize).min(max_idx as isize) as usize;
-        let mut best_idx = agent_idx;
-        let mut best_score = f32::NEG_INFINITY;
-        let mut best_repulsion = 0.0f32;
-        let mut found_candidate = false;
-        for cand in start..=end {
-            if cand == agent_idx {
-                continue;
-            }
-            let cand_log2 = log2_ratio_scan[cand];
-            let mut repulsion = 0.0f32;
-            if !skip_repulsion {
-                for (j, &other_log2) in prev_log2.iter().enumerate() {
-                    if j == agent_i {
-                        continue;
-                    }
-                    let dist = (cand_log2 - other_log2).abs();
-                    repulsion += (-dist / sigma).exp();
+    let start = (agent_idx as isize - k as isize).max(min_idx as isize) as usize;
+    let end = (agent_idx as isize + k as isize).min(max_idx as isize) as usize;
+    let mut best_idx = agent_idx;
+    let mut best_score = f32::NEG_INFINITY;
+    let mut best_repulsion = 0.0f32;
+    let mut found_candidate = false;
+    for cand in start..=end {
+        if cand == agent_idx {
+            continue;
+        }
+        let cand_log2 = log2_ratio_scan[cand];
+        let mut repulsion = 0.0f32;
+        if !skip_repulsion {
+            for (j, &other_log2) in prev_log2.iter().enumerate() {
+                if j == agent_i {
+                    continue;
                 }
-            }
-            let c_score = c_score_scan[cand];
-            let score = score_sign * c_score - lambda * repulsion;
-            if let Some(prev_idx) = backtrack_target
-                && cand == prev_idx
-                && (score - current_score) <= E2_BACKTRACK_ALLOW_EPS
-            {
-                continue;
-            }
-            if score > best_score {
-                best_score = score;
-                best_idx = cand;
-                best_repulsion = repulsion;
-                found_candidate = true;
+                let dist = (cand_log2 - other_log2).abs();
+                repulsion += (-dist / sigma).exp();
             }
         }
-        if found_candidate {
-            let delta = best_score - current_score;
-            if delta > E2_SCORE_IMPROVE_EPS {
-                (best_idx, best_score, best_repulsion, false)
-            } else if delta < 0.0 {
-                let (accept, accepted_worse) = metropolis_accept(delta, temperature, u01);
-                if accept {
-                    (best_idx, best_score, best_repulsion, accepted_worse)
-                } else {
-                    (agent_idx, current_score, current_repulsion, false)
-                }
+        let c_score = c_score_scan[cand];
+        let score = score_sign * c_score - lambda * repulsion;
+        if let Some(prev_idx) = backtrack_target
+            && cand == prev_idx
+            && (score - current_score) <= E2_BACKTRACK_ALLOW_EPS
+        {
+            continue;
+        }
+        if score > best_score {
+            best_score = score;
+            best_idx = cand;
+            best_repulsion = repulsion;
+            found_candidate = true;
+        }
+    }
+    let (chosen_idx, chosen_score, chosen_repulsion, accepted_worse) = if found_candidate {
+        let delta = best_score - current_score;
+        if delta > E2_SCORE_IMPROVE_EPS {
+            (best_idx, best_score, best_repulsion, false)
+        } else if delta < 0.0 {
+            let (accept, accepted_worse) = metropolis_accept(delta, temperature, u01);
+            if accept {
+                (best_idx, best_score, best_repulsion, accepted_worse)
             } else {
                 (agent_idx, current_score, current_repulsion, false)
             }
@@ -14065,6 +13670,7 @@ fn update_e2_sweep_scored_loo(
     env_total: &[f32],
     density_total: &[f32],
     du_scan: &[f32],
+    c_score_total: &[f32],
     log2_ratio_scan: &[f32],
     min_idx: usize,
     max_idx: usize,
@@ -14095,6 +13701,7 @@ fn update_e2_sweep_scored_loo(
     space.assert_scan_len_named(env_total, "env_total");
     space.assert_scan_len_named(density_total, "density_total");
     space.assert_scan_len_named(du_scan, "du_scan");
+    space.assert_scan_len_named(c_score_total, "c_score_total");
     let sigma = sigma.max(1e-6);
     let mut order: Vec<usize> = (0..indices.len()).collect();
     if matches!(schedule, E2UpdateSchedule::RandomSingle) {
@@ -14135,31 +13742,58 @@ fn update_e2_sweep_scored_loo(
         if update_allowed {
             attempt_count += 1;
         }
-        let stats = update_one_agent_scored_loo(
-            agent_i,
-            indices,
-            prev_indices,
-            &prev_log2,
-            space,
-            workspace,
-            env_total,
-            density_total,
-            du_scan,
-            log2_ratio_scan,
-            min_idx,
-            max_idx,
-            k,
-            score_sign,
-            lambda,
-            sigma,
-            temperature,
-            update_allowed,
-            block_backtrack,
-            backtrack_targets,
-            u01_by_agent[agent_i],
-            &mut env_loo,
-            &mut density_loo,
-        );
+        let stats = if update_allowed {
+            update_one_agent_scored_loo(
+                agent_i,
+                indices,
+                prev_indices,
+                &prev_log2,
+                space,
+                workspace,
+                env_total,
+                density_total,
+                du_scan,
+                log2_ratio_scan,
+                min_idx,
+                max_idx,
+                k,
+                score_sign,
+                lambda,
+                sigma,
+                temperature,
+                block_backtrack,
+                backtrack_targets,
+                u01_by_agent[agent_i],
+                &mut env_loo,
+                &mut density_loo,
+            )
+        } else {
+            // Keep non-updating agents fixed without recomputing full LOO scans.
+            let agent_idx = prev_indices[agent_i];
+            let current_log2 = log2_ratio_scan[agent_idx];
+            let mut current_repulsion = 0.0f32;
+            if lambda > 0.0 {
+                for (j, &other_log2) in prev_log2.iter().enumerate() {
+                    if j == agent_i {
+                        continue;
+                    }
+                    let dist = (current_log2 - other_log2).abs();
+                    current_repulsion += (-dist / sigma).exp();
+                }
+            }
+            let c_score_current = c_score_total[agent_idx];
+            let current_score = score_sign * c_score_current - lambda * current_repulsion;
+            OneUpdateStats {
+                moved: false,
+                accepted_worse: false,
+                abs_delta_semitones: 0.0,
+                abs_delta_semitones_moved: 0.0,
+                c_score_current,
+                c_score_chosen: c_score_current,
+                chosen_score: current_score,
+                chosen_repulsion: current_repulsion,
+            }
+        };
         if stats.moved {
             moved_count += 1;
         }
@@ -14677,13 +14311,46 @@ fn mean_c_score_loo_at_indices_with_prev_reused(
     env_loo: &mut Vec<f32>,
     density_loo: &mut Vec<f32>,
 ) -> f32 {
-    if prev_indices.is_empty() || eval_indices.is_empty() {
-        return 0.0;
+    let (mean_current, _mean_chosen) = mean_c_score_loo_pair_at_indices_with_prev_reused(
+        space,
+        workspace,
+        env_total,
+        density_total,
+        du_scan,
+        prev_indices,
+        eval_indices,
+        eval_indices,
+        env_loo,
+        density_loo,
+    );
+    mean_current
+}
+
+#[allow(clippy::too_many_arguments)]
+fn mean_c_score_loo_pair_at_indices_with_prev_reused(
+    space: &Log2Space,
+    workspace: &ConsonanceWorkspace,
+    env_total: &[f32],
+    density_total: &[f32],
+    du_scan: &[f32],
+    prev_indices: &[usize],
+    current_eval_indices: &[usize],
+    chosen_eval_indices: &[usize],
+    env_loo: &mut Vec<f32>,
+    density_loo: &mut Vec<f32>,
+) -> (f32, f32) {
+    if prev_indices.is_empty() || current_eval_indices.is_empty() || chosen_eval_indices.is_empty() {
+        return (0.0, 0.0);
     }
     debug_assert_eq!(
         prev_indices.len(),
-        eval_indices.len(),
-        "prev_indices/eval_indices length mismatch"
+        current_eval_indices.len(),
+        "prev/current eval length mismatch"
+    );
+    debug_assert_eq!(
+        prev_indices.len(),
+        chosen_eval_indices.len(),
+        "prev/chosen eval length mismatch"
     );
     space.assert_scan_len_named(env_total, "env_total");
     space.assert_scan_len_named(density_total, "density_total");
@@ -14691,9 +14358,14 @@ fn mean_c_score_loo_at_indices_with_prev_reused(
 
     env_loo.resize(env_total.len(), 0.0);
     density_loo.resize(density_total.len(), 0.0);
-    let mut sum = 0.0f32;
-    let mut count = 0u32;
-    for (&prev_idx, &eval_idx) in prev_indices.iter().zip(eval_indices.iter()) {
+    let mut current_sum = 0.0f32;
+    let mut current_count = 0u32;
+    let mut chosen_sum = 0.0f32;
+    let mut chosen_count = 0u32;
+    for i in 0..prev_indices.len() {
+        let prev_idx = prev_indices[i];
+        let current_eval_idx = current_eval_indices[i];
+        let chosen_eval_idx = chosen_eval_indices[i];
         env_loo.copy_from_slice(env_total);
         density_loo.copy_from_slice(density_total);
         env_loo[prev_idx] = (env_loo[prev_idx] - 1.0).max(0.0);
@@ -14701,13 +14373,28 @@ fn mean_c_score_loo_at_indices_with_prev_reused(
         density_loo[prev_idx] = (density_loo[prev_idx] - 1.0 / denom).max(0.0);
         let (c_score_scan, _, _, _) =
             compute_c_score_level_scans(space, workspace, env_loo, density_loo, du_scan);
-        let value = c_score_scan[eval_idx];
-        if value.is_finite() {
-            sum += value;
-            count += 1;
+        let current_value = c_score_scan[current_eval_idx];
+        if current_value.is_finite() {
+            current_sum += current_value;
+            current_count += 1;
+        }
+        let chosen_value = c_score_scan[chosen_eval_idx];
+        if chosen_value.is_finite() {
+            chosen_sum += chosen_value;
+            chosen_count += 1;
         }
     }
-    if count == 0 { 0.0 } else { sum / count as f32 }
+    let current_mean = if current_count == 0 {
+        0.0
+    } else {
+        current_sum / current_count as f32
+    };
+    let chosen_mean = if chosen_count == 0 {
+        0.0
+    } else {
+        chosen_sum / chosen_count as f32
+    };
+    (current_mean, chosen_mean)
 }
 
 #[cfg(test)]
@@ -21457,6 +21144,8 @@ mod tests {
         let log2_ratio_scan = build_log2_ratio_scan(&space, anchor_hz);
         let mut indices = vec![1usize, 3, 4];
         let (env_scan, density_scan) = build_env_scans(&space, anchor_idx, &indices, &du_scan);
+        let (c_score_scan, _, _, _) =
+            compute_c_score_level_scans(&space, &workspace, &env_scan, &density_scan, &du_scan);
         let prev_indices = indices.clone();
         let mut rng = StdRng::seed_from_u64(0);
         let stats = update_e2_sweep_scored_loo(
@@ -21468,6 +21157,7 @@ mod tests {
             &env_scan,
             &density_scan,
             &du_scan,
+            &c_score_scan,
             &log2_ratio_scan,
             0,
             space.n_bins() - 1,
@@ -21508,6 +21198,8 @@ mod tests {
         let mut indices = vec![1usize, 3, 4];
         let prev_indices = indices.clone();
         let (env_scan, density_scan) = build_env_scans(&space, anchor_idx, &indices, &du_scan);
+        let (c_score_scan, _, _, _) =
+            compute_c_score_level_scans(&space, &workspace, &env_scan, &density_scan, &du_scan);
         let mut rng = StdRng::seed_from_u64(1);
         let stats = update_e2_sweep_scored_loo(
             E2UpdateSchedule::RandomSingle,
@@ -21518,6 +21210,7 @@ mod tests {
             &env_scan,
             &density_scan,
             &du_scan,
+            &c_score_scan,
             &log2_ratio_scan,
             0,
             space.n_bins() - 1,
@@ -21542,47 +21235,9 @@ mod tests {
     fn nohill_mean_c_score_loo_series_is_finite() {
         assert_mean_c_score_loo_series_finite(
             E2Condition::NoHillClimb,
-            E2PhaseMode::Normal,
+            E2PhaseMode::DissonanceThenConsonance,
             E2_STEP_SEMITONES,
             0xC0FFEE_u64,
-        );
-    }
-
-    #[test]
-    fn parse_e2_phase_defaults_to_dtc() {
-        let args: Vec<String> = Vec::new();
-        let phase = parse_e2_phase(&args).expect("parse_e2_phase failed");
-        assert_eq!(phase, E2PhaseMode::DissonanceThenConsonance);
-    }
-
-    #[test]
-    fn parse_e2_phase_accepts_expected_values() {
-        let cases: &[(&[&str], E2PhaseMode)] = &[
-            (&["--e2-phase", "normal"], E2PhaseMode::Normal),
-            (&["--e2-phase=normal"], E2PhaseMode::Normal),
-            (
-                &["--e2-phase", "dtc"],
-                E2PhaseMode::DissonanceThenConsonance,
-            ),
-            (
-                &["--e2-phase=dissonance_then_consonance"],
-                E2PhaseMode::DissonanceThenConsonance,
-            ),
-        ];
-        for (args, expected) in cases {
-            let args = args.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-            let phase = parse_e2_phase(&args).expect("parse_e2_phase failed");
-            assert_eq!(phase, *expected);
-        }
-    }
-
-    #[test]
-    fn parse_e2_phase_rejects_invalid_values() {
-        let args = vec!["--e2-phase".to_string(), "foo".to_string()];
-        let err = parse_e2_phase(&args).expect_err("expected parse_e2_phase to fail");
-        assert!(
-            err.contains("Usage: paper"),
-            "expected usage in error, got: {err}"
         );
     }
 
@@ -21659,42 +21314,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_e4_legacy_defaults_off() {
-        let args: Vec<String> = Vec::new();
-        let enabled = parse_e4_legacy(&args).expect("parse_e4_legacy failed");
-        assert!(!enabled);
-    }
-
-    #[test]
-    fn parse_e4_legacy_accepts_expected_values() {
-        let cases: &[(&[&str], bool)] = &[
-            (&["--e4-legacy", "on"], true),
-            (&["--e4-legacy=on"], true),
-            (&["--e4-legacy", "off"], false),
-            (&["--e4-legacy=off"], false),
-            (&["--e4-legacy", "true"], true),
-            (&["--e4-legacy=false"], false),
-            (&["--e4-legacy", "1"], true),
-            (&["--e4-legacy=0"], false),
-        ];
-        for (args, expected) in cases {
-            let args = args.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-            let enabled = parse_e4_legacy(&args).expect("parse_e4_legacy failed");
-            assert_eq!(enabled, *expected);
-        }
-    }
-
-    #[test]
-    fn parse_e4_legacy_rejects_invalid_values() {
-        let args = vec!["--e4-legacy".to_string(), "maybe".to_string()];
-        let err = parse_e4_legacy(&args).expect_err("expected parse_e4_legacy to fail");
-        assert!(
-            err.contains("Usage: paper"),
-            "expected usage in error, got: {err}"
-        );
-    }
-
-    #[test]
     fn parse_e4_debug_fit_defaults_off() {
         let args: Vec<String> = Vec::new();
         let enabled = parse_e4_debug_fit_metrics(&args).expect("parse_e4_debug_fit_metrics failed");
@@ -21737,8 +21356,6 @@ mod tests {
             "on".to_string(),
             "--e4-kernel-gate".to_string(),
             "off".to_string(),
-            "--e4-legacy".to_string(),
-            "off".to_string(),
             "--e4-debug-fit-metrics".to_string(),
             "off".to_string(),
             "--e4-env-partials".to_string(),
@@ -21751,8 +21368,6 @@ mod tests {
             "0.3".to_string(),
             "--e4-dyn-step-cents".to_string(),
             "60".to_string(),
-            "--e2-phase".to_string(),
-            "normal".to_string(),
             "--exp".to_string(),
             "e2,e4".to_string(),
         ];
@@ -21775,7 +21390,7 @@ mod tests {
     fn baseline_mean_c_score_loo_series_is_finite() {
         assert_mean_c_score_loo_series_finite(
             E2Condition::Baseline,
-            E2PhaseMode::Normal,
+            E2PhaseMode::DissonanceThenConsonance,
             E2_STEP_SEMITONES,
             0xC0FFEE_u64 + 1,
         );
@@ -21792,7 +21407,7 @@ mod tests {
             0xC0FFEE_u64 + 12,
             E2Condition::Baseline,
             E2_STEP_SEMITONES,
-            E2PhaseMode::Normal,
+            E2PhaseMode::DissonanceThenConsonance,
         );
         assert_eq!(run.mean_c_score_chosen_loo_series.len(), E2_SWEEPS);
         assert!(
@@ -21814,7 +21429,7 @@ mod tests {
             0xC0FFEE_u64 + 13,
             E2Condition::Baseline,
             E2_STEP_SEMITONES,
-            E2PhaseMode::Normal,
+            E2PhaseMode::DissonanceThenConsonance,
         );
         assert_eq!(run.mean_abs_delta_semitones_series.len(), E2_SWEEPS);
         assert!(
@@ -21835,7 +21450,7 @@ mod tests {
     fn norep_mean_c_score_loo_series_is_finite() {
         assert_mean_c_score_loo_series_finite(
             E2Condition::NoRepulsion,
-            E2PhaseMode::Normal,
+            E2PhaseMode::DissonanceThenConsonance,
             E2_STEP_SEMITONES,
             0xC0FFEE_u64 + 2,
         );

@@ -7,8 +7,8 @@ For E4, prefer fixed-population scripts to avoid density/history confounds.
 ## Run
 
 ```bash
-cargo run -- --nogui examples/paper/scenarios/e1_landscape_scan_demo.rhai
-cargo run -- --nogui examples/paper/scenarios/e1_landscape_scan_demo.rhai
+cargo run -- --nogui experiments/scenarios/e1_landscape_scan_demo.rhai
+cargo run -- --nogui experiments/scenarios/e1_landscape_scan_demo.rhai
 ```
 
 ## Scenarios

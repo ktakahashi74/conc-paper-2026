@@ -29,16 +29,16 @@ Conchordal is a Rust project (`../conchordal/Cargo.toml`). Main source is under 
 
 ### Paper Experiment Code
 
-Experiment runner lives in this repository at `examples/paper/`.
+Experiment runner lives in this repository at `experiments/`.
 
 | File | Role |
 |---|---|
-| `examples/paper/paper_plots.rs` | Plot generation logic for all experiments |
-| `examples/paper/sim.rs` | Simulation harness shared across experiments |
-| `examples/paper/main.rs` | CLI entry point (`cargo run --bin paper -- --exp <name>`) |
-| `examples/paper/scenarios/*.rhai` | Rhai scenario scripts used by each experiment |
+| `experiments/paper_plots.rs` | Plot generation logic for all experiments |
+| `experiments/sim.rs` | Simulation harness shared across experiments |
+| `experiments/main.rs` | CLI entry point (`cargo run --bin paper -- --exp <name>`) |
+| `experiments/scenarios/*.rhai` | Rhai scenario scripts used by each experiment |
 
-See `examples/paper/README.md` for run instructions and available options.
+See `experiments/README.md` for run instructions and available options.
 
 ### Experiment ID Mapping
 
