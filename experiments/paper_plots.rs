@@ -29,10 +29,10 @@ use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 // ── Nocturnal palette ──────────────────────────────────────────────
-const PAL_H: RGBColor = RGBColor(107, 157, 175); // #6B9DAF steel blue
+const PAL_H: RGBColor = RGBColor(63, 110, 126); // #3F6E7E dark steel blue
 const PAL_R: RGBColor = RGBColor(139, 34, 82); // #8B2252 dark rose
 const PAL_C: RGBColor = RGBColor(93, 87, 107); // #5D576B purple grey
-const PAL_CD: RGBColor = RGBColor(155, 137, 179); // #9B89B3 lavender
+const PAL_CD: RGBColor = RGBColor(62, 111, 182); // #3E6FB6 cobalt blue
 
 const SPACE_BINS_PER_OCT: u32 = 400;
 
