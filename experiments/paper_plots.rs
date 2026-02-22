@@ -2409,7 +2409,6 @@ fn run_e2_once(
                 &env_scan,
                 &density_scan,
                 &du_scan,
-                &c_score_scan,
                 &log2_ratio_scan,
                 min_idx,
                 max_idx,
@@ -2436,7 +2435,6 @@ fn run_e2_once(
                 &env_scan,
                 &density_scan,
                 &du_scan,
-                &c_score_scan,
                 &log2_ratio_scan,
                 min_idx,
                 max_idx,
@@ -13551,6 +13549,7 @@ fn update_one_agent_scored_loo(
     lambda: f32,
     sigma: f32,
     temperature: f32,
+    update_allowed: bool,
     block_backtrack: bool,
     backtrack_targets: Option<&[usize]>,
     u01: f32,
@@ -13587,50 +13586,54 @@ fn update_one_agent_scored_loo(
         None
     };
 
-    let start = (agent_idx as isize - k as isize).max(min_idx as isize) as usize;
-    let end = (agent_idx as isize + k as isize).min(max_idx as isize) as usize;
-    let mut best_idx = agent_idx;
-    let mut best_score = f32::NEG_INFINITY;
-    let mut best_repulsion = 0.0f32;
-    let mut found_candidate = false;
-    for cand in start..=end {
-        if cand == agent_idx {
-            continue;
-        }
-        let cand_log2 = log2_ratio_scan[cand];
-        let mut repulsion = 0.0f32;
-        if !skip_repulsion {
-            for (j, &other_log2) in prev_log2.iter().enumerate() {
-                if j == agent_i {
-                    continue;
+    let (chosen_idx, chosen_score, chosen_repulsion, accepted_worse) = if update_allowed {
+        let start = (agent_idx as isize - k as isize).max(min_idx as isize) as usize;
+        let end = (agent_idx as isize + k as isize).min(max_idx as isize) as usize;
+        let mut best_idx = agent_idx;
+        let mut best_score = f32::NEG_INFINITY;
+        let mut best_repulsion = 0.0f32;
+        let mut found_candidate = false;
+        for cand in start..=end {
+            if cand == agent_idx {
+                continue;
+            }
+            let cand_log2 = log2_ratio_scan[cand];
+            let mut repulsion = 0.0f32;
+            if !skip_repulsion {
+                for (j, &other_log2) in prev_log2.iter().enumerate() {
+                    if j == agent_i {
+                        continue;
+                    }
+                    let dist = (cand_log2 - other_log2).abs();
+                    repulsion += (-dist / sigma).exp();
                 }
-                let dist = (cand_log2 - other_log2).abs();
-                repulsion += (-dist / sigma).exp();
+            }
+            let c_score = c_score_scan[cand];
+            let score = score_sign * c_score - lambda * repulsion;
+            if let Some(prev_idx) = backtrack_target
+                && cand == prev_idx
+                && (score - current_score) <= E2_BACKTRACK_ALLOW_EPS
+            {
+                continue;
+            }
+            if score > best_score {
+                best_score = score;
+                best_idx = cand;
+                best_repulsion = repulsion;
+                found_candidate = true;
             }
         }
-        let c_score = c_score_scan[cand];
-        let score = score_sign * c_score - lambda * repulsion;
-        if let Some(prev_idx) = backtrack_target
-            && cand == prev_idx
-            && (score - current_score) <= E2_BACKTRACK_ALLOW_EPS
-        {
-            continue;
-        }
-        if score > best_score {
-            best_score = score;
-            best_idx = cand;
-            best_repulsion = repulsion;
-            found_candidate = true;
-        }
-    }
-    let (chosen_idx, chosen_score, chosen_repulsion, accepted_worse) = if found_candidate {
-        let delta = best_score - current_score;
-        if delta > E2_SCORE_IMPROVE_EPS {
-            (best_idx, best_score, best_repulsion, false)
-        } else if delta < 0.0 {
-            let (accept, accepted_worse) = metropolis_accept(delta, temperature, u01);
-            if accept {
-                (best_idx, best_score, best_repulsion, accepted_worse)
+        if found_candidate {
+            let delta = best_score - current_score;
+            if delta > E2_SCORE_IMPROVE_EPS {
+                (best_idx, best_score, best_repulsion, false)
+            } else if delta < 0.0 {
+                let (accept, accepted_worse) = metropolis_accept(delta, temperature, u01);
+                if accept {
+                    (best_idx, best_score, best_repulsion, accepted_worse)
+                } else {
+                    (agent_idx, current_score, current_repulsion, false)
+                }
             } else {
                 (agent_idx, current_score, current_repulsion, false)
             }
@@ -13670,7 +13673,6 @@ fn update_e2_sweep_scored_loo(
     env_total: &[f32],
     density_total: &[f32],
     du_scan: &[f32],
-    c_score_total: &[f32],
     log2_ratio_scan: &[f32],
     min_idx: usize,
     max_idx: usize,
@@ -13701,7 +13703,6 @@ fn update_e2_sweep_scored_loo(
     space.assert_scan_len_named(env_total, "env_total");
     space.assert_scan_len_named(density_total, "density_total");
     space.assert_scan_len_named(du_scan, "du_scan");
-    space.assert_scan_len_named(c_score_total, "c_score_total");
     let sigma = sigma.max(1e-6);
     let mut order: Vec<usize> = (0..indices.len()).collect();
     if matches!(schedule, E2UpdateSchedule::RandomSingle) {
@@ -13742,58 +13743,31 @@ fn update_e2_sweep_scored_loo(
         if update_allowed {
             attempt_count += 1;
         }
-        let stats = if update_allowed {
-            update_one_agent_scored_loo(
-                agent_i,
-                indices,
-                prev_indices,
-                &prev_log2,
-                space,
-                workspace,
-                env_total,
-                density_total,
-                du_scan,
-                log2_ratio_scan,
-                min_idx,
-                max_idx,
-                k,
-                score_sign,
-                lambda,
-                sigma,
-                temperature,
-                block_backtrack,
-                backtrack_targets,
-                u01_by_agent[agent_i],
-                &mut env_loo,
-                &mut density_loo,
-            )
-        } else {
-            // Keep non-updating agents fixed without recomputing full LOO scans.
-            let agent_idx = prev_indices[agent_i];
-            let current_log2 = log2_ratio_scan[agent_idx];
-            let mut current_repulsion = 0.0f32;
-            if lambda > 0.0 {
-                for (j, &other_log2) in prev_log2.iter().enumerate() {
-                    if j == agent_i {
-                        continue;
-                    }
-                    let dist = (current_log2 - other_log2).abs();
-                    current_repulsion += (-dist / sigma).exp();
-                }
-            }
-            let c_score_current = c_score_total[agent_idx];
-            let current_score = score_sign * c_score_current - lambda * current_repulsion;
-            OneUpdateStats {
-                moved: false,
-                accepted_worse: false,
-                abs_delta_semitones: 0.0,
-                abs_delta_semitones_moved: 0.0,
-                c_score_current,
-                c_score_chosen: c_score_current,
-                chosen_score: current_score,
-                chosen_repulsion: current_repulsion,
-            }
-        };
+        let stats = update_one_agent_scored_loo(
+            agent_i,
+            indices,
+            prev_indices,
+            &prev_log2,
+            space,
+            workspace,
+            env_total,
+            density_total,
+            du_scan,
+            log2_ratio_scan,
+            min_idx,
+            max_idx,
+            k,
+            score_sign,
+            lambda,
+            sigma,
+            temperature,
+            update_allowed,
+            block_backtrack,
+            backtrack_targets,
+            u01_by_agent[agent_i],
+            &mut env_loo,
+            &mut density_loo,
+        );
         if stats.moved {
             moved_count += 1;
         }
@@ -14339,7 +14313,8 @@ fn mean_c_score_loo_pair_at_indices_with_prev_reused(
     env_loo: &mut Vec<f32>,
     density_loo: &mut Vec<f32>,
 ) -> (f32, f32) {
-    if prev_indices.is_empty() || current_eval_indices.is_empty() || chosen_eval_indices.is_empty() {
+    if prev_indices.is_empty() || current_eval_indices.is_empty() || chosen_eval_indices.is_empty()
+    {
         return (0.0, 0.0);
     }
     debug_assert_eq!(
@@ -21144,8 +21119,6 @@ mod tests {
         let log2_ratio_scan = build_log2_ratio_scan(&space, anchor_hz);
         let mut indices = vec![1usize, 3, 4];
         let (env_scan, density_scan) = build_env_scans(&space, anchor_idx, &indices, &du_scan);
-        let (c_score_scan, _, _, _) =
-            compute_c_score_level_scans(&space, &workspace, &env_scan, &density_scan, &du_scan);
         let prev_indices = indices.clone();
         let mut rng = StdRng::seed_from_u64(0);
         let stats = update_e2_sweep_scored_loo(
@@ -21157,7 +21130,6 @@ mod tests {
             &env_scan,
             &density_scan,
             &du_scan,
-            &c_score_scan,
             &log2_ratio_scan,
             0,
             space.n_bins() - 1,
@@ -21198,8 +21170,6 @@ mod tests {
         let mut indices = vec![1usize, 3, 4];
         let prev_indices = indices.clone();
         let (env_scan, density_scan) = build_env_scans(&space, anchor_idx, &indices, &du_scan);
-        let (c_score_scan, _, _, _) =
-            compute_c_score_level_scans(&space, &workspace, &env_scan, &density_scan, &du_scan);
         let mut rng = StdRng::seed_from_u64(1);
         let stats = update_e2_sweep_scored_loo(
             E2UpdateSchedule::RandomSingle,
@@ -21210,7 +21180,6 @@ mod tests {
             &env_scan,
             &density_scan,
             &du_scan,
-            &c_score_scan,
             &log2_ratio_scan,
             0,
             space.n_bins() - 1,
