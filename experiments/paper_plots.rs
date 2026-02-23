@@ -29,7 +29,7 @@ use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 // ── Nocturnal palette ──────────────────────────────────────────────
-const PAL_H: RGBColor = RGBColor(63, 110, 126); // #3F6E7E dark steel blue
+const PAL_H: RGBColor = RGBColor(58, 106, 120); // #3A6A78 deep steel teal
 const PAL_R: RGBColor = RGBColor(139, 34, 82); // #8B2252 dark rose
 const PAL_C: RGBColor = RGBColor(93, 87, 107); // #5D576B purple grey
 const PAL_CD: RGBColor = RGBColor(62, 111, 182); // #3E6FB6 cobalt blue
@@ -1089,9 +1089,8 @@ fn plot_e1_landscape_scan(
         consonance_representation: ConsonanceRepresentationParams {
             beta: E2_C_LEVEL_BETA,
             theta: E2_C_LEVEL_THETA,
-            temperature: 1.0,
-            epsilon: 1e-6,
         },
+        consonance_density_roughness_gain: 1.0,
         roughness_scalar_mode: RoughnessScalarMode::Total,
         roughness_half: 0.1,
         loudness_exp: 1.0,
@@ -1125,18 +1124,21 @@ fn plot_e1_landscape_scan(
         &mut perc_h_state01_scan,
     );
 
-    let mut perc_c_score_scan = vec![0.0f32; space.n_bins()];
-    let mut perc_c_weight_scan = vec![0.0f32; space.n_bins()];
+    let mut perc_c_field_scan = vec![0.0f32; space.n_bins()];
+    let mut perc_c_density_scan = vec![0.0f32; space.n_bins()];
+    let density_kernel = ConsonanceKernel::density_with_rho(params.consonance_density_roughness_gain);
     for i in 0..space.n_bins() {
         let h01 = perc_h_state01_scan[i];
         let r01 = perc_r_state01_scan[i];
-        let c_score = params.consonance_kernel.score(h01, r01);
-        perc_c_score_scan[i] = if c_score.is_finite() { c_score } else { 0.0 };
-        perc_c_weight_scan[i] = params.consonance_representation.weight(c_score);
+        let c_field = params.consonance_kernel.score(h01, r01);
+        perc_c_field_scan[i] = if c_field.is_finite() { c_field } else { 0.0 };
+        let c_density_raw = density_kernel.score(h01, r01).max(0.0);
+        perc_c_density_scan[i] = if c_density_raw.is_finite() {
+            c_density_raw
+        } else {
+            0.0
+        };
     }
-    let perc_c_density_scan = params
-        .consonance_representation
-        .density(&perc_c_weight_scan);
 
     let anchor_log2 = anchor_hz.log2();
     let log2_ratio_scan: Vec<f32> = space
@@ -1147,7 +1149,7 @@ fn plot_e1_landscape_scan(
 
     space.assert_scan_len_named(&perc_r_state01_scan, "perc_r_state01_scan");
     space.assert_scan_len_named(&perc_h_state01_scan, "perc_h_state01_scan");
-    space.assert_scan_len_named(&perc_c_score_scan, "perc_c_score_scan");
+    space.assert_scan_len_named(&perc_c_field_scan, "perc_c_field_scan");
     space.assert_scan_len_named(&perc_c_density_scan, "perc_c_density_scan");
     space.assert_scan_len_named(&log2_ratio_scan, "log2_ratio_scan");
 
@@ -1158,7 +1160,7 @@ fn plot_e1_landscape_scan(
         &log2_ratio_scan,
         &perc_h_pot_scan,
         &perc_r_state01_scan,
-        &perc_c_score_scan,
+        &perc_c_field_scan,
         &perc_c_density_scan,
     )?;
     let h_triplet_path = out_dir.join("paper_e1_h_mirror_m0_m05_m1.svg");
@@ -1357,7 +1359,7 @@ fn plot_e2_emergent_harmony(
     let mean_plot_path = out_dir.join("paper_e2_mean_c_level_over_time.svg");
     render_series_plot_fixed_y(
         &mean_plot_path,
-        &format!("E2 Mean C_level01 Over Time ({caption_suffix})"),
+        &format!("Mean C_level01 Over Time ({caption_suffix})"),
         "mean C_level01",
         &series_pairs(&baseline_run.mean_c_level_series),
         &marker_steps,
@@ -1368,7 +1370,7 @@ fn plot_e2_emergent_harmony(
     let mean_c_score_path = out_dir.join("paper_e2_mean_c_score_over_time.svg");
     render_series_plot_with_markers(
         &mean_c_score_path,
-        &format!("E2 Mean C Score Over Time ({caption_suffix})"),
+        &format!("Mean C Score Over Time ({caption_suffix})"),
         "mean C score",
         &series_pairs(&baseline_run.mean_c_series),
         &marker_steps,
@@ -1377,7 +1379,7 @@ fn plot_e2_emergent_harmony(
     let mean_c_score_loo_path = out_dir.join("paper_e2_mean_c_score_loo_over_time.svg");
     render_series_plot_with_markers(
         &mean_c_score_loo_path,
-        &format!("E2 Mean C Score (LOO Current) Over Time ({caption_suffix})"),
+        &format!("Mean C Score (LOO Current) Over Time ({caption_suffix})"),
         "mean C score (LOO current)",
         &series_pairs(&baseline_run.mean_c_score_loo_series),
         &marker_steps,
@@ -1387,7 +1389,7 @@ fn plot_e2_emergent_harmony(
         out_dir.join("paper_e2_mean_c_score_chosen_loo_over_time.svg");
     render_series_plot_with_markers(
         &mean_c_score_chosen_loo_path,
-        &format!("E2 Mean C Score (LOO Chosen) Over Time ({caption_suffix})"),
+        &format!("Mean C Score (LOO Chosen) Over Time ({caption_suffix})"),
         "mean C score (LOO chosen)",
         &series_pairs(&baseline_run.mean_c_score_chosen_loo_series),
         &marker_steps,
@@ -1396,7 +1398,7 @@ fn plot_e2_emergent_harmony(
     let accept_worse_path = out_dir.join("paper_e2_accepted_worse_frac_over_time.svg");
     render_series_plot_fixed_y(
         &accept_worse_path,
-        &format!("E2 Accepted Worse Fraction ({caption_suffix})"),
+        &format!("Accepted Worse Fraction ({caption_suffix})"),
         "accepted worse frac",
         &series_pairs(&baseline_run.accepted_worse_frac_series),
         &marker_steps,
@@ -1407,7 +1409,7 @@ fn plot_e2_emergent_harmony(
     let mean_score_path = out_dir.join("paper_e2_mean_score_over_time.svg");
     render_series_plot_with_markers(
         &mean_score_path,
-        &format!("E2 Mean Score Over Time ({caption_suffix})"),
+        &format!("Mean Score Over Time ({caption_suffix})"),
         "mean score (C - λ·repulsion)",
         &series_pairs(&baseline_run.mean_score_series),
         &marker_steps,
@@ -1416,7 +1418,7 @@ fn plot_e2_emergent_harmony(
     let mean_repulsion_path = out_dir.join("paper_e2_mean_repulsion_over_time.svg");
     render_series_plot_with_markers(
         &mean_repulsion_path,
-        &format!("E2 Mean Repulsion Over Time ({caption_suffix})"),
+        &format!("Mean Repulsion Over Time ({caption_suffix})"),
         "mean repulsion",
         &series_pairs(&baseline_run.mean_repulsion_series),
         &marker_steps,
@@ -1425,7 +1427,7 @@ fn plot_e2_emergent_harmony(
     let moved_frac_path = out_dir.join("paper_e2_moved_frac_over_time.svg");
     render_series_plot_with_markers(
         &moved_frac_path,
-        &format!("E2 Moved Fraction Over Time ({caption_suffix})"),
+        &format!("Moved Fraction Over Time ({caption_suffix})"),
         "moved fraction",
         &series_pairs(&baseline_run.moved_frac_series),
         &marker_steps,
@@ -1434,7 +1436,7 @@ fn plot_e2_emergent_harmony(
     let attempted_update_path = out_dir.join("paper_e2_attempted_update_frac_over_time.svg");
     render_series_plot_fixed_y(
         &attempted_update_path,
-        &format!("E2 Attempted Update Fraction ({caption_suffix})"),
+        &format!("Attempted Update Fraction ({caption_suffix})"),
         "attempted update frac",
         &series_pairs(&baseline_run.attempted_update_frac_series),
         &marker_steps,
@@ -1445,7 +1447,7 @@ fn plot_e2_emergent_harmony(
     let moved_given_attempt_path = out_dir.join("paper_e2_moved_given_attempt_frac_over_time.svg");
     render_series_plot_fixed_y(
         &moved_given_attempt_path,
-        &format!("E2 Moved Given Attempt ({caption_suffix})"),
+        &format!("Moved Given Attempt ({caption_suffix})"),
         "moved given attempt frac",
         &series_pairs(&baseline_run.moved_given_attempt_frac_series),
         &marker_steps,
@@ -1456,7 +1458,7 @@ fn plot_e2_emergent_harmony(
     let abs_delta_path = out_dir.join("paper_e2_mean_abs_delta_semitones_over_time.svg");
     render_series_plot_with_markers(
         &abs_delta_path,
-        &format!("E2 Mean |Δ| Semitones Over Time ({caption_suffix})"),
+        &format!("Mean |Δ| Semitones Over Time ({caption_suffix})"),
         "mean |Δ| semitones",
         &series_pairs(&baseline_run.mean_abs_delta_semitones_series),
         &marker_steps,
@@ -1466,7 +1468,7 @@ fn plot_e2_emergent_harmony(
         out_dir.join("paper_e2_mean_abs_delta_semitones_moved_over_time.svg");
     render_series_plot_with_markers(
         &abs_delta_moved_path,
-        &format!("E2 Mean |Δ| Semitones (Moved) Over Time ({caption_suffix})"),
+        &format!("Mean |Δ| Semitones (Moved) Over Time ({caption_suffix})"),
         "mean |Δ| semitones (moved only)",
         &series_pairs(&baseline_run.mean_abs_delta_semitones_moved_series),
         &marker_steps,
@@ -1486,7 +1488,7 @@ fn plot_e2_emergent_harmony(
     let pairwise_hist_path = out_dir.join("paper_e2_pairwise_interval_histogram.svg");
     render_interval_histogram(
         &pairwise_hist_path,
-        "E2 Pairwise Interval Histogram (Semitones, 12=octave)",
+        "Pairwise Interval Histogram (Semitones, 12=octave)",
         &pairwise_intervals,
         0.0,
         12.0,
@@ -1495,7 +1497,7 @@ fn plot_e2_emergent_harmony(
     )?;
 
     let hist_path = out_dir.join("paper_e2_interval_histogram.svg");
-    let hist_caption = format!("E2 Interval Histogram ({post_label}, bin=0.50st)");
+    let hist_caption = format!("Interval Histogram ({post_label}, bin=0.50st)");
     render_interval_histogram(
         &hist_path,
         &hist_caption,
@@ -1636,7 +1638,7 @@ fn plot_e2_emergent_harmony(
     let sweep_mean_path = out_dir.join("paper_e2_mean_c_level_over_time_seeds.svg");
     render_series_plot_with_band(
         &sweep_mean_path,
-        "E2 Mean C_level01 (seed sweep)",
+        "Mean C_level01 (seed sweep)",
         "mean C_level01",
         &baseline_stats.mean_c_level,
         &baseline_stats.std_c_level,
@@ -1645,7 +1647,7 @@ fn plot_e2_emergent_harmony(
     let sweep_mean_ci_path = out_dir.join("paper_e2_mean_c_level_over_time_seeds_ci95.svg");
     render_series_plot_with_band(
         &sweep_mean_ci_path,
-        "E2 Mean C_level01 (seed sweep, 95% CI)",
+        "Mean C_level01 (seed sweep, 95% CI)",
         "mean C_level01",
         &baseline_stats.mean_c_level,
         &baseline_ci95_c_level,
@@ -1655,7 +1657,7 @@ fn plot_e2_emergent_harmony(
     let sweep_score_path = out_dir.join("paper_e2_mean_score_over_time_seeds.svg");
     render_series_plot_with_band(
         &sweep_score_path,
-        "E2 Mean Score (seed sweep)",
+        "Mean Score (seed sweep)",
         "mean score",
         &baseline_stats.mean_score,
         &baseline_stats.std_score,
@@ -1665,7 +1667,7 @@ fn plot_e2_emergent_harmony(
     let sweep_c_score_loo_path = out_dir.join("paper_e2_mean_c_score_loo_over_time_seeds.svg");
     render_series_plot_with_band(
         &sweep_c_score_loo_path,
-        "E2 Mean C Score (LOO current, seed sweep)",
+        "Mean C Score (LOO current, seed sweep)",
         "mean C score (LOO current)",
         &baseline_stats.mean_c_score_loo,
         &baseline_stats.std_c_score_loo,
@@ -1675,7 +1677,7 @@ fn plot_e2_emergent_harmony(
     let sweep_rep_path = out_dir.join("paper_e2_mean_repulsion_over_time_seeds.svg");
     render_series_plot_with_band(
         &sweep_rep_path,
-        "E2 Mean Repulsion (seed sweep)",
+        "Mean Repulsion (seed sweep)",
         "mean repulsion",
         &baseline_stats.mean_repulsion,
         &baseline_stats.std_repulsion,
@@ -1694,7 +1696,7 @@ fn plot_e2_emergent_harmony(
     let control_plot_path = out_dir.join("paper_e2_mean_c_level_over_time_controls.svg");
     render_series_plot_multi(
         &control_plot_path,
-        "E2 Mean C_level01 (controls)",
+        "Mean C_level01 (controls)",
         "mean C_level01",
         &[
             ("baseline", &baseline_stats.mean_c_level, PAL_H),
@@ -1707,7 +1709,7 @@ fn plot_e2_emergent_harmony(
     let control_c_path = out_dir.join("paper_e2_mean_c_over_time_controls_seeds.svg");
     render_series_plot_multi_with_band(
         &control_c_path,
-        "E2 Mean C score (controls, seed sweep)",
+        "Mean C score (controls, seed sweep)",
         "mean C score",
         &[
             (
@@ -1736,7 +1738,7 @@ fn plot_e2_emergent_harmony(
         out_dir.join("paper_e2_mean_c_score_loo_over_time_controls_seeds.svg");
     render_series_plot_multi_with_band(
         &control_c_score_loo_path,
-        "E2 Mean C score (LOO current, controls, seed sweep)",
+        "Mean C score (LOO current, controls, seed sweep)",
         "mean C score (LOO current)",
         &[
             (
@@ -1837,7 +1839,7 @@ fn plot_e2_emergent_harmony(
     let hist_plot_05 = out_dir.join("paper_e2_interval_hist_post_seed_sweep_bw0p50.svg");
     render_hist_mean_std(
         &hist_plot_05,
-        &format!("E2 {post_label_title} Interval Histogram (seed sweep, mean frac, bin=0.50st)"),
+        &format!("{post_label_title} Interval Histogram (seed sweep, mean frac, bin=0.50st)"),
         &hist_stats_05.centers,
         &hist_stats_05.mean_frac,
         &hist_stats_05.std_frac,
@@ -1853,7 +1855,7 @@ fn plot_e2_emergent_harmony(
     let hist_plot_025 = out_dir.join("paper_e2_interval_hist_post_seed_sweep_bw0p25.svg");
     render_hist_mean_std(
         &hist_plot_025,
-        &format!("E2 {post_label_title} Interval Histogram (seed sweep, mean frac, bin=0.25st)"),
+        &format!("{post_label_title} Interval Histogram (seed sweep, mean frac, bin=0.25st)"),
         &hist_stats_025.centers,
         &hist_stats_025.mean_frac,
         &hist_stats_025.std_frac,
@@ -1864,7 +1866,7 @@ fn plot_e2_emergent_harmony(
         out_dir.join("paper_e2_interval_hist_post_seed_sweep_bw0p25_paper.svg");
     render_hist_mean_std_fraction_auto_y(
         &hist_plot_025_paper,
-        &format!("E2 {post_label_title} Interval Histogram (paper, bin=0.25st)"),
+        &format!("{post_label_title} Interval Histogram (paper, bin=0.25st)"),
         &hist_stats_025.centers,
         &hist_stats_025.mean_frac,
         &hist_stats_025.std_frac,
@@ -1915,7 +1917,7 @@ fn plot_e2_emergent_harmony(
     render_hist_mean_std(
         &pairwise_hist_plot,
         &format!(
-            "E2 Pairwise Interval Histogram (final snapshot, seed sweep, mean frac, bin={:.2}st)",
+            "Pairwise Interval Histogram (final snapshot, seed sweep, mean frac, bin={:.2}st)",
             E2_PAIRWISE_BIN_ST
         ),
         &pairwise_hist_stats.centers,
@@ -1930,7 +1932,7 @@ fn plot_e2_emergent_harmony(
         out_dir.join("paper_e2_pairwise_interval_histogram_seeds_paper.svg");
     render_pairwise_histogram_paper(
         &pairwise_hist_plot_paper,
-        "E2 Pairwise Interval Histogram (paper style, 95% CI)",
+        "Pairwise Interval Histogram (paper style, 95% CI)",
         &pairwise_hist_stats.centers,
         &pairwise_hist_stats.mean_frac,
         &pairwise_ci95_frac,
@@ -1958,7 +1960,7 @@ fn plot_e2_emergent_harmony(
         out_dir.join("paper_e2_pairwise_interval_histogram_controls_seeds.svg");
     render_pairwise_histogram_controls_overlay(
         &pairwise_controls_plot,
-        "E2 Pairwise Interval Histogram (controls overlay)",
+        "Pairwise Interval Histogram (controls overlay)",
         &pairwise_hist_stats.centers,
         &pairwise_hist_stats.mean_frac,
         &pairwise_hist_nohill.mean_frac,
@@ -2031,7 +2033,7 @@ fn plot_e2_emergent_harmony(
         out_dir.join("paper_e2_interval_hist_post_controls_seed_sweep_bw0p50.svg");
     render_hist_controls_fraction(
         &control_hist_plot,
-        &format!("E2 {post_label_title} Interval Histogram (controls, mean frac, bin=0.50st)"),
+        &format!("{post_label_title} Interval Histogram (controls, mean frac, bin=0.50st)"),
         &hist_stats_05.centers,
         &[
             ("baseline", &hist_stats_05.mean_frac, PAL_H),
@@ -2847,7 +2849,7 @@ fn plot_e3_metabolic_selection(
             ));
             let corr_stats_firstk = render_e3_scatter_with_stats(
                 &scatter_firstk_path,
-                "E3 C_level01_firstK vs Lifetime",
+                "C_level01_firstK vs Lifetime",
                 "C_level01_firstK",
                 &arrays.c_level_firstk,
                 &arrays.lifetimes,
@@ -2860,7 +2862,7 @@ fn plot_e3_metabolic_selection(
             ));
             let corr_stats_birth = render_e3_scatter_with_stats(
                 &scatter_birth_path,
-                "E3 C_level01_birth vs Lifetime",
+                "C_level01_birth vs Lifetime",
                 "C_level01_birth",
                 &arrays.c_level_birth,
                 &arrays.lifetimes,
@@ -2873,7 +2875,7 @@ fn plot_e3_metabolic_selection(
             ));
             let surv_firstk_stats = render_survival_split_plot(
                 &survival_path,
-                "E3 Survival by C_level01_firstK (median split)",
+                "Survival by C_level01_firstK (median split)",
                 &arrays.lifetimes,
                 &arrays.c_level_firstk,
                 SplitKind::Median,
@@ -2886,7 +2888,7 @@ fn plot_e3_metabolic_selection(
             ));
             let surv_firstk_q_stats = render_survival_split_plot(
                 &survival_q_path,
-                "E3 Survival by C_level01_firstK (q25 vs q75)",
+                "Survival by C_level01_firstK (q25 vs q75)",
                 &arrays.lifetimes,
                 &arrays.c_level_firstk,
                 SplitKind::Quartiles,
@@ -2903,7 +2905,7 @@ fn plot_e3_metabolic_selection(
                 ));
                 corr_stats_attack = Some(render_e3_scatter_with_stats(
                     &attack_scatter_path,
-                    "E3 C_level01_attack vs Lifetime",
+                    "C_level01_attack vs Lifetime",
                     "C_level01_attack",
                     &attack_vals,
                     &attack_lifetimes,
@@ -2916,7 +2918,7 @@ fn plot_e3_metabolic_selection(
                 ));
                 let _ = render_survival_split_plot(
                     &attack_survival_path,
-                    "E3 Survival by C_level01_attack (median split)",
+                    "Survival by C_level01_attack (median split)",
                     &attack_lifetimes,
                     &attack_vals,
                     SplitKind::Median,
@@ -3023,7 +3025,7 @@ fn plot_e3_metabolic_selection(
             let compare_scatter = out_dir.join("paper_e3_firstk_scatter_compare.svg");
             render_scatter_compare(
                 &compare_scatter,
-                "E3 C_level01_firstK vs Lifetime",
+                "C_level01_firstK vs Lifetime",
                 "C_level01_firstK",
                 "Baseline",
                 &base_scatter,
@@ -3046,7 +3048,7 @@ fn plot_e3_metabolic_selection(
             let compare_surv = out_dir.join("paper_e3_firstk_survival_compare.svg");
             render_survival_compare(
                 &compare_surv,
-                "E3 Survival by C_level01_firstK (median split)",
+                "Survival by C_level01_firstK (median split)",
                 "Baseline",
                 &base_surv,
                 "NoRecharge",
@@ -3068,7 +3070,7 @@ fn plot_e3_metabolic_selection(
             let compare_surv_q = out_dir.join("paper_e3_firstk_survival_compare_q25q75.svg");
             render_survival_compare(
                 &compare_surv_q,
-                "E3 Survival by C_level01_firstK (q25 vs q75)",
+                "Survival by C_level01_firstK (q25 vs q75)",
                 "Baseline",
                 &base_surv_q,
                 "NoRecharge",
@@ -3092,7 +3094,7 @@ fn plot_e3_metabolic_selection(
     );
     render_scatter_compare(
         &pooled_scatter_path,
-        "E3 C_level01_firstK vs Lifetime (pooled)",
+        "C_level01_firstK vs Lifetime (pooled)",
         "C_level01_firstK",
         "Baseline",
         &pooled_base_scatter,
@@ -3137,7 +3139,7 @@ fn plot_e3_metabolic_selection(
     let pooled_surv_q_path = out_dir.join("paper_e3_firstk_survival_compare_pooled_q25q75.svg");
     render_survival_compare(
         &pooled_surv_q_path,
-        "E3 Survival by C_level01_firstK (q25 vs q75, pooled)",
+        "Survival by C_level01_firstK (q25 vs q75, pooled)",
         "Baseline",
         &pooled_surv_base_q,
         "NoRecharge",
@@ -3272,7 +3274,7 @@ fn render_e3_firstk_histogram(
     let root = bitmap_root(out_path, (1200, 700)).into_drawing_area();
     root.fill(&WHITE)?;
     let mut chart = ChartBuilder::on(&root)
-        .caption("E3 C_level01_firstK Histogram (pooled)", ("sans-serif", 20))
+        .caption("C_level01_firstK Histogram (pooled)", ("sans-serif", 20))
         .margin(10)
         .x_label_area_size(40)
         .y_label_area_size(60)
@@ -3520,11 +3522,11 @@ fn render_e1_plot(
     log2_ratio_scan: &[f32],
     perc_h_pot_scan: &[f32],
     perc_r_state01_scan: &[f32],
-    perc_c_score_scan: &[f32],
+    perc_c_field_scan: &[f32],
     perc_c_density_scan: &[f32],
 ) -> Result<(), Box<dyn Error>> {
-    let x_min = -1.0f32;
-    let x_max = 1.0f32;
+    let x_min = -1.5f32;
+    let x_max = 1.5f32;
 
     let mut h_points = Vec::new();
     let mut r_points = Vec::new();
@@ -3537,38 +3539,39 @@ fn render_e1_plot(
         }
         h_points.push((x, perc_h_pot_scan[i]));
         r_points.push((x, perc_r_state01_scan[i]));
-        c_points.push((x, perc_c_score_scan[i]));
+        c_points.push((x, perc_c_field_scan[i]));
         d_points.push((x, perc_c_density_scan[i]));
     }
 
-    let h_max = h_points
-        .iter()
-        .map(|(_, y)| *y)
-        .fold(0.0f32, f32::max)
-        .max(1e-6)
-        * 1.1;
+    let y01_max = 1.05f32;
 
-    let root = bitmap_root(out_path, (1600, 1600)).into_drawing_area();
+    let root = bitmap_root(out_path, (2200, 1240)).into_drawing_area();
     root.fill(&WHITE)?;
     let panels = root.split_evenly((4, 1));
 
     let ratio_guides = [0.5f32, 6.0 / 5.0, 1.25, 4.0 / 3.0, 1.5, 5.0 / 3.0, 2.0];
     let ratio_guides_log2: Vec<f32> = ratio_guides.iter().map(|r| r.log2()).collect();
+    let y_guides = [-0.5f32, 0.0, 0.5, 1.0];
+    let x_axis = 0.0f32;
+
+    // Keep all four panels at the same drawable height.
+    let x_label_area = 52;
 
     let mut chart_h = ChartBuilder::on(&panels[0])
         .caption(
-            format!("E1 Harmonicity Potential H(f) | anchor {} Hz", anchor_hz),
+            format!("Harmonicity Potential H(f) | anchor {} Hz", anchor_hz),
             ("sans-serif", 32),
         )
-        .margin(10)
-        .x_label_area_size(50)
+        .margin(6)
+        .x_label_area_size(x_label_area)
         .y_label_area_size(80)
-        .build_cartesian_2d(x_min..x_max, 0.0f32..h_max)?;
+        .build_cartesian_2d(x_min..x_max, 0.0f32..y01_max)?;
 
     chart_h
         .configure_mesh()
-        .x_desc("log2(f / f_anchor)")
+        .disable_mesh()
         .y_desc("H potential")
+        .x_labels(0)
         .label_style(("sans-serif", 20).into_font())
         .axis_desc_style(("sans-serif", 24).into_font())
         .draw()?;
@@ -3576,8 +3579,22 @@ fn render_e1_plot(
     for &x in &ratio_guides_log2 {
         if x >= x_min && x <= x_max {
             chart_h.draw_series(std::iter::once(PathElement::new(
-                vec![(x, 0.0), (x, h_max)],
+                vec![(x, 0.0), (x, y01_max)],
                 BLACK.mix(0.15),
+            )))?;
+        }
+    }
+    if x_axis >= x_min && x_axis <= x_max {
+        chart_h.draw_series(std::iter::once(PathElement::new(
+            vec![(x_axis, 0.0), (x_axis, y01_max)],
+            BLACK.mix(0.45),
+        )))?;
+    }
+    for &y in &y_guides {
+        if y >= 0.0 && y <= y01_max {
+            chart_h.draw_series(std::iter::once(PathElement::new(
+                vec![(x_min, y), (x_max, y)],
+                BLACK.mix(0.12),
             )))?;
         }
     }
@@ -3585,16 +3602,17 @@ fn render_e1_plot(
     chart_h.draw_series(LineSeries::new(h_points, &PAL_H))?;
 
     let mut chart_r = ChartBuilder::on(&panels[1])
-        .caption("E1 Roughness State R01(f)", ("sans-serif", 32))
-        .margin(10)
-        .x_label_area_size(50)
+        .caption("Roughness State R01(f)", ("sans-serif", 32))
+        .margin(6)
+        .x_label_area_size(x_label_area)
         .y_label_area_size(80)
-        .build_cartesian_2d(x_min..x_max, 0.0f32..1.05f32)?;
+        .build_cartesian_2d(x_min..x_max, 0.0f32..y01_max)?;
 
     chart_r
         .configure_mesh()
-        .x_desc("log2(f / f_anchor)")
+        .disable_mesh()
         .y_desc("R01")
+        .x_labels(0)
         .label_style(("sans-serif", 20).into_font())
         .axis_desc_style(("sans-serif", 24).into_font())
         .draw()?;
@@ -3602,8 +3620,22 @@ fn render_e1_plot(
     for &x in &ratio_guides_log2 {
         if x >= x_min && x <= x_max {
             chart_r.draw_series(std::iter::once(PathElement::new(
-                vec![(x, 0.0), (x, 1.05)],
+                vec![(x, 0.0), (x, y01_max)],
                 BLACK.mix(0.15),
+            )))?;
+        }
+    }
+    if x_axis >= x_min && x_axis <= x_max {
+        chart_r.draw_series(std::iter::once(PathElement::new(
+            vec![(x_axis, 0.0), (x_axis, y01_max)],
+            BLACK.mix(0.45),
+        )))?;
+    }
+    for &y in &y_guides {
+        if y >= 0.0 && y <= y01_max {
+            chart_r.draw_series(std::iter::once(PathElement::new(
+                vec![(x_min, y), (x_max, y)],
+                BLACK.mix(0.12),
             )))?;
         }
     }
@@ -3625,16 +3657,17 @@ fn render_e1_plot(
     let pad = 0.05f32;
 
     let mut chart_c = ChartBuilder::on(&panels[2])
-        .caption("E1 Consonance Score C_score(f)", ("sans-serif", 32))
-        .margin(10)
-        .x_label_area_size(60)
+        .caption("Consonance Field C_field(f)", ("sans-serif", 32))
+        .margin(6)
+        .x_label_area_size(x_label_area)
         .y_label_area_size(80)
         .build_cartesian_2d(x_min..x_max, (c_min - pad)..(c_max + pad))?;
 
     chart_c
         .configure_mesh()
-        .x_desc("log2(f / f_anchor)")
-        .y_desc("C_score")
+        .disable_mesh()
+        .y_desc("C_field")
+        .x_labels(0)
         .label_style(("sans-serif", 20).into_font())
         .axis_desc_style(("sans-serif", 24).into_font())
         .draw()?;
@@ -3647,10 +3680,24 @@ fn render_e1_plot(
             )))?;
         }
     }
+    if x_axis >= x_min && x_axis <= x_max {
+        chart_c.draw_series(std::iter::once(PathElement::new(
+            vec![(x_axis, c_min - pad), (x_axis, c_max + pad)],
+            BLACK.mix(0.45),
+        )))?;
+    }
+    for &y in &y_guides {
+        if y >= (c_min - pad) && y <= (c_max + pad) {
+            chart_c.draw_series(std::iter::once(PathElement::new(
+                vec![(x_min, y), (x_max, y)],
+                BLACK.mix(0.12),
+            )))?;
+        }
+    }
 
     chart_c.draw_series(LineSeries::new(c_points, &PAL_C))?;
 
-    // Panel 4: C_density — Boltzmann-softmax pitch-selection PMF
+    // Panel 4: C_density raw = H * (1 - R)
     let d_max = d_points
         .iter()
         .map(|(_, y)| *y)
@@ -3659,14 +3706,15 @@ fn render_e1_plot(
         * 1.1;
 
     let mut chart_d = ChartBuilder::on(&panels[3])
-        .caption("E1 Consonance Density C_density(f)", ("sans-serif", 32))
-        .margin(10)
-        .x_label_area_size(60)
+        .caption("Consonance Density C_density(f)", ("sans-serif", 32))
+        .margin(6)
+        .x_label_area_size(x_label_area)
         .y_label_area_size(80)
         .build_cartesian_2d(x_min..x_max, 0.0f32..d_max)?;
 
     chart_d
         .configure_mesh()
+        .disable_mesh()
         .x_desc("log2(f / f_anchor)")
         .y_desc("C_density")
         .label_style(("sans-serif", 20).into_font())
@@ -3678,6 +3726,20 @@ fn render_e1_plot(
             chart_d.draw_series(std::iter::once(PathElement::new(
                 vec![(x, 0.0), (x, d_max)],
                 BLACK.mix(0.15),
+            )))?;
+        }
+    }
+    if x_axis >= x_min && x_axis <= x_max {
+        chart_d.draw_series(std::iter::once(PathElement::new(
+            vec![(x_axis, 0.0), (x_axis, d_max)],
+            BLACK.mix(0.45),
+        )))?;
+    }
+    for &y in &y_guides {
+        if y >= 0.0 && y <= d_max {
+            chart_d.draw_series(std::iter::once(PathElement::new(
+                vec![(x_min, y), (x_max, y)],
+                BLACK.mix(0.12),
             )))?;
         }
     }
@@ -3735,7 +3797,7 @@ fn render_e1_h_mirror_triplet_plot(
     let mut chart = ChartBuilder::on(&root)
         .caption(
             format!(
-                "E1 Harmonicity H(f) by mirror_weight | anchor {} Hz",
+                "Harmonicity H(f) by mirror_weight | anchor {} Hz",
                 anchor_hz
             ),
             ("sans-serif", 24),
@@ -3825,7 +3887,7 @@ fn render_e1_h_mirror_diff_plot(
     let mut chart = ChartBuilder::on(&root)
         .caption(
             format!(
-                "E1 Harmonicity Difference H_m0(f) - H_m1(f) | anchor {} Hz",
+                "Harmonicity Difference H_m0(f) - H_m1(f) | anchor {} Hz",
                 anchor_hz
             ),
             ("sans-serif", 24),
@@ -6815,7 +6877,7 @@ fn compute_e4_landscape_scans_with_env_params(
     let mut c = vec![0.0f32; space.n_bins()];
     for i in 0..space.n_bins() {
         let score = workspace.params.consonance_kernel.score(h[i], r[i]);
-        c[i] = workspace.params.consonance_representation.level01(score);
+        c[i] = workspace.params.consonance_representation.level(score);
     }
 
     let anchor_log2 = anchor_hz.max(1.0).log2();
@@ -13180,9 +13242,8 @@ fn build_consonance_workspace(space: &Log2Space) -> ConsonanceWorkspace {
         consonance_representation: ConsonanceRepresentationParams {
             beta: E2_C_LEVEL_BETA,
             theta: E2_C_LEVEL_THETA,
-            temperature: 1.0,
-            epsilon: 1e-6,
         },
+        consonance_density_roughness_gain: 1.0,
         roughness_scalar_mode: RoughnessScalarMode::Total,
         roughness_half: 0.1,
         loudness_exp: 1.0,
@@ -13285,7 +13346,7 @@ fn compute_c_score_level_scans(
             .params
             .consonance_kernel
             .score(perc_h_state01_scan[i], perc_r_state01_scan[i]);
-        let c_level = workspace.params.consonance_representation.level01(c_score);
+        let c_level = workspace.params.consonance_representation.level(c_score);
         c_score_scan[i] = c_score;
         c_level_scan[i] = c_level.clamp(0.0, 1.0);
     }
@@ -15190,7 +15251,7 @@ fn render_hist_structure_summary_plot(
 
     draw_hist_structure_panel(
         &panels[0],
-        "E2 Histogram Structure: Entropy",
+        "Histogram Structure: Entropy",
         "entropy",
         &means_entropy,
         &conds,
@@ -15198,7 +15259,7 @@ fn render_hist_structure_summary_plot(
     )?;
     draw_hist_structure_panel(
         &panels[1],
-        "E2 Histogram Structure: Gini",
+        "Histogram Structure: Gini",
         "gini",
         &means_gini,
         &conds,
@@ -15206,7 +15267,7 @@ fn render_hist_structure_summary_plot(
     )?;
     draw_hist_structure_panel(
         &panels[2],
-        "E2 Histogram Structure: Peakiness",
+        "Histogram Structure: Peakiness",
         "peakiness",
         &means_peak,
         &conds,
@@ -15214,7 +15275,7 @@ fn render_hist_structure_summary_plot(
     )?;
     draw_hist_structure_panel(
         &panels[3],
-        "E2 Histogram Structure: KL vs Uniform",
+        "Histogram Structure: KL vs Uniform",
         "KL",
         &means_kl,
         &conds,
@@ -15438,7 +15499,7 @@ fn render_diversity_summary_plot(
 
     draw_diversity_panel(
         &panels[0],
-        "E2 Diversity: Unique Bins",
+        "Diversity: Unique Bins",
         "unique bins",
         &mean_bins,
         &conds,
@@ -15446,7 +15507,7 @@ fn render_diversity_summary_plot(
     )?;
     draw_diversity_panel(
         &panels[1],
-        "E2 Diversity: NN Distance",
+        "Diversity: NN Distance",
         "nn mean (st)",
         &mean_nn,
         &conds,
@@ -15454,7 +15515,7 @@ fn render_diversity_summary_plot(
     )?;
     draw_diversity_panel(
         &panels[2],
-        "E2 Diversity: Variance",
+        "Diversity: Variance",
         "var (st^2)",
         &mean_var,
         &conds,
@@ -15462,7 +15523,7 @@ fn render_diversity_summary_plot(
     )?;
     draw_diversity_panel(
         &panels[3],
-        "E2 Diversity: MAD",
+        "Diversity: MAD",
         "MAD (st)",
         &mean_mad,
         &conds,
@@ -16917,9 +16978,9 @@ fn draw_trajectory_panel(
         if trace.is_empty() {
             continue;
         }
-        let color = Palette99::pick(i).mix(0.5);
+        let color = Palette99::pick(i).mix(0.9);
         let line = trace.iter().enumerate().map(|(step, &v)| (step as f32, v));
-        chart.draw_series(LineSeries::new(line, color))?;
+        chart.draw_series(LineSeries::new(line, ShapeStyle::from(&color).stroke_width(2)))?;
     }
     Ok(())
 }
@@ -16951,7 +17012,7 @@ fn render_e2_mean_c_level_annotated(
     let panels = root.split_evenly((2, 1));
     draw_e2_timeseries_controls_panel(
         &panels[0],
-        "E2 Mean C_level01 (annotated controls, 95% CI)",
+        "Mean C_level01 (annotated controls, 95% CI)",
         baseline_mean,
         baseline_std,
         nohill_mean,
@@ -17034,7 +17095,7 @@ fn draw_consonant_mass_panel(
         let center = i as f32;
         let x0 = center - 0.3;
         let x1 = center + 0.3;
-        let color = e2_condition_color(cond);
+        let color = desaturate_rgb(e2_condition_color(cond), 0.2);
         chart.draw_series(std::iter::once(Rectangle::new(
             [(x0, 0.0), (x1, means[i])],
             color.mix(0.7).filled(),
@@ -17047,6 +17108,17 @@ fn draw_consonant_mass_panel(
         )))?;
     }
     Ok(())
+}
+
+fn desaturate_rgb(color: RGBColor, amount: f32) -> RGBColor {
+    let t = amount.clamp(0.0, 1.0);
+    let RGBColor(r, g, b) = color;
+    let rf = r as f32;
+    let gf = g as f32;
+    let bf = b as f32;
+    let gray = 0.299 * rf + 0.587 * gf + 0.114 * bf;
+    let blend = |c: f32| ((1.0 - t) * c + t * gray).round().clamp(0.0, 255.0) as u8;
+    RGBColor(blend(rf), blend(gf), blend(bf))
 }
 
 fn render_consonant_mass_summary_plot(
@@ -17214,7 +17286,7 @@ fn render_e2_figure1(
         .min(norep_stats.std_c_score_loo.len());
     draw_e2_timeseries_controls_panel(
         &panels[0],
-        "E2-1(a) Mean LOO C_score over time (95% CI)",
+        "(a) Mean LOO C_score over time (95% CI)",
         &baseline_stats.mean_c_score_loo,
         baseline_ci95_c,
         &nohill_stats.mean_c_score_loo,
@@ -17229,19 +17301,19 @@ fn render_e2_figure1(
     )?;
     draw_diversity_metric_panel(
         &panels[1],
-        "E2-1(b) Non-collapse: unique bins (95% CI)",
+        "(b) Non-collapse: unique bins (95% CI)",
         "unique bins",
         diversity_rows,
         |metrics| metrics.unique_bins as f32,
     )?;
     draw_trajectory_panel(
         &panels[2],
-        "E2-1(c) Representative seed trajectories",
+        "(c) Representative seed trajectories",
         trajectories,
     )?;
     draw_diversity_metric_panel(
         &panels[3],
-        "E2-1(b-alt) Non-collapse: NN distance (95% CI)",
+        "(b-alt) Non-collapse: NN distance (95% CI)",
         "NN distance (st)",
         diversity_rows,
         |metrics| metrics.nn_mean,
@@ -17284,7 +17356,7 @@ fn render_e2_figure2(
         );
         let mut chart = ChartBuilder::on(&panels[0])
             .caption(
-                "E2-2(a) Pairwise interval histogram (baseline, 95% CI)",
+                "(a) Pairwise interval histogram (baseline, 95% CI)",
                 ("sans-serif", 32),
             )
             .margin(10)
@@ -17329,7 +17401,7 @@ fn render_e2_figure2(
         }
         let y_max = (1.15 * y_peak.max(1e-4)).max(1e-4);
         let mut chart = ChartBuilder::on(&panels[1])
-            .caption("E2-2(b) Pairwise controls overlay", ("sans-serif", 32))
+            .caption("(b) Pairwise controls overlay", ("sans-serif", 32))
             .margin(10)
             .x_label_area_size(55)
             .y_label_area_size(70)
@@ -17366,13 +17438,13 @@ fn render_e2_figure2(
 
     draw_consonant_mass_panel(
         &panels[2],
-        "E2-2(c) Consonant mass T={3,4,7} (95% CI)",
+        "(c) Consonant mass T={3,4,7} (95% CI)",
         consonant_rows,
         |row| row.mass_core,
     )?;
     draw_consonant_mass_panel(
         &panels[3],
-        "E2-2(c-alt) Consonant mass T={0,3,4,5,7,8,9} (95% CI)",
+        "(c-alt) Consonant mass T={0,3,4,5,7,8,9} (95% CI)",
         consonant_rows,
         |row| row.mass_extended,
     )?;
@@ -17794,7 +17866,7 @@ fn render_agent_trajectories_plot(
     let root = bitmap_root(out_path, (1200, 700)).into_drawing_area();
     root.fill(&WHITE)?;
     let mut chart = ChartBuilder::on(&root)
-        .caption("E2 Agent Trajectories (Semitones)", ("sans-serif", 20))
+        .caption("Agent Trajectories (Semitones)", ("sans-serif", 20))
         .margin(10)
         .x_label_area_size(40)
         .y_label_area_size(60)
@@ -17817,8 +17889,11 @@ fn render_agent_trajectories_plot(
             .iter()
             .enumerate()
             .map(|(step, &val)| (step as f32, val));
-        let color = Palette99::pick(agent_id).mix(0.5);
-        chart.draw_series(LineSeries::new(series, &color))?;
+        let color = Palette99::pick(agent_id).mix(0.9);
+        chart.draw_series(LineSeries::new(
+            series,
+            ShapeStyle::from(&color).stroke_width(2),
+        ))?;
     }
 
     root.present()?;
@@ -17899,7 +17974,7 @@ fn render_e2_histogram_sweep(out_dir: &Path, run: &E2Run) -> Result<(), Box<dyn 
                 label
             };
             let caption = format!(
-                "E2 Interval Histogram ({phase_label}, steps {start}-{end}, bin={bin_width:.2}st)"
+                "Interval Histogram ({phase_label}, steps {start}-{end}, bin={bin_width:.2}st)"
             );
             let out_path = out_dir.join(fname);
             render_interval_histogram(
@@ -17943,7 +18018,7 @@ fn render_e2_control_histograms(
     let post_label = e2_post_label();
     let mut chart = ChartBuilder::on(&root)
         .caption(
-            format!("E2 Interval Histogram ({post_label}, controls, bin=0.50st)"),
+            format!("Interval Histogram ({post_label}, controls, bin=0.50st)"),
             ("sans-serif", 20),
         )
         .margin(10)
@@ -18618,7 +18693,7 @@ fn render_consonance_lifetime_scatter(
     root.fill(&WHITE)?;
 
     let mut chart = ChartBuilder::on(&root)
-        .caption("E3 C_level01 vs Lifetime", ("sans-serif", 20))
+        .caption("C_level01 vs Lifetime", ("sans-serif", 20))
         .margin(10)
         .x_label_area_size(40)
         .y_label_area_size(60)
@@ -18653,7 +18728,7 @@ fn render_survival_curve(
     let root = bitmap_root(out_path, (1200, 700)).into_drawing_area();
     root.fill(&WHITE)?;
     let mut chart = ChartBuilder::on(&root)
-        .caption("E3 Survival Curve", ("sans-serif", 20))
+        .caption("Survival Curve", ("sans-serif", 20))
         .margin(10)
         .x_label_area_size(40)
         .y_label_area_size(60)
@@ -18710,7 +18785,7 @@ fn render_survival_by_c_level(
     root.fill(&WHITE)?;
     let mut chart = ChartBuilder::on(&root)
         .caption(
-            "E3 Survival by C_level01 (Median Split)",
+            "Survival by C_level01 (Median Split)",
             ("sans-serif", 20),
         )
         .margin(10)
@@ -18762,7 +18837,7 @@ fn render_e5_order_plot(
 
     let mut chart = ChartBuilder::on(&root)
         .caption(
-            "E5 Order Parameter r(t) — pre-kick k_eff=0 so main/control overlap",
+            "Order Parameter r(t) — pre-kick k_eff=0 so main/control overlap",
             ("sans-serif", 32),
         )
         .margin(10)
@@ -18829,7 +18904,7 @@ fn render_e5_delta_phi_plot(
 
     let mut chart = ChartBuilder::on(&root)
         .caption(
-            "E5 Group Phase Offset Δφ(t) — pre-kick k_eff=0 so main/control overlap",
+            "Group Phase Offset Δφ(t) — pre-kick k_eff=0 so main/control overlap",
             ("sans-serif", 20),
         )
         .margin(10)
@@ -18898,7 +18973,7 @@ fn render_e5_plv_plot(
 
     let mut chart = ChartBuilder::on(&root)
         .caption(
-            "E5 PLV_agent_kick — pre-kick k_eff=0 so main/control overlap",
+            "PLV_agent_kick — pre-kick k_eff=0 so main/control overlap",
             ("sans-serif", 32),
         )
         .margin(10)
@@ -18980,7 +19055,7 @@ fn render_phase_histogram_compare(
     root.fill(&WHITE)?;
     let mut chart = ChartBuilder::on(&root)
         .caption(
-            "E5 Phase Difference Histogram (Main vs Control)",
+            "Phase Difference Histogram (Main vs Control)",
             ("sans-serif", 20),
         )
         .margin(10)

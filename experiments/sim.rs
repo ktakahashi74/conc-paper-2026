@@ -376,7 +376,7 @@ pub fn run_e3_collect_deaths(cfg: &E3RunConfig) -> Vec<E3DeathRecord> {
             let alive = agent.is_alive();
 
             if alive {
-                let c_level = agent.last_consonance_level01();
+                let c_level = agent.last_consonance_field_level();
                 if state.pending_birth {
                     state.birth_step = step as u32;
                     state.c_level_birth = c_level;
@@ -1174,6 +1174,7 @@ fn make_landscape_params(
         harmonicity_kernel: HarmonicityKernel::new(space, HarmonicityParams::default()),
         consonance_kernel: ConsonanceKernel::default(),
         consonance_representation: ConsonanceRepresentationParams::default(),
+        consonance_density_roughness_gain: 1.0,
         roughness_scalar_mode: RoughnessScalarMode::Total,
         roughness_half: 0.1,
         loudness_exp: 1.0,
@@ -1321,7 +1322,7 @@ fn sample_e4_initial_pitch_log2(
     let mut weights = Vec::with_capacity(max_idx - min_idx + 1);
     for i in min_idx..=max_idx {
         let w = landscape
-            .consonance_weight
+            .consonance_density_pmf
             .get(i)
             .copied()
             .unwrap_or(0.0)
