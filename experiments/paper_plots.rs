@@ -42,7 +42,7 @@ const E2_ANCHOR_SHIFT_STEP: usize = usize::MAX;
 const E2_ANCHOR_SHIFT_RATIO: f32 = 0.5;
 const E2_STEP_SEMITONES: f32 = 0.25;
 const E2_ANCHOR_BIN_ST: f32 = 0.5;
-const E2_PAIRWISE_BIN_ST: f32 = 0.25;
+const E2_PAIRWISE_BIN_ST: f32 = 0.05;
 const E2_N_AGENTS: usize = 24;
 const E2_LAMBDA: f32 = 0.15;
 const E2_SIGMA: f32 = 0.06;
@@ -105,9 +105,27 @@ impl E2InitMode {
 }
 
 const E2_INIT_MODE: E2InitMode = E2InitMode::RejectConsonant;
-const E2_CONSONANT_STEPS: [f32; 8] = [0.0, 3.0, 4.0, 5.0, 7.0, 8.0, 9.0, 12.0];
-const E2_CONSONANT_TARGETS_CORE: [f32; 3] = [3.0, 4.0, 7.0];
-const E2_CONSONANT_TARGETS_EXTENDED: [f32; 7] = [0.0, 3.0, 4.0, 5.0, 7.0, 8.0, 9.0];
+// Just-intonation positions: 12 * log2(ratio) semitones
+const E2_CONSONANT_STEPS: [f32; 8] = [
+    0.0,                    // 1:1 unison
+    3.1564128,              // 6:5 minor third
+    3.8631372,              // 5:4 major third
+    4.9804499,              // 4:3 perfect fourth
+    7.0195501,              // 3:2 perfect fifth
+    8.1368628,              // 8:5 minor sixth
+    8.8435872,              // 5:3 major sixth
+    12.0,                   // 2:1 octave
+];
+const E2_CONSONANT_TARGETS_CORE: [f32; 3] = [3.1564128, 3.8631372, 7.0195501];
+const E2_CONSONANT_TARGETS_EXTENDED: [f32; 7] = [
+    0.0,        // 1:1 unison
+    3.1564128,  // 6:5 minor third
+    3.8631372,  // 5:4 major third
+    4.9804499,  // 4:3 perfect fourth
+    7.0195501,  // 3:2 perfect fifth
+    8.1368628,  // 8:5 minor sixth
+    8.8435872,  // 5:3 major sixth
+];
 const E2_CONSONANT_WINDOW_ST: f32 = 0.25;
 const E2_PERM_MAX_EXACT_COMBOS: u64 = 500_000;
 const E2_PERM_MC_ITERS: usize = 50_000;
@@ -16458,6 +16476,40 @@ where
     Ok(())
 }
 
+fn draw_e2_interval_guides_cents<DB: DrawingBackend>(
+    chart: &mut ChartContext<DB, Cartesian2d<RangedCoordf32, RangedCoordf32>>,
+    y_max: f32,
+) -> Result<(), Box<dyn Error>>
+where
+    DB::ErrorType: 'static,
+{
+    let st2c = 100.0f32;
+    for &target in &E2_CONSONANT_TARGETS_CORE {
+        let tc = target * st2c;
+        let wc = E2_CONSONANT_WINDOW_ST * st2c;
+        chart.draw_series(std::iter::once(Rectangle::new(
+            [(tc - wc, 0.0), (tc + wc, y_max)],
+            RGBColor(240, 170, 60).mix(0.12).filled(),
+        )))?;
+    }
+    for &x in &E2_CONSONANT_STEPS {
+        let xc = x * st2c;
+        let is_core = E2_CONSONANT_TARGETS_CORE
+            .iter()
+            .any(|&core| (core - x).abs() < 1e-6);
+        let style = if is_core {
+            ShapeStyle::from(&BLACK.mix(0.6)).stroke_width(2)
+        } else {
+            ShapeStyle::from(&BLACK.mix(0.3)).stroke_width(1)
+        };
+        chart.draw_series(std::iter::once(PathElement::new(
+            vec![(xc, 0.0), (xc, y_max)],
+            style,
+        )))?;
+    }
+    Ok(())
+}
+
 fn y_max_from_mean_err(mean: &[f32], err: &[f32]) -> f32 {
     let len = mean.len().min(err.len());
     let mut y_peak = 0.0f32;
@@ -16738,6 +16790,29 @@ fn draw_diversity_metric_panel(
     rows: &[DiversityRow],
     select: fn(&DiversityMetrics) -> f32,
 ) -> Result<(), Box<dyn Error>> {
+    draw_diversity_metric_panel_impl(area, caption, y_desc, rows, select, 22, 16, 18)
+}
+
+fn draw_diversity_metric_panel_large(
+    area: &DrawingArea<SVGBackend, Shift>,
+    caption: &str,
+    y_desc: &str,
+    rows: &[DiversityRow],
+    select: fn(&DiversityMetrics) -> f32,
+) -> Result<(), Box<dyn Error>> {
+    draw_diversity_metric_panel_impl(area, caption, y_desc, rows, select, 32, 20, 24)
+}
+
+fn draw_diversity_metric_panel_impl(
+    area: &DrawingArea<SVGBackend, Shift>,
+    caption: &str,
+    y_desc: &str,
+    rows: &[DiversityRow],
+    select: fn(&DiversityMetrics) -> f32,
+    caption_size: u32,
+    label_size: u32,
+    axis_desc_size: u32,
+) -> Result<(), Box<dyn Error>> {
     let conditions = ["baseline", "nohill", "norep"];
     let mut means = [0.0f32; 3];
     let mut ci95 = [0.0f32; 3];
@@ -16753,7 +16828,7 @@ fn draw_diversity_metric_panel(
     y_max = (1.15 * y_max.max(1e-4)).max(1e-4);
 
     let mut chart = ChartBuilder::on(area)
-        .caption(caption, ("sans-serif", 22))
+        .caption(caption, ("sans-serif", caption_size))
         .margin(8)
         .x_label_area_size(40)
         .y_label_area_size(55)
@@ -16772,8 +16847,8 @@ fn draw_diversity_metric_panel(
                 String::new()
             }
         })
-        .label_style(("sans-serif", 16).into_font())
-        .axis_desc_style(("sans-serif", 18).into_font())
+        .label_style(("sans-serif", label_size).into_font())
+        .axis_desc_style(("sans-serif", axis_desc_size).into_font())
         .draw()?;
 
     for (i, cond) in conditions.iter().enumerate() {
@@ -16971,11 +17046,17 @@ fn draw_trajectory_panel(
         .label_style(("sans-serif", 28).into_font())
         .axis_desc_style(("sans-serif", 24).into_font())
         .draw()?;
+    // Muted palette cycling through the paper's base colors
+    let traj_colors: &[RGBColor] = &[PAL_H, PAL_R, PAL_C, PAL_CD];
+    let n_colors = traj_colors.len();
     for (i, trace) in trajectories.iter().enumerate() {
         if trace.is_empty() {
             continue;
         }
-        let color = Palette99::pick(i).mix(0.9);
+        let base = traj_colors[i % n_colors];
+        // Vary opacity to distinguish overlapping agents
+        let alpha = 0.4 + 0.4 * ((i / n_colors) as f32 / (trajectories.len() as f32 / n_colors as f32).max(1.0)).min(1.0);
+        let color = base.mix(alpha as f64);
         let line = trace.iter().enumerate().map(|(step, &v)| (step as f32, v));
         chart.draw_series(LineSeries::new(line, ShapeStyle::from(&color).stroke_width(2)))?;
     }
@@ -17050,6 +17131,27 @@ fn draw_consonant_mass_panel(
     rows: &[ConsonantMassRow],
     select: fn(&ConsonantMassRow) -> f32,
 ) -> Result<(), Box<dyn Error>> {
+    draw_consonant_mass_panel_impl(area, caption, rows, select, 22, 16, 18)
+}
+
+fn draw_consonant_mass_panel_large(
+    area: &DrawingArea<SVGBackend, Shift>,
+    caption: &str,
+    rows: &[ConsonantMassRow],
+    select: fn(&ConsonantMassRow) -> f32,
+) -> Result<(), Box<dyn Error>> {
+    draw_consonant_mass_panel_impl(area, caption, rows, select, 32, 20, 24)
+}
+
+fn draw_consonant_mass_panel_impl(
+    area: &DrawingArea<SVGBackend, Shift>,
+    caption: &str,
+    rows: &[ConsonantMassRow],
+    select: fn(&ConsonantMassRow) -> f32,
+    caption_size: u32,
+    label_size: u32,
+    axis_desc_size: u32,
+) -> Result<(), Box<dyn Error>> {
     let conditions = ["baseline", "nohill", "norep"];
     let mut means = [0.0f32; 3];
     let mut ci95 = [0.0f32; 3];
@@ -17065,7 +17167,7 @@ fn draw_consonant_mass_panel(
     y_max = (1.15 * y_max.max(1e-4)).max(1e-4);
 
     let mut chart = ChartBuilder::on(area)
-        .caption(caption, ("sans-serif", 22))
+        .caption(caption, ("sans-serif", caption_size))
         .margin(8)
         .x_label_area_size(40)
         .y_label_area_size(55)
@@ -17084,8 +17186,8 @@ fn draw_consonant_mass_panel(
                 String::new()
             }
         })
-        .label_style(("sans-serif", 16).into_font())
-        .axis_desc_style(("sans-serif", 18).into_font())
+        .label_style(("sans-serif", label_size).into_font())
+        .axis_desc_style(("sans-serif", axis_desc_size).into_font())
         .draw()?;
 
     for (i, cond) in conditions.iter().enumerate() {
@@ -17269,9 +17371,12 @@ fn render_e2_figure1(
     trajectories: &[Vec<f32>],
     phase_mode: E2PhaseMode,
 ) -> Result<(), Box<dyn Error>> {
-    let root = bitmap_root(out_path, (1400, 1000)).into_drawing_area();
+    let root = bitmap_root(out_path, (1800, 600)).into_drawing_area();
     root.fill(&WHITE)?;
-    let panels = root.split_evenly((2, 2));
+    // 3-column layout: a (wide) | b+b-alt (narrow, stacked) | c (wide)
+    let (panel_a, rest) = root.split_horizontally(700);
+    let (panel_mid, panel_c) = rest.split_horizontally(400);
+    let (panel_b, panel_balt) = panel_mid.split_vertically(300);
 
     let len = baseline_stats
         .mean_c_score_loo
@@ -17282,8 +17387,8 @@ fn render_e2_figure1(
         .min(norep_stats.mean_c_score_loo.len())
         .min(norep_stats.std_c_score_loo.len());
     draw_e2_timeseries_controls_panel(
-        &panels[0],
-        "(a) Mean LOO C_score over time (95% CI)",
+        &panel_a,
+        "A. Mean LOO C_score over time (95% CI)",
         &baseline_stats.mean_c_score_loo,
         baseline_ci95_c,
         &nohill_stats.mean_c_score_loo,
@@ -17296,24 +17401,24 @@ fn render_e2_figure1(
         len.saturating_sub(1),
         true,
     )?;
-    draw_diversity_metric_panel(
-        &panels[1],
-        "(b) Non-collapse: unique bins (95% CI)",
+    draw_diversity_metric_panel_large(
+        &panel_b,
+        "B. Unique bins (95% CI)",
         "unique bins",
         diversity_rows,
         |metrics| metrics.unique_bins as f32,
     )?;
-    draw_trajectory_panel(
-        &panels[2],
-        "(c) Representative seed trajectories",
-        trajectories,
-    )?;
-    draw_diversity_metric_panel(
-        &panels[3],
-        "(b-alt) Non-collapse: NN distance (95% CI)",
+    draw_diversity_metric_panel_large(
+        &panel_balt,
+        "B'. NN distance (95% CI)",
         "NN distance (st)",
         diversity_rows,
         |metrics| metrics.nn_mean,
+    )?;
+    draw_trajectory_panel(
+        &panel_c,
+        "C. Representative seed trajectories",
+        trajectories,
     )?;
     root.present()?;
     Ok(())
@@ -17340,20 +17445,27 @@ fn render_e2_figure2(
     if len == 0 {
         return Ok(());
     }
-    let root = bitmap_root(out_path, (1400, 1000)).into_drawing_area();
+    let root = bitmap_root(out_path, (1600, 800)).into_drawing_area();
     root.fill(&WHITE)?;
-    let panels = root.split_evenly((2, 2));
+    // 2-column layout: A/B stacked (left, wide) | C/C' stacked (right, narrow)
+    let (panel_left, panel_right) = root.split_horizontally(1200);
+    let (panel_a, panel_b) = panel_left.split_vertically(400);
+    let (panel_c, panel_calt) = panel_right.split_vertically(400);
+
+    // Convert semitone data to cents for display (×100)
+    let st2c = 100.0f32;
+    let bin_c = E2_PAIRWISE_BIN_ST * st2c;
 
     {
-        let x_min = pairwise_centers[0] - 0.5 * E2_PAIRWISE_BIN_ST;
-        let x_max = pairwise_centers[len - 1] + 0.5 * E2_PAIRWISE_BIN_ST;
+        let x_min = pairwise_centers[0] * st2c - 0.5 * bin_c;
+        let x_max = pairwise_centers[len - 1] * st2c + 0.5 * bin_c;
         let y_max = y_max_from_mean_err(
             &pairwise_baseline_mean[..len],
             &pairwise_baseline_std[..len],
         );
-        let mut chart = ChartBuilder::on(&panels[0])
+        let mut chart = ChartBuilder::on(&panel_a)
             .caption(
-                "(a) Pairwise interval histogram (baseline, 95% CI)",
+                "A. Interval histogram (baseline, 95% CI)",
                 ("sans-serif", 32),
             )
             .margin(10)
@@ -17362,33 +17474,34 @@ fn render_e2_figure2(
             .build_cartesian_2d(x_min..x_max, 0.0f32..y_max)?;
         chart
             .configure_mesh()
-            .x_desc("semitones")
+            .x_desc("cents")
             .y_desc("mean fraction")
             .label_style(("sans-serif", 20).into_font())
             .axis_desc_style(("sans-serif", 24).into_font())
             .draw()?;
-        draw_e2_interval_guides_with_windows(&mut chart, y_max)?;
-        let half = E2_PAIRWISE_BIN_ST * 0.45;
+        draw_e2_interval_guides_cents(&mut chart, y_max)?;
+        let half = bin_c * 0.45;
         for i in 0..len {
+            let cx = pairwise_centers[i] * st2c;
             chart.draw_series(std::iter::once(Rectangle::new(
                 [
-                    (pairwise_centers[i] - half, 0.0),
-                    (pairwise_centers[i] + half, pairwise_baseline_mean[i]),
+                    (cx - half, 0.0),
+                    (cx + half, pairwise_baseline_mean[i]),
                 ],
                 PAL_H.mix(0.65).filled(),
             )))?;
             let y0 = (pairwise_baseline_mean[i] - pairwise_baseline_std[i]).max(0.0);
             let y1 = (pairwise_baseline_mean[i] + pairwise_baseline_std[i]).min(y_max);
             chart.draw_series(std::iter::once(PathElement::new(
-                vec![(pairwise_centers[i], y0), (pairwise_centers[i], y1)],
+                vec![(cx, y0), (cx, y1)],
                 BLACK.mix(0.6),
             )))?;
         }
     }
 
     {
-        let x_min = pairwise_centers[0] - 0.5 * E2_PAIRWISE_BIN_ST;
-        let x_max = pairwise_centers[len - 1] + 0.5 * E2_PAIRWISE_BIN_ST;
+        let x_min = pairwise_centers[0] * st2c - 0.5 * bin_c;
+        let x_max = pairwise_centers[len - 1] * st2c + 0.5 * bin_c;
         let mut y_peak = 0.0f32;
         for i in 0..len {
             y_peak = y_peak
@@ -17397,20 +17510,20 @@ fn render_e2_figure2(
                 .max(pairwise_norep_mean[i]);
         }
         let y_max = (1.15 * y_peak.max(1e-4)).max(1e-4);
-        let mut chart = ChartBuilder::on(&panels[1])
-            .caption("(b) Pairwise controls overlay", ("sans-serif", 32))
+        let mut chart = ChartBuilder::on(&panel_b)
+            .caption("B. Controls overlay", ("sans-serif", 32))
             .margin(10)
             .x_label_area_size(55)
             .y_label_area_size(70)
             .build_cartesian_2d(x_min..x_max, 0.0f32..y_max)?;
         chart
             .configure_mesh()
-            .x_desc("semitones")
+            .x_desc("cents")
             .y_desc("mean fraction")
             .label_style(("sans-serif", 20).into_font())
             .axis_desc_style(("sans-serif", 24).into_font())
             .draw()?;
-        draw_e2_interval_guides_with_windows(&mut chart, y_max)?;
+        draw_e2_interval_guides_cents(&mut chart, y_max)?;
         for (label, values, color) in [
             ("baseline", pairwise_baseline_mean, PAL_H),
             ("no hill-climb", pairwise_nohill_mean, PAL_R),
@@ -17419,7 +17532,7 @@ fn render_e2_figure2(
             let line = pairwise_centers
                 .iter()
                 .take(len)
-                .copied()
+                .map(|&x| x * st2c)
                 .zip(values.iter().take(len).copied());
             chart
                 .draw_series(LineSeries::new(line, color))?
@@ -17433,17 +17546,19 @@ fn render_e2_figure2(
             .draw()?;
     }
 
-    draw_consonant_mass_panel(
-        &panels[2],
-        "(c) Consonant mass T={3,4,7} (95% CI)",
+    draw_consonant_mass_panel_impl(
+        &panel_c,
+        "C. Mass T={3,4,7} (95% CI)",
         consonant_rows,
         |row| row.mass_core,
+        29, 18, 22,
     )?;
-    draw_consonant_mass_panel(
-        &panels[3],
-        "(c-alt) Consonant mass T={0,3,4,5,7,8,9} (95% CI)",
+    draw_consonant_mass_panel_impl(
+        &panel_calt,
+        "C'. Mass T={0..9} (95% CI)",
         consonant_rows,
         |row| row.mass_extended,
+        29, 18, 22,
     )?;
 
     root.present()?;
@@ -19842,7 +19957,8 @@ mod tests {
 
     #[test]
     fn consonant_mass_for_intervals_counts_target_windows() {
-        let intervals = [3.05f32, 4.1, 6.0, 7.2, 11.9, 0.1, 12.0];
+        // Values near JI targets: 3.16 ≈ 6:5, 3.90 ≈ 5:4, 7.05 ≈ 3:2
+        let intervals = [3.16f32, 3.90, 6.0, 7.05, 11.9, 0.1, 12.0];
         let core_mass = consonant_mass_for_intervals(&intervals, &E2_CONSONANT_TARGETS_CORE, 0.25);
         assert!(
             (core_mass - 3.0 / 7.0).abs() < 1e-6,

@@ -111,6 +111,13 @@ Rather than encoding harmony or rhythm as compositional rules, Conchordal define
 
 The present study evaluates whether such a system satisfies core artificial life criteria: (i) self-organization under environmental constraints, (ii) selection mediated by resource dynamics, and (iii) synchronization through interaction and external forcing. Four experiments address these criteria.
 
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{experiments/plots/e1/paper_e1_landscape_scan_anchor220.pdf}
+\caption{Psychoacoustic landscape scan around an anchor tone (220\,Hz). (A)~Harmonicity $H_{01}(f)$; (B)~roughness $R_{01}(f)$; (C)~consonance field $C_{\text{field}}(f)$; (D)~consonance density $C_{\text{density}}(f)$. Vertical guides mark selected integer-ratio references relative to the anchor; the darker central line marks unison. Peaks at simple ratios in $H$ and corresponding troughs in $R$ combine to produce attractor structure in both consonance views. The reduced peak density outside $\pm 1$ octave is a finite-order sibling-projection property ($N=16$), not a plotting artifact.}
+\label{fig:e1-landscape}
+\end{figure*}
+
 \section{The Psychoacoustic Landscape}
 
 \subsection{Log-Frequency Representation}
@@ -182,13 +189,6 @@ For bounded metabolic control, $C_{\text{field}}$ is passed through a sigmoid:
 C_{\text{level01}} = \sigma\!\bigl(\beta(C_{\text{field}}-\theta)\bigr)\in[0,1], \quad (\beta,\theta)=(2,0).
 \end{equation}
 
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\textwidth]{experiments/plots/e1/paper_e1_landscape_scan_anchor220.pdf}
-\caption{Psychoacoustic landscape scan around an anchor tone (220\,Hz). (A)~Harmonicity $H_{01}(f)$; (B)~roughness $R_{01}(f)$; (C)~consonance field $C_{\text{field}}(f)$; (D)~consonance density $C_{\text{density}}(f)$. Vertical guides mark selected integer-ratio references relative to the anchor; the darker central line marks unison. Peaks at simple ratios in $H$ and corresponding troughs in $R$ combine to produce attractor structure in both consonance views. The reduced peak density outside $\pm 1$ octave is a finite-order sibling-projection property ($N=16$), not a plotting artifact.}
-\label{fig:e1-landscape}
-\end{figure*}
-
 \section{Agents and Dynamics}
 
 \subsection{Pitch Adaptation}
@@ -217,7 +217,7 @@ Each agent contains a phase oscillator:
 
 Here $K$ is coupling strength and $F(t)$ is an optional external forcing term (“kick”). Phase locking is quantified via the Kuramoto order parameter $r(t)$ \citep{kuramoto1984,strogatz2000} and phase-locking value (PLV) \citep{lachaux1999}.
 
-\section{Experimental Results}
+\section{Results}
 
 \subsection{Landscape Attractors}
 
@@ -229,18 +229,10 @@ Populations of 24 agents were simulated for 100 steps (burn-in 10). Three condit
 
 \begin{figure*}[t]
 \centering
-\includegraphics[trim={0 375 525 0},clip,width=0.49\textwidth]{experiments/plots/e2/paper_e2_figure_e2_1.pdf}\hfill
-\includegraphics[trim={0 0 525 375},clip,width=0.49\textwidth]{experiments/plots/e2/paper_e2_figure_e2_1.pdf}
-\caption{Population dynamics. (a) Mean consonance over time (95\% CI); the vertical marker indicates the programmed phase switch. (c) Representative seed trajectories in semitone units.}
+\includegraphics[width=\textwidth]{experiments/plots/e2/paper_e2_figure_e2_1.pdf}
+\caption{Population dynamics and diversity. (A) Mean consonance over time (95\% CI); the vertical marker indicates the programmed phase switch. (B) Unique pitch bins at end of run (95\% CI). (B') Mean nearest-neighbor distance (st, 95\% CI), revealing pronounced collapse when repulsion is removed. (C) Representative seed trajectories in semitone units.}
 \label{fig:e2-dynamics}
 \end{figure*}
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.9\columnwidth]{experiments/plots/e2/paper_e2_diversity_summary_ci95.pdf}
-\caption{Non-collapse metrics (95\% CI). Left: unique pitch bins at end of run. Right: mean nearest-neighbor distance (st), revealing pronounced collapse when repulsion is removed.}
-\label{fig:e2-diversity}
-\end{figure}
 
 \textbf{Diversity.} Unique pitch bins averaged 20.0 (baseline) versus 13.4 (no repulsion). Nearest-neighbor distances halved under no-repulsion, indicating collapse.
 
@@ -250,17 +242,10 @@ These results show that hill-climbing enriches consonant interval structure, whi
 
 \begin{figure*}[t]
 \centering
-\includegraphics[trim={0 375 0 0},clip,width=\textwidth]{experiments/plots/e2/paper_e2_figure_e2_2.pdf}
-\caption{Emergent interval structure. (a) Pairwise interval histogram for the baseline condition (mean with 95\% CI). (b) Overlay of baseline and ablations, displaying how hill-climbing and repulsion redistribute interval mass.}
+\includegraphics[width=\textwidth]{experiments/plots/e2/paper_e2_figure_e2_2.pdf}
+\caption{Emergent interval structure and consonant mass. (A) Pairwise interval histogram for the baseline condition (mean with 95\% CI). (B) Overlay of baseline and ablations, displaying how hill-climbing and repulsion redistribute interval mass. (C) Consonant interval mass (95\% CI) for $T=\{3,4,7\}$ semitones. (C') Expanded set $T=\{0,3,4,5,7,8,9\}$. Hill-climbing systematically enriches consonant mass; removing repulsion destabilizes the distribution.}
 \label{fig:e2-intervals}
 \end{figure*}
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.82\columnwidth]{experiments/plots/e2/paper_e2_consonant_mass_summary.pdf}
-\caption{Consonant interval mass (95\% CI) for $T=\{3,4,7\}$ semitones (top) and expanded set $T=\{0,3,4,5,7,8,9\}$ (bottom). Hill-climbing systematically enriches consonant mass; removing repulsion destabilizes the distribution.}
-\label{fig:e2-consonant-mass}
-\end{figure}
 
 \subsection{Consonance as Selection Pressure}
 

@@ -50,3 +50,7 @@ The paper uses sequential numbering (Experiment 1–4). The internal experiment 
 | Experiment 2 | E2 | Self-Organized Polyphony |
 | Experiment 3 | E3 | Consonance as Selection Pressure |
 | Experiment 4 | E5 | Rhythmic Entrainment |
+
+## Workflow
+
+- After changing `main.tex`, run `pdflatex main.tex` to rebuild the PDF.
