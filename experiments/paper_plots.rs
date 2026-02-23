@@ -3518,7 +3518,7 @@ fn simulate_e5_kick(
 
 fn render_e1_plot(
     out_path: &Path,
-    anchor_hz: f32,
+    _anchor_hz: f32,
     log2_ratio_scan: &[f32],
     perc_h_pot_scan: &[f32],
     perc_r_state01_scan: &[f32],
@@ -3558,10 +3558,7 @@ fn render_e1_plot(
     let x_label_area = 52;
 
     let mut chart_h = ChartBuilder::on(&panels[0])
-        .caption(
-            format!("Harmonicity Potential H(f) | anchor {} Hz", anchor_hz),
-            ("sans-serif", 32),
-        )
+        .caption("A: Harmonicity H\u{2080}\u{2081}(f)", ("sans-serif", 32))
         .margin(6)
         .x_label_area_size(x_label_area)
         .y_label_area_size(80)
@@ -3570,7 +3567,7 @@ fn render_e1_plot(
     chart_h
         .configure_mesh()
         .disable_mesh()
-        .y_desc("H potential")
+        .y_desc("H\u{2080}\u{2081}")
         .x_labels(0)
         .label_style(("sans-serif", 20).into_font())
         .axis_desc_style(("sans-serif", 24).into_font())
@@ -3602,7 +3599,7 @@ fn render_e1_plot(
     chart_h.draw_series(LineSeries::new(h_points, &PAL_H))?;
 
     let mut chart_r = ChartBuilder::on(&panels[1])
-        .caption("Roughness State R01(f)", ("sans-serif", 32))
+        .caption("B: Roughness R\u{2080}\u{2081}(f)", ("sans-serif", 32))
         .margin(6)
         .x_label_area_size(x_label_area)
         .y_label_area_size(80)
@@ -3611,7 +3608,7 @@ fn render_e1_plot(
     chart_r
         .configure_mesh()
         .disable_mesh()
-        .y_desc("R01")
+        .y_desc("R\u{2080}\u{2081}")
         .x_labels(0)
         .label_style(("sans-serif", 20).into_font())
         .axis_desc_style(("sans-serif", 24).into_font())
@@ -3657,7 +3654,7 @@ fn render_e1_plot(
     let pad = 0.05f32;
 
     let mut chart_c = ChartBuilder::on(&panels[2])
-        .caption("Consonance Field C_field(f)", ("sans-serif", 32))
+        .caption("C: Consonance field C_field(f)", ("sans-serif", 32))
         .margin(6)
         .x_label_area_size(x_label_area)
         .y_label_area_size(80)
@@ -3706,7 +3703,7 @@ fn render_e1_plot(
         * 1.1;
 
     let mut chart_d = ChartBuilder::on(&panels[3])
-        .caption("Consonance Density C_density(f)", ("sans-serif", 32))
+        .caption("D: Consonance density C_density(f)", ("sans-serif", 32))
         .margin(6)
         .x_label_area_size(x_label_area)
         .y_label_area_size(80)

@@ -121,45 +121,73 @@ Let $x = \log_2(f)$. Intervals become $\Delta x = \log_2(f_2/f_1)$. This represe
 
 \subsection{Harmonicity}
 
-Harmonicity $H(x)$ is computed via projection onto harmonic templates corresponding to virtual fundamental hypotheses \citep{terhardt1979,parncutt1988}. For each candidate fundamental $x_0$, harmonics at $x_0 + \log_2(n)$ are evaluated against spectral energy. Downward and upward projections are combined with a mirror-weight parameter to accommodate asymmetries in perceived root inference.
+Harmonicity $H(x)$ quantifies how well spectral energy at position $x$ in log$_2$-frequency space is explained by a harmonic template \citep{terhardt1979,parncutt1988}. Periodicity extraction---the neural basis of virtual pitch---is well localized in the auditory brainstem and primary auditory cortex, making $H$ a relatively low-level, culture-invariant quantity.
 
-In all reported experiments, the harmonicity kernel uses finite-order sibling projection with $\texttt{num\_subharmonics}=\texttt{num\_harmonics}=16$, $\rho_{\text{root}}=\rho_{\text{overtone}}=0.4$, $\sigma=3$\,cents, $\texttt{diag\_weight}=0.65$, and no absolute-frequency gate (\texttt{freq\_gate}=false). In the E1 single-anchor scan, this means candidate ratios are effectively generated from bounded integer pairs ($m,k \le 16$) with power-law attenuation, so peak density is naturally lower outside one octave ($|\log_2(f/f_{\text{anchor}})|>1$) than near the anchor region.
+Computation proceeds by sibling projection, a two-pass convolution with power-law weights $w_k=k^{-\rho}$ ($\rho>0$):
+%
+\begin{align}
+  \mathrm{Roots}(x) &= \sum_{k=1}^{N} S(x+\log_2 k)\;k^{-\rho},
+      \label{eq:h-down}\\
+  H(x) &= \sum_{m=1}^{N} \mathrm{Roots}(x-\log_2 m)\;m^{-\rho}.
+      \label{eq:h-up}
+\end{align}
+%
+The downward pass (\ref{eq:h-down}) accumulates evidence for virtual roots; the upward pass (\ref{eq:h-up}) redistributes that evidence to harmonics. For two tones at frequency ratio $p\!:\!q$, coincident harmonics accumulate constructively; the number of such coincidences within order $N$ grows as $\max(p,q)$ shrinks, so peaks at simpler integer ratios are systematically stronger (Figure~\ref{fig:e1-landscape}A).
 
-The harmonicity field is normalized to $H_{01} \in [0,1]$.
+In all experiments $N=16$ and $\rho=0.4$. Overtone and undertone projections are blended with equal weight; full parameterization is given in \citet{conchordal2025}. The field is normalized to $H_{01}\in[0,1]$.
 
 \subsection{Roughness}
 
-Roughness $R(x)$ is estimated from pairwise spectral interactions weighted by a critical-band kernel \citep{plomp1965}. Close frequency separations within the equivalent rectangular bandwidth \citep{glasberg1990} produce maximal interference; separations outside this band diminish interaction strength. The aggregate roughness is normalized to $R_{01} \in [0,1]$.
+Roughness $R(x)$ quantifies sensory dissonance from unresolved beating within the critical band \citep{plomp1965}. Like harmonicity, roughness reflects early peripheral processing: it arises from amplitude-modulation products on the basilar membrane, a mechanism rooted in cochlear mechanics \citep{glasberg1990}.
 
-\subsection{Consonance Field}
-
-Harmonicity and roughness are treated as distinct perceptual states. Rather than forcing a single collapse for all downstream uses, we first define a bilinear consonance core:
-
+The computation maps the amplitude spectrum $S$ onto the ERB-rate scale $z = 21.4\log_{10}(0.00437f+1)$ and convolves with a Plomp--Levelt interference kernel:
+%
 \begin{equation}
-C = a H_{01} + b R_{01} + c H_{01} R_{01} + d.
+  R_{\mathrm{raw}}(z) = \int S(\zeta)\;g_{\mathrm{PL}}(|z-\zeta|)
+      \,d\zeta,
+  \label{eq:roughness}
+\end{equation}
+%
+where $g_{\mathrm{PL}}$ peaks at approximately $0.25$\,ERB and vanishes at both zero separation (no self-interference) and wide separation (outside the critical band). At simple integer ratios $p\!:\!q$, harmonics are spaced well beyond the critical band, producing roughness troughs that complement the harmonicity peaks (Figure~\ref{fig:e1-landscape}B).
+
+The raw output is normalized via a reference-based saturation map to $R_{01}\in[0,1]$; details are given in \citet{conchordal2025}.
+
+\subsection{Consonance}
+
+Unlike harmonicity and roughness, which each correspond to a well-localized stage of auditory processing, consonance is not a single well-defined perceptual quantity. Its evaluation recruits higher-order circuits---from cortical pitch maps through prefrontal valuation networks---and is further shaped by enculturation and listening context. No unique mapping $C(H,R)$ can therefore be stipulated on purely psychoacoustic grounds.
+
+In Conchordal, consonance serves multiple computational roles: landscape evaluation for hill-climbing pitch adaptation, bounded metabolic signaling, and nonnegative mass for density-weighted proposal sampling. We address both the definitional indeterminacy and this diversity of downstream uses by adopting a bilinear consonance core---the most general first-order interaction model for two $[0,1]$ inputs:
+%
+\begin{equation}
+C = a\,H_{01} + b\,R_{01} + c\,H_{01}\,R_{01} + d.
 \label{eq:consonance-core}
 \end{equation}
+%
+Here $b<0$ penalizes roughness, while $c>0$ weakens that penalty when harmonicity is high. Different coefficient settings yield task-specific quantities from the same functional family.
 
-Here $b<0$ penalizes roughness, while $c>0$ weakens that penalty when harmonicity is high.
-
-We then derive task-specific quantities from Eq.~\eqref{eq:consonance-core}. The evaluation field for local pitch adaptation is:
+The evaluation field for local pitch adaptation uses $(a,b,c,d)=(1,-1.35,1,0)$:
 \begin{equation}
-C_{\text{field}} \equiv C.
+C_{\text{field}} = H_{01} - 1.35\,R_{01} + H_{01}\,R_{01}.
 \end{equation}
 
-For bounded control (e.g., metabolism), we use:
+For density-based proposal weighting, we set $(a,b,c,d)=(1,0,-\rho,0)$ with $\rho=1$, yielding a dedicated nonnegative mass:
 \begin{equation}
-C_{\text{level01}} = \sigma\!\left(\beta\left(C_{\text{field}}-\theta\right)\right)\in[0,1].
+C_{\text{density}} = H_{01}(1 - R_{01}).
 \end{equation}
 
-In this paper, the field kernel is fixed to $(a,b,c,d)=(1,-1.35,1,0)$, and the bounded map uses $(\beta,\theta)=(2,0)$.
+This separation avoids conflating acceptance utility ($C_{\text{field}}$) with proposal density ($C_{\text{density}}$). Figure~\ref{fig:e1-landscape}C,D illustrates the resulting landscape for a single-anchor scan; both views exhibit attractor structure at simple integer ratios.
 
-For density-based proposal weighting, we use a dedicated nonnegative mass:
+For bounded metabolic control, $C_{\text{field}}$ is passed through a sigmoid:
 \begin{equation}
-C_{\text{density}} = H_{01}(1-\rho R_{01}),\quad 0 \le \rho \le 1.
+C_{\text{level01}} = \sigma\!\bigl(\beta(C_{\text{field}}-\theta)\bigr)\in[0,1], \quad (\beta,\theta)=(2,0).
 \end{equation}
 
-In this paper, $\rho=1$, so $C_{\text{density}}=H_{01}(1-R_{01})$. This separation avoids conflating acceptance utility ($C_{\text{field}}$, $C_{\text{level01}}$) with proposal density ($C_{\text{density}}$).
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{experiments/plots/e1/paper_e1_landscape_scan_anchor220.pdf}
+\caption{Psychoacoustic landscape scan around an anchor tone (220\,Hz). (A)~Harmonicity $H_{01}(f)$; (B)~roughness $R_{01}(f)$; (C)~consonance field $C_{\text{field}}(f)$; (D)~consonance density $C_{\text{density}}(f)$. Vertical guides mark selected integer-ratio references relative to the anchor; the darker central line marks unison. Peaks at simple ratios in $H$ and corresponding troughs in $R$ combine to produce attractor structure in both consonance views. The reduced peak density outside $\pm 1$ octave is a finite-order sibling-projection property ($N=16$), not a plotting artifact.}
+\label{fig:e1-landscape}
+\end{figure*}
 
 \section{Agents and Dynamics}
 
@@ -193,16 +221,7 @@ Here $K$ is coupling strength and $F(t)$ is an optional external forcing term (â
 
 \subsection{Landscape Attractors}
 
-Scanning a single anchor frequency across log-frequency space reveals that harmonicity peaks at simple integer ratios (2:1, 3:2, 4:3, 5:4), while roughness exhibits corresponding troughs \citep{helmholtz1877,sethares1993}. Figure~\ref{fig:e1-landscape} reports both consonance views: $C_{\text{field}}$ (evaluation landscape) and $C_{\text{density}}$ (proposal mass). Both exhibit attractor structure near small-integer ratios without imposing any discrete scale.
-
-No discrete scale was imposed. The attractors emerge solely from psychoacoustic structure.
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\textwidth]{experiments/plots/e1/paper_e1_landscape_scan_anchor220.pdf}
-\caption{Psychoacoustic landscape scan around an anchor tone (220\,Hz). From top: harmonicity potential $H(f)$; roughness state $R_{01}(f)$; consonance field score $C_{\text{field}}(f)=aH_{01}+bR_{01}+cH_{01}R_{01}+d$; and consonance density mass $C_{\text{density}}(f)=H_{01}(f)(1-R_{01}(f))$. Vertical guide lines mark selected ratio references relative to the anchor (1:2, 6:5, 5:4, 4:3, 3:2, 5:3, 2:1); the darker central line marks unison ($\log_2(f/f_{\text{anchor}})=0$). Horizontal guides at $y\in\{-0.5,0,0.5,1.0\}$ aid cross-panel comparison. The reduced peak density outside $\pm 1$ octave is a finite-order sibling-projection property, not a plotting artifact.}
-\label{fig:e1-landscape}
-\end{figure*}
+As shown in Figure~\ref{fig:e1-landscape}, scanning a single anchor frequency across log-frequency space confirms that harmonicity peaks at simple integer ratios (2:1, 3:2, 4:3, 5:4), while roughness exhibits corresponding troughs \citep{helmholtz1877,sethares1993}. Both $C_{\text{field}}$ and $C_{\text{density}}$ exhibit attractor structure near small-integer ratios. No discrete scale was imposed; the attractors emerge solely from psychoacoustic structure.
 
 \subsection{Self-Organized Polyphony}
 
