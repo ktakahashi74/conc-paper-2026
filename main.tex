@@ -105,9 +105,11 @@ This paper introduces \textit{Conchordal}, an artificial life system in which so
 
 \section{Introduction}
 
-Artificial life has traditionally unfolded in spatial, chemical, or symbolic domains \citep{langton1989,bedau2000}. Yet sound—despite its rich physical structure and deep entanglement with biological perception—remains largely unexplored as a primary computational medium for life-like dynamics \citep{miranda2002,eldridge2009}. Prior work has explored consonance-based harmony generation through navigation in perceptually motivated tonal spaces \citep{bernardes2016}; Conchordal instead treats consonance as an ecological resource within a continuous psychoacoustic field inhabited by autonomous agents. Conchordal advances a different premise: that psychoacoustic structure itself may constitute an ecological landscape in which adaptive agents evolve, interact, and synchronize.
+Artificial life has traditionally unfolded in spatial, chemical, or symbolic domains \citep{langton1989,bedau2000}. Yet sound—despite its rich physical structure and deep entanglement with biological perception—remains largely unexplored as a primary computational medium for life-like dynamics \citep{miranda2002,eldridge2009}. Prior work has explored consonance-based harmony generation through navigation in perceptually motivated tonal spaces \citep{bernardes2016}; Conchordal instead treats consonance as an ecological resource within a continuous psychoacoustic field inhabited by autonomous agents.
 
-Rather than encoding harmony or rhythm as compositional rules, Conchordal defines a continuous field derived from perceptual acoustics \citep{conchordal2025}. Agents do not “compose”; they seek locally advantageous regions of a cognitive landscape shaped by harmonicity and roughness. Consonance, in this system, is neither aesthetic nor normative; it is ecological. When linked to metabolism, it becomes a resource. When coupled to temporal oscillators, it enables entrainment.
+Conchordal is built on the principle of \emph{Direct Cognitive Coupling} (DCC): the generative process operates directly upon structures isomorphic to those in the listener's auditory system, bypassing symbolic intermediaries such as scales, metrical grids, or note durations \citep{conchordal2025}. In the spectral domain, the fitness landscape is constructed from roughness and harmonicity models grounded in cochlear filtering and periodicity detection \citep{plomp1965,terhardt1979}. In the temporal domain, agent phase oscillators follow the same Kuramoto coupling law invoked by Dynamic Attending Theory to model cortical entrainment to rhythmic stimuli \citep{large1999,lakatos2008}. DCC ensures that the structures agents discover—consonant pitch configurations and phase-locked rhythms—are perceptually salient by construction, not by post-hoc evaluation.
+
+Rather than encoding harmony or rhythm as compositional rules, Conchordal defines a continuous field derived from this perceptual foundation. Agents do not “compose”; they seek locally advantageous regions of a cognitive landscape shaped by harmonicity and roughness. Consonance, in this system, is neither aesthetic nor normative; it is ecological. When linked to metabolism, it becomes a resource. When coupled to temporal oscillators, it enables entrainment.
 
 The present study evaluates whether such a system satisfies core artificial life criteria: (i) self-organization under environmental constraints, (ii) selection mediated by resource dynamics, and (iii) synchronization through interaction and external forcing. Four experiments address these criteria.
 
@@ -136,7 +138,7 @@ Let $x = \log_2(f)$. Intervals become $\Delta x = \log_2(f_2/f_1)$. This represe
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{experiments/plots/e2/paper_e2_figure_e2_2.pdf}
-\caption{Emergent interval structure and consonant mass. (A) Pairwise interval histogram for the baseline condition (mean with 95\% CI). (B) Overlay of baseline and ablations, displaying how hill-climbing and repulsion redistribute interval mass. (C) Consonant interval mass (95\% CI) for $T=\{3,4,7\}$ semitones. (C') Expanded set $T=\{0,3,4,5,7,8,9\}$. Hill-climbing systematically enriches consonant mass; removing repulsion destabilizes the distribution.}
+\caption{Emergent interval structure. (A) Pairwise interval histogram for the baseline condition (mean with 95\% CI). (B) Overlay of baseline and ablations, showing how hill-climbing and repulsion redistribute interval mass. (C) Shannon entropy of the pairwise interval distribution (95\% CI): removing hill-climbing (\emph{no hill}) raises entropy toward uniform; removing repulsion (\emph{no rep}) lowers entropy through collapse. (D) Distinct pitch positions occupied at run end (95\% CI; 25\,ct resolution): the \emph{no rep} condition collapses from $\approx$19 to $\approx$13 positions, showing that emergent polyphony requires repulsion.}
 \label{fig:e2-intervals}
 \end{figure*}
 
@@ -231,6 +233,8 @@ Each agent contains a phase oscillator:
 
 Here $K$ is coupling strength and $F(t)$ is an optional external forcing term (“kick”). Phase locking is quantified via the Kuramoto order parameter $r(t)$ \citep{kuramoto1984,strogatz2000} and phase-locking value (PLV) \citep{lachaux1999}.
 
+The Kuramoto model is motivated by neural oscillatory entrainment in auditory cognition. Cortical rhythms in the theta ($\sim$4--8\,Hz), alpha ($\sim$8--13\,Hz), and beta ($\sim$13--30\,Hz) bands entrain to periodic auditory stimuli \citep{lakatos2008,doelling2015}, and listeners' neural phase-locking to the beat predicts perceived rhythmic salience \citep{nozaradan2011}. This oscillator design thus realises the temporal axis of DCC: agent timing shares the coupling law hypothesised for cortical beat tracking \citep{large1999}.
+
 \section{Results}
 
 \subsection{Landscape Attractors}
@@ -243,7 +247,7 @@ Populations of 24 agents were simulated for 100 steps (burn-in 10). Three condit
 
 \textbf{Diversity.} Unique pitch bins averaged 20.0 (baseline) versus 13.4 (no repulsion). Nearest-neighbor distances halved under no-repulsion, indicating collapse.
 
-\textbf{Interval Structure.} The mass of consonant intervals \{3,4,7 semitones\} was 0.1596 in baseline, reduced to 0.1384 without hill-climbing. Entropy increased under no-hill (less structure) and decreased under no-repulsion (degenerate concentration).
+\textbf{Interval Structure.} Shannon entropy of the pairwise interval distribution was 3.95 nats (baseline), rising to 4.92 under no-hill-climbing and falling to 3.57 under no-repulsion. The no-hill increase ($\Delta = +0.97$ nats) reflects a more uniform distribution lacking consonant peaks; the no-repulsion decrease reflects collapse toward fewer intervals.
 
 These results show that hill-climbing enriches consonant interval structure, while repulsion prevents monophonic collapse \citep{reynolds1987}. Self-organized harmonic distributions arise from the landscape–agent interaction.
 
@@ -253,12 +257,12 @@ Across 1000 pooled runs, early consonance (first 20 ticks) strongly predicted li
 
 When recharge was disabled, correlations vanished (Pearson $r = 0.028$; log-rank $p = 0.33$). Thus, consonance functions as a genuine ecological resource, generating measurable selection pressure.
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\includegraphics[width=\columnwidth]{experiments/plots/e3/paper_e3_firstk_survival_compare_pooled.pdf}
-\caption{Consonance-dependent metabolism induces selection. Kaplan--Meier survival curves for agents split by early consonance (median split of $C_{\mathrm{level01,firstK}}$, pooled; $n_{\mathrm{high}}=500$, $n_{\mathrm{low}}=500$). Left: baseline recharge yields a pronounced survival advantage for high-consonance agents (median 372 vs.\ 339 steps; log-rank $p<0.001$). Right: removing recharge eliminates the effect (median 199 vs.\ 197; log-rank $p=0.330$).}
+\includegraphics[width=\textwidth]{experiments/plots/e3/paper_e3_figure4.pdf}
+\caption{Consonance as selection pressure (pooled, $n=1000$ agents per condition). (A,\,B) Kaplan--Meier survival curves split by early consonance $C_{\mathrm{firstK}}$ (median split). (A) Baseline recharge yields a pronounced survival advantage for high-consonance agents (median 372 vs.\ 339 steps; log-rank $p<0.001$). (B) Removing recharge eliminates the effect (median 199 vs.\ 197; $p=0.330$). (C,\,D) Scatter of $C_{\mathrm{firstK}}$ vs.\ lifetime. (C) Baseline: Pearson $r=0.71$, Spearman $\rho=0.45$. (D) No recharge: $r\approx0.03$, no association.}
 \label{fig:e3-selection}
-\end{figure}
+\end{figure*}
 
 \subsection{Rhythmic Entrainment}
 
@@ -285,7 +289,9 @@ Second, harmonic structure in populations arises from local optimization and den
 
 Third, when consonance modulates energy, ecological selection appears \citep{bedau2000} (Figure~\ref{fig:e3-selection}). Agents that occupy more consonant regions survive longer. Removing recharge abolishes the effect, confirming causality.
 
-Finally, temporal synchronization (Figure~\ref{fig:e5-entrainment}) shows that rhythmic coherence can be induced through oscillator coupling, linking pitch ecology and temporal order within one framework.
+Finally, temporal synchronization (Figure~\ref{fig:e5-entrainment}) shows that rhythmic coherence can be induced through oscillator coupling, linking pitch ecology and temporal order within one framework. The rapid phase-locking ($\text{PLV} \to 0.99$) mirrors cortical entrainment dynamics observed in EEG studies of beat perception \citep{nozaradan2011,doelling2015}.
+
+Taken together, these results illustrate DCC operating across both spectral and temporal axes. In the spectral domain, landscape attractors and self-organized polyphony arise from perceptual primitives shared with the listener's cochlear and periodicity-detection systems. In the temporal domain, phase-locking emerges from the same Kuramoto coupling law hypothesised for cortical beat tracking \citep{large1999}. Because both generative and perceptual processes are grounded in the same psychoacoustic structures, the emergent configurations are perceptually salient by construction—an advantage unavailable to systems that operate in abstract symbol spaces and rely on post-hoc perceptual evaluation.
 
 Collectively, these findings position sound as a viable non-traditional medium for artificial life, satisfying criteria of self-organization, selection, and synchronization.
 

@@ -118,8 +118,7 @@ const E2_CONSONANT_STEPS: [f32; 8] = [
     12.0,                   // 2:1 octave
 ];
 const E2_CONSONANT_TARGETS_CORE: [f32; 3] = [3.1564128, 3.8631372, 7.0195501];
-const E2_CONSONANT_TARGETS_EXTENDED: [f32; 7] = [
-    0.0,        // 1:1 unison
+const E2_CONSONANT_TARGETS_EXTENDED: [f32; 6] = [
     3.1564128,  // 6:5 minor third
     3.8631372,  // 5:4 major third
     4.9804499,  // 4:3 perfect fourth
@@ -2024,6 +2023,8 @@ fn plot_e2_emergent_harmony(
         &pairwise_hist_nohill.mean_frac,
         &pairwise_hist_norep.mean_frac,
         &consonant_rows,
+        &hist_rows,
+        &diversity_rows_vec,
     )?;
 
     let nohill_hist_05 = e2_hist_seed_sweep(&nohill_runs, 0.5, hist_min, hist_max);
@@ -3146,6 +3147,15 @@ fn plot_e3_metabolic_selection(
         &pooled_surv_base,
         "NoRecharge",
         &pooled_surv_nore,
+    )?;
+
+    let figure4_path = out_dir.join("paper_e3_figure4.svg");
+    render_e3_figure4(
+        &figure4_path,
+        &pooled_surv_base,
+        &pooled_surv_nore,
+        &pooled_base_scatter,
+        &pooled_nore_scatter,
     )?;
 
     let pooled_surv_base_q = build_survival_data(
@@ -16258,10 +16268,10 @@ fn cliffs_delta(a: &[f32], b: &[f32]) -> f32 {
 
 fn consonant_mass_by_seed_csv(rows: &[ConsonantMassRow]) -> String {
     let mut out = format!(
-        "# window_st={:.3} targets_core=3|4|7 targets_extended=0|3|4|5|7|8|9\n",
+        "# window_st={:.3} targets_core=6:5|5:4|3:2 targets_extended=6:5|5:4|4:3|3:2|8:5|5:3\n",
         E2_CONSONANT_WINDOW_ST
     );
-    out.push_str("seed,cond,mass_core_347,mass_extended_0345789\n");
+    out.push_str("seed,cond,mass_core_347,mass_extended_345789\n");
     for row in rows {
         out.push_str(&format!(
             "{},{},{:.6},{:.6}\n",
@@ -16279,7 +16289,7 @@ fn consonant_mass_summary_csv(rows: &[ConsonantMassRow]) -> String {
             consonant_mass_core as fn(&ConsonantMassRow) -> f32,
         ),
         (
-            "extended_0345789",
+            "extended_345789",
             consonant_mass_extended as fn(&ConsonantMassRow) -> f32,
         ),
     ] {
@@ -16306,7 +16316,7 @@ fn consonant_mass_stats_csv(rows: &[ConsonantMassRow]) -> String {
             consonant_mass_core as fn(&ConsonantMassRow) -> f32,
         ),
         (
-            "extended_0345789",
+            "extended_345789",
             consonant_mass_extended as fn(&ConsonantMassRow) -> f32,
         ),
     ]
@@ -17009,6 +17019,7 @@ fn draw_e2_timeseries_controls_panel(
             .configure_series_labels()
             .background_style(WHITE.mix(0.8))
             .border_style(BLACK)
+            .label_font(("sans-serif", 28).into_font())
             .draw()?;
     }
     Ok(())
@@ -17139,24 +17150,27 @@ fn render_e2_mean_c_level_annotated(
 fn draw_consonant_mass_panel(
     area: &DrawingArea<SVGBackend, Shift>,
     caption: &str,
+    subtitle: &str,
     rows: &[ConsonantMassRow],
     select: fn(&ConsonantMassRow) -> f32,
 ) -> Result<(), Box<dyn Error>> {
-    draw_consonant_mass_panel_impl(area, caption, rows, select, 22, 16, 18)
+    draw_consonant_mass_panel_impl(area, caption, subtitle, rows, select, 22, 16, 18)
 }
 
 fn draw_consonant_mass_panel_large(
     area: &DrawingArea<SVGBackend, Shift>,
     caption: &str,
+    subtitle: &str,
     rows: &[ConsonantMassRow],
     select: fn(&ConsonantMassRow) -> f32,
 ) -> Result<(), Box<dyn Error>> {
-    draw_consonant_mass_panel_impl(area, caption, rows, select, 32, 20, 24)
+    draw_consonant_mass_panel_impl(area, caption, subtitle, rows, select, 32, 20, 24)
 }
 
 fn draw_consonant_mass_panel_impl(
     area: &DrawingArea<SVGBackend, Shift>,
     caption: &str,
+    subtitle: &str,
     rows: &[ConsonantMassRow],
     select: fn(&ConsonantMassRow) -> f32,
     caption_size: u32,
@@ -17188,6 +17202,151 @@ fn draw_consonant_mass_panel_impl(
         .disable_mesh()
         .x_desc("condition")
         .y_desc("consonant mass")
+        .x_labels(3)
+        .x_label_formatter(&|x| {
+            let idx = x.round() as isize;
+            if (0..=2).contains(&idx) {
+                e2_condition_display(conditions[idx as usize]).to_string()
+            } else {
+                String::new()
+            }
+        })
+        .label_style(("sans-serif", label_size).into_font())
+        .axis_desc_style(("sans-serif", axis_desc_size).into_font())
+        .draw()?;
+
+    if !subtitle.is_empty() {
+        let sub_color = BLACK.mix(0.55);
+        let sub_style = TextStyle::from(("sans-serif", label_size).into_font())
+            .color(&sub_color);
+        area.draw_text(subtitle, &sub_style, (60i32, (caption_size + 6) as i32))?;
+    }
+
+    for (i, cond) in conditions.iter().enumerate() {
+        let center = i as f32;
+        let x0 = center - 0.3;
+        let x1 = center + 0.3;
+        let color = desaturate_rgb(e2_condition_color(cond), 0.2);
+        chart.draw_series(std::iter::once(Rectangle::new(
+            [(x0, 0.0), (x1, means[i])],
+            color.mix(0.7).filled(),
+        )))?;
+        let y0 = (means[i] - ci95[i]).max(0.0);
+        let y1 = (means[i] + ci95[i]).min(y_max);
+        chart.draw_series(std::iter::once(PathElement::new(
+            vec![(center, y0), (center, y1)],
+            BLACK.mix(0.7),
+        )))?;
+    }
+    Ok(())
+}
+
+fn draw_entropy_panel(
+    area: &DrawingArea<SVGBackend, Shift>,
+    caption: &str,
+    hist_rows: &[HistStructureRow],
+    caption_size: u32,
+    label_size: u32,
+    axis_desc_size: u32,
+) -> Result<(), Box<dyn Error>> {
+    let conditions = ["baseline", "nohill", "norep"];
+    let mut means = [0.0f32; 3];
+    let mut ci95 = [0.0f32; 3];
+    for (i, cond) in conditions.iter().enumerate() {
+        let values: Vec<f32> = hist_rows
+            .iter()
+            .filter(|r| r.condition == *cond)
+            .map(|r| r.metrics.entropy)
+            .collect();
+        means[i] = mean_std_scalar(&values).0;
+        ci95[i] = ci95_half_width(&values);
+    }
+    let mut y_max = 0.0f32;
+    for i in 0..3 {
+        y_max = y_max.max(means[i] + ci95[i]);
+    }
+    y_max = (1.15 * y_max.max(1e-6)).max(1e-6);
+
+    let mut chart = ChartBuilder::on(area)
+        .caption(caption, ("sans-serif", caption_size))
+        .margin(8)
+        .x_label_area_size(40)
+        .y_label_area_size(55)
+        .build_cartesian_2d(-0.5f32..2.5f32, 0.0f32..y_max)?;
+    chart
+        .configure_mesh()
+        .disable_mesh()
+        .x_desc("condition")
+        .y_desc("entropy (nats)")
+        .x_labels(3)
+        .x_label_formatter(&|x| {
+            let idx = x.round() as isize;
+            if (0..=2).contains(&idx) {
+                e2_condition_display(conditions[idx as usize]).to_string()
+            } else {
+                String::new()
+            }
+        })
+        .label_style(("sans-serif", label_size).into_font())
+        .axis_desc_style(("sans-serif", axis_desc_size).into_font())
+        .draw()?;
+
+    for (i, cond) in conditions.iter().enumerate() {
+        let center = i as f32;
+        let x0 = center - 0.3;
+        let x1 = center + 0.3;
+        let color = desaturate_rgb(e2_condition_color(cond), 0.2);
+        chart.draw_series(std::iter::once(Rectangle::new(
+            [(x0, 0.0), (x1, means[i])],
+            color.mix(0.7).filled(),
+        )))?;
+        let y0 = (means[i] - ci95[i]).max(0.0);
+        let y1 = (means[i] + ci95[i]).min(y_max);
+        chart.draw_series(std::iter::once(PathElement::new(
+            vec![(center, y0), (center, y1)],
+            BLACK.mix(0.7),
+        )))?;
+    }
+    Ok(())
+}
+
+fn draw_polyphony_panel(
+    area: &DrawingArea<SVGBackend, Shift>,
+    caption: &str,
+    diversity_rows: &[DiversityRow],
+    caption_size: u32,
+    label_size: u32,
+    axis_desc_size: u32,
+) -> Result<(), Box<dyn Error>> {
+    let conditions = ["baseline", "nohill", "norep"];
+    let mut means = [0.0f32; 3];
+    let mut ci95 = [0.0f32; 3];
+    for (i, cond) in conditions.iter().enumerate() {
+        let values: Vec<f32> = diversity_rows
+            .iter()
+            .filter(|r| r.condition == *cond)
+            .map(|r| r.metrics.unique_bins as f32)
+            .collect();
+        means[i] = mean_std_scalar(&values).0;
+        ci95[i] = ci95_half_width(&values);
+    }
+    let mut y_max = 0.0f32;
+    for i in 0..3 {
+        y_max = y_max.max(means[i] + ci95[i]);
+    }
+    y_max = (1.15 * y_max.max(1e-6)).max(1e-6);
+
+    let mut chart = ChartBuilder::on(area)
+        .caption(caption, ("sans-serif", caption_size))
+        .margin(8)
+        .x_label_area_size(40)
+        .y_label_area_size(55)
+        .build_cartesian_2d(-0.5f32..2.5f32, 0.0f32..y_max)?;
+    chart
+        .configure_mesh()
+        .disable_mesh()
+        .x_desc("condition")
+        .y_desc("distinct pitch pos. (25 ct)")
         .x_labels(3)
         .x_label_formatter(&|x| {
             let idx = x.round() as isize;
@@ -17243,15 +17402,17 @@ fn render_consonant_mass_summary_plot(
     let panels = root.split_evenly((2, 1));
     draw_consonant_mass_panel(
         &panels[0],
-        "Consonant interval mass T={3,4,7} (95% CI)",
+        "Consonant interval mass (95% CI)",
+        "T = {6:5, 5:4, 3:2}",
         rows,
-        |row| row.mass_core,
+        consonant_mass_core,
     )?;
     draw_consonant_mass_panel(
         &panels[1],
-        "Consonant interval mass T={0,3,4,5,7,8,9} (95% CI)",
+        "Consonant interval mass (95% CI)",
+        "T = {6:5, 5:4, 4:3, 3:2, 8:5, 5:3}",
         rows,
-        |row| row.mass_extended,
+        consonant_mass_extended,
     )?;
     root.present()?;
     Ok(())
@@ -17442,7 +17603,9 @@ fn render_e2_figure2(
     pairwise_baseline_std: &[f32],
     pairwise_nohill_mean: &[f32],
     pairwise_norep_mean: &[f32],
-    consonant_rows: &[ConsonantMassRow],
+    _consonant_rows: &[ConsonantMassRow],
+    hist_rows: &[HistStructureRow],
+    diversity_rows: &[DiversityRow],
 ) -> Result<(), Box<dyn Error>> {
     if pairwise_centers.is_empty() {
         return Ok(());
@@ -17458,10 +17621,10 @@ fn render_e2_figure2(
     }
     let root = bitmap_root(out_path, (1600, 800)).into_drawing_area();
     root.fill(&WHITE)?;
-    // 2-column layout: A/B stacked (left, wide) | C/C' stacked (right, narrow)
+    // 2-column layout: A/B stacked (left, wide) | C entropy / D polyphony (right, narrow)
     let (panel_left, panel_right) = root.split_horizontally(1200);
     let (panel_a, panel_b) = panel_left.split_vertically(400);
-    let (panel_c, panel_calt) = panel_right.split_vertically(400);
+    let (panel_c, panel_d) = panel_right.split_vertically(400);
 
     // Convert semitone data to cents for display (×100)
     let st2c = 100.0f32;
@@ -17554,21 +17717,20 @@ fn render_e2_figure2(
             .configure_series_labels()
             .background_style(WHITE.mix(0.8))
             .border_style(BLACK)
+            .label_font(("sans-serif", 24).into_font())
             .draw()?;
     }
 
-    draw_consonant_mass_panel_impl(
+    draw_entropy_panel(
         &panel_c,
-        "C. Mass T={3,4,7} (95% CI)",
-        consonant_rows,
-        |row| row.mass_core,
+        "C. Interval entropy (95% CI)",
+        hist_rows,
         29, 18, 22,
     )?;
-    draw_consonant_mass_panel_impl(
-        &panel_calt,
-        "C'. Mass T={0..9} (95% CI)",
-        consonant_rows,
-        |row| row.mass_extended,
+    draw_polyphony_panel(
+        &panel_d,
+        "D. Emergent polyphony (95% CI)",
+        diversity_rows,
         29, 18, 22,
     )?;
 
@@ -18462,6 +18624,45 @@ fn render_scatter_on_area(
     Ok(())
 }
 
+fn render_scatter_on_area_large(
+    area: &DrawingArea<SVGBackend, Shift>,
+    caption: &str,
+    x_desc: &str,
+    data: &ScatterData,
+) -> Result<(), Box<dyn Error>> {
+    let mut chart = ChartBuilder::on(area)
+        .caption(caption, ("sans-serif", 32))
+        .margin(10)
+        .x_label_area_size(55)
+        .y_label_area_size(70)
+        .build_cartesian_2d(data.x_min..data.x_max, 0.0f32..(data.y_max * 1.05))?;
+
+    chart
+        .configure_mesh()
+        .x_desc(x_desc)
+        .y_desc("lifetime (steps)")
+        .label_style(("sans-serif", 20).into_font())
+        .axis_desc_style(("sans-serif", 24).into_font())
+        .draw()?;
+
+    if !data.points.is_empty() {
+        chart.draw_series(
+            data.points
+                .iter()
+                .map(|(x, y)| Circle::new((*x, *y), 3, PAL_H.mix(0.5).filled())),
+        )?;
+    }
+    if data.x_min <= 0.5 && data.x_max >= 0.5 {
+        let y_top = data.y_max * 1.05;
+        chart.draw_series(std::iter::once(PathElement::new(
+            vec![(0.5, 0.0), (0.5, y_top)],
+            BLACK.mix(0.3),
+        )))?;
+    }
+
+    Ok(())
+}
+
 fn render_e3_scatter_with_stats(
     out_path: &Path,
     caption: &str,
@@ -18705,21 +18906,50 @@ fn render_survival_on_area(
         .label("low")
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_R));
 
-    let logrank_p = format_p_value(data.stats.logrank_p);
-    let lines = vec![
-        format!("n_high={}, n_low={}", data.n_high, data.n_low),
-        format!(
-            "median_high={:.1}, median_low={:.1}",
-            data.stats.median_high, data.stats.median_low
-        ),
-        format!("logrank {}", logrank_p),
-    ];
-    draw_note_lines(chart.plotting_area(), &lines, 0.02, 0.05, 26)?;
+    chart
+        .configure_series_labels()
+        .background_style(WHITE.mix(0.8))
+        .border_style(BLACK)
+        .label_font(("sans-serif", 24).into_font())
+        .draw()?;
+
+    Ok(())
+}
+
+fn render_survival_on_area_large(
+    area: &DrawingArea<SVGBackend, Shift>,
+    caption: &str,
+    data: &SurvivalData,
+) -> Result<(), Box<dyn Error>> {
+    let mut chart = ChartBuilder::on(area)
+        .caption(caption, ("sans-serif", 32))
+        .margin(10)
+        .x_label_area_size(55)
+        .y_label_area_size(70)
+        .build_cartesian_2d(0.0f32..data.x_max, 0.0f32..1.05f32)?;
+
+    chart
+        .configure_mesh()
+        .x_desc("time (steps)")
+        .y_desc("survival")
+        .label_style(("sans-serif", 20).into_font())
+        .axis_desc_style(("sans-serif", 24).into_font())
+        .draw()?;
+
+    chart
+        .draw_series(LineSeries::new(data.series_high.clone(), &PAL_H))?
+        .label("high")
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_H));
+    chart
+        .draw_series(LineSeries::new(data.series_low.clone(), &PAL_R))?
+        .label("low")
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_R));
 
     chart
         .configure_series_labels()
         .background_style(WHITE.mix(0.8))
         .border_style(BLACK)
+        .label_font(("sans-serif", 24).into_font())
         .draw()?;
 
     Ok(())
@@ -18798,6 +19028,39 @@ fn render_survival_compare(
         &format!("B. {right_label}"),
         &right_common,
     )?;
+    root.present()?;
+    Ok(())
+}
+
+fn render_e3_figure4(
+    out_path: &Path,
+    left_surv: &SurvivalData,
+    right_surv: &SurvivalData,
+    left_scatter: &ScatterData,
+    right_scatter: &ScatterData,
+) -> Result<(), Box<dyn Error>> {
+    // 2×2 layout: rows = conditions, cols = metrics (KM | scatter)
+    let root = bitmap_root(out_path, (1600, 700)).into_drawing_area();
+    root.fill(&WHITE)?;
+    let panels = root.split_evenly((2, 2));
+    // panels[0]=top-left, [1]=top-right, [2]=bottom-left, [3]=bottom-right
+    let (panel_a, panel_c, panel_b, panel_d) =
+        (&panels[0], &panels[1], &panels[2], &panels[3]);
+
+    let x_max = left_surv.x_max.max(right_surv.x_max);
+    let left_surv_common = survival_with_x_max(left_surv, x_max);
+    let right_surv_common = survival_with_x_max(right_surv, x_max);
+    render_survival_on_area_large(panel_a, "A. Baseline", &left_surv_common)?;
+    render_survival_on_area_large(panel_b, "B. No recharge", &right_surv_common)?;
+
+    let x_min = 0.0f32;
+    let x_max_s = 1.0f32;
+    let y_max_s = left_scatter.y_max.max(right_scatter.y_max);
+    let left_sc = scatter_with_ranges(left_scatter, x_min, x_max_s, y_max_s);
+    let right_sc = scatter_with_ranges(right_scatter, x_min, x_max_s, y_max_s);
+    render_scatter_on_area_large(panel_c, "C. Baseline", "early consonance", &left_sc)?;
+    render_scatter_on_area_large(panel_d, "D. No recharge", "early consonance", &right_sc)?;
+
     root.present()?;
     Ok(())
 }
