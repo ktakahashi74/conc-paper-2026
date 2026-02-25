@@ -16,11 +16,11 @@ cargo run --bin paper
 ## Just recipes
 
 ```bash
-just --justfile experiments/justfile paper --exp e2
+just paper --exp e2
 ```
 
 ```bash
-just --justfile experiments/justfile paper-pdf --exp e2
+just paper-pdf --exp e2
 ```
 
 `paper-pdf` runs the plot generator and converts all emitted SVG files in

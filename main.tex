@@ -118,6 +118,13 @@ The present study evaluates whether such a system satisfies core artificial life
 \label{fig:e1-landscape}
 \end{figure*}
 
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{experiments/plots/e2/paper_e2_figure_e2_1.pdf}
+\caption{Population dynamics and diversity. (A) Mean consonance over time (95\% CI); the vertical marker indicates the programmed phase switch. (B) Unique pitch bins at end of run (95\% CI). (B') Mean nearest-neighbor distance (st, 95\% CI), revealing pronounced collapse when repulsion is removed. (C) Representative seed trajectories in semitone units.}
+\label{fig:e2-dynamics}
+\end{figure*}
+
 \section{The Psychoacoustic Landscape}
 
 \subsection{Log-Frequency Representation}
@@ -125,6 +132,13 @@ The present study evaluates whether such a system satisfies core artificial life
 All spectral relations are computed in log$_2$ frequency space. This coordinate system renders frequency ratios translationally invariant: intervals correspond to additive displacements. Such invariance is essential for modeling perceptual similarity structured by integer ratios rather than absolute frequency \citep{glasberg1990}.
 
 Let $x = \log_2(f)$. Intervals become $\Delta x = \log_2(f_2/f_1)$. This representation allows harmonic templates and interference kernels to be defined as convolutional operations across a continuous domain.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{experiments/plots/e2/paper_e2_figure_e2_2.pdf}
+\caption{Emergent interval structure and consonant mass. (A) Pairwise interval histogram for the baseline condition (mean with 95\% CI). (B) Overlay of baseline and ablations, displaying how hill-climbing and repulsion redistribute interval mass. (C) Consonant interval mass (95\% CI) for $T=\{3,4,7\}$ semitones. (C') Expanded set $T=\{0,3,4,5,7,8,9\}$. Hill-climbing systematically enriches consonant mass; removing repulsion destabilizes the distribution.}
+\label{fig:e2-intervals}
+\end{figure*}
 
 \subsection{Harmonicity}
 
@@ -227,25 +241,11 @@ As shown in Figure~\ref{fig:e1-landscape}, scanning a single anchor frequency ac
 
 Populations of 24 agents were simulated for 100 steps (burn-in 10). Three conditions were compared: baseline, no hill-climb, and no repulsion.
 
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\textwidth]{experiments/plots/e2/paper_e2_figure_e2_1.pdf}
-\caption{Population dynamics and diversity. (A) Mean consonance over time (95\% CI); the vertical marker indicates the programmed phase switch. (B) Unique pitch bins at end of run (95\% CI). (B') Mean nearest-neighbor distance (st, 95\% CI), revealing pronounced collapse when repulsion is removed. (C) Representative seed trajectories in semitone units.}
-\label{fig:e2-dynamics}
-\end{figure*}
-
 \textbf{Diversity.} Unique pitch bins averaged 20.0 (baseline) versus 13.4 (no repulsion). Nearest-neighbor distances halved under no-repulsion, indicating collapse.
 
 \textbf{Interval Structure.} The mass of consonant intervals \{3,4,7 semitones\} was 0.1596 in baseline, reduced to 0.1384 without hill-climbing. Entropy increased under no-hill (less structure) and decreased under no-repulsion (degenerate concentration).
 
 These results show that hill-climbing enriches consonant interval structure, while repulsion prevents monophonic collapse \citep{reynolds1987}. Self-organized harmonic distributions arise from the landscape–agent interaction.
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\textwidth]{experiments/plots/e2/paper_e2_figure_e2_2.pdf}
-\caption{Emergent interval structure and consonant mass. (A) Pairwise interval histogram for the baseline condition (mean with 95\% CI). (B) Overlay of baseline and ablations, displaying how hill-climbing and repulsion redistribute interval mass. (C) Consonant interval mass (95\% CI) for $T=\{3,4,7\}$ semitones. (C') Expanded set $T=\{0,3,4,5,7,8,9\}$. Hill-climbing systematically enriches consonant mass; removing repulsion destabilizes the distribution.}
-\label{fig:e2-intervals}
-\end{figure*}
 
 \subsection{Consonance as Selection Pressure}
 
@@ -268,12 +268,10 @@ The order parameter \citep{kuramoto1984} approached unity only in the coupled co
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.49\textwidth]{experiments/plots/e5/paper_e5_order_over_time.pdf}\hfill
-\includegraphics[width=0.49\textwidth]{experiments/plots/e5/paper_e5_plv_over_time.pdf}
-
-\medskip
-\includegraphics[width=0.35\textwidth]{experiments/plots/e5/paper_e5_seed_sweep.pdf}
-\caption{Rhythmic entrainment under external forcing (“kick”). Top-left: Kuramoto order parameter $r(t)$ for main and control conditions; pre-kick overlap reflects $k_{\mathrm{eff}}=0$, while the kick rapidly drives the main condition toward near-unity coherence. Top-right: phase-locking value (PLV) to the kick; the main condition converges to PLV $\approx 1$ whereas the control remains near baseline. Bottom: seed sweep summary of post-kick PLV mean, demonstrating robustness across runs. Vertical markers indicate burn-in end, kick onset, and evaluation start.}
+\includegraphics[width=0.40\textwidth]{experiments/plots/e5/paper_e5_order_over_time.pdf}\hfill
+\includegraphics[width=0.40\textwidth]{experiments/plots/e5/paper_e5_plv_over_time.pdf}\hfill
+\includegraphics[width=0.20\textwidth]{experiments/plots/e5/paper_e5_seed_sweep.pdf}
+\caption{Rhythmic entrainment under external forcing (“kick”). Left: Kuramoto order parameter $r(t)$ for main and control conditions; pre-kick overlap reflects $k_{\mathrm{eff}}=0$, while the kick rapidly drives the main condition toward near-unity coherence. Center: phase-locking value (PLV) to the kick; the main condition converges to PLV $\approx 1$ whereas the control remains near baseline. Right: seed sweep summary of post-kick PLV mean, demonstrating robustness across runs. Vertical markers indicate burn-in end, kick onset, and evaluation start.}
 \label{fig:e5-entrainment}
 \end{figure*}
 

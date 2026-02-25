@@ -131,8 +131,6 @@ struct E3LifeState {
     c_level_birth: f32,
     pending_birth: bool,
     was_alive: bool,
-    sum_c_level_attack: f32,
-    attack_tick_count: u32,
 }
 
 impl E3LifeState {
@@ -148,8 +146,6 @@ impl E3LifeState {
             c_level_birth: 0.0,
             pending_birth: true,
             was_alive: true,
-            sum_c_level_attack: 0.0,
-            attack_tick_count: 0,
         }
     }
 
@@ -164,8 +160,6 @@ impl E3LifeState {
         self.c_level_birth = 0.0;
         self.pending_birth = true;
         self.was_alive = false;
-        self.sum_c_level_attack = 0.0;
-        self.attack_tick_count = 0;
     }
 }
 
@@ -368,15 +362,10 @@ pub fn run_e3_collect_deaths(cfg: &E3RunConfig) -> Vec<E3DeathRecord> {
                 continue;
             }
             let state = &mut states[idx];
-            let (attack_tick_count, attack_sum) = agent.take_attack_telemetry();
-            if attack_tick_count > 0 {
-                state.attack_tick_count = state.attack_tick_count.saturating_add(attack_tick_count);
-                state.sum_c_level_attack += attack_sum;
-            }
             let alive = agent.is_alive();
 
             if alive {
-                let c_level = agent.last_consonance_field_level();
+                let c_level = landscape.evaluate_pitch_level(agent.body.base_freq_hz());
                 if state.pending_birth {
                     state.birth_step = step as u32;
                     state.c_level_birth = c_level;
@@ -410,11 +399,10 @@ pub fn run_e3_collect_deaths(cfg: &E3RunConfig) -> Vec<E3DeathRecord> {
                 } else {
                     0.0
                 };
-                let avg_c_level_attack = if state.attack_tick_count > 0 {
-                    state.sum_c_level_attack / state.attack_tick_count as f32
-                } else {
-                    f32::NAN
-                };
+                // Attack-specific telemetry was removed upstream; use per-tick
+                // consonance as a proxy so downstream CSV/plot code is unchanged.
+                let avg_c_level_attack = avg_c_level_tick;
+                let attack_tick_count = ticks;
 
                 deaths.push(E3DeathRecord {
                     condition: cfg.condition.label().to_string(),
@@ -429,7 +417,7 @@ pub fn run_e3_collect_deaths(cfg: &E3RunConfig) -> Vec<E3DeathRecord> {
                     avg_c_level_tick,
                     c_level_std_over_life,
                     avg_c_level_attack,
-                    attack_tick_count: state.attack_tick_count,
+                    attack_tick_count,
                 });
 
                 respawn_ids.push(id);
@@ -1513,9 +1501,9 @@ mod tests {
         );
 
         let diff_sum: f32 = landscape_m0
-            .consonance_level01
+            .consonance_field_level
             .iter()
-            .zip(landscape_m1.consonance_level01.iter())
+            .zip(landscape_m1.consonance_field_level.iter())
             .map(|(a, b)| (a - b).abs())
             .sum();
         assert!(

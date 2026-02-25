@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::env;
 use std::error::Error;
 use std::f32::consts::PI;
-use std::fs::{create_dir, create_dir_all, remove_dir, remove_dir_all};
+use std::fs::{create_dir_all, remove_dir_all};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -241,7 +241,7 @@ const E5_SEEDS: [u64; 5] = [
     0xC0FFEE_u64 + 3,
     0xC0FFEE_u64 + 4,
 ];
-const PAPER_PLOTS_LOCK_DIR: &str = "experiments/.paper_plots.lock";
+const PAPER_PLOTS_LOCK_FILE: &str = "experiments/.paper_plots.lock";
 const PAPER_PLOTS_BASE_DIR: &str = "experiments/plots";
 
 fn log_output_path(path: &Path) {
@@ -395,30 +395,38 @@ impl Experiment {
 }
 
 struct PaperRunLock {
-    path: PathBuf,
+    _file: std::fs::File,
 }
 
 impl PaperRunLock {
     fn acquire(path: &Path) -> io::Result<Self> {
-        match create_dir(path) {
-            Ok(()) => Ok(Self {
-                path: path.to_path_buf(),
-            }),
-            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
-                Err(io::Error::other(format!(
-                    "paper plots already running (lock exists: {}). \
-remove the lock directory if this is stale",
-                    path.display()
-                )))
-            }
-            Err(err) => Err(err),
+        use std::os::unix::io::AsRawFd;
+        unsafe extern "C" {
+            fn flock(fd: i32, operation: i32) -> i32;
         }
-    }
-}
+        const LOCK_EX: i32 = 2;
+        const LOCK_NB: i32 = 4;
 
-impl Drop for PaperRunLock {
-    fn drop(&mut self) {
-        let _ = remove_dir(&self.path);
+        if let Some(parent) = path.parent() {
+            create_dir_all(parent)?;
+        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(path)?;
+        let ret = unsafe { flock(file.as_raw_fd(), LOCK_EX | LOCK_NB) };
+        if ret != 0 {
+            let err = io::Error::last_os_error();
+            if err.kind() == io::ErrorKind::WouldBlock {
+                return Err(io::Error::other(format!(
+                    "paper plots already running (lock held: {})",
+                    path.display()
+                )));
+            }
+            return Err(err);
+        }
+        Ok(Self { _file: file })
     }
 }
 
@@ -940,11 +948,8 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
         experiments
     };
 
-    let lock_dir = Path::new(PAPER_PLOTS_LOCK_DIR);
-    if let Some(parent) = lock_dir.parent() {
-        create_dir_all(parent)?;
-    }
-    let _run_lock = PaperRunLock::acquire(lock_dir)?;
+    let lock_path = Path::new(PAPER_PLOTS_LOCK_FILE);
+    let _run_lock = PaperRunLock::acquire(lock_path)?;
 
     let base_dir = Path::new(PAPER_PLOTS_BASE_DIR);
     debug_assert!(
@@ -18765,7 +18770,7 @@ fn render_scatter_compare(
 
 fn render_survival_compare(
     out_path: &Path,
-    caption: &str,
+    _caption: &str,
     left_label: &str,
     left_data: &SurvivalData,
     right_label: &str,
@@ -18779,12 +18784,12 @@ fn render_survival_compare(
     let right_common = survival_with_x_max(right_data, x_max);
     render_survival_on_area(
         &areas[0],
-        &format!("{caption} — {left_label}"),
+        &format!("A. {left_label}"),
         &left_common,
     )?;
     render_survival_on_area(
         &areas[1],
-        &format!("{caption} — {right_label}"),
+        &format!("B. {right_label}"),
         &right_common,
     )?;
     root.present()?;
@@ -18948,21 +18953,18 @@ fn render_e5_order_plot(
     root.fill(&WHITE)?;
 
     let mut chart = ChartBuilder::on(&root)
-        .caption(
-            "Order Parameter r(t) — pre-kick k_eff=0 so main/control overlap",
-            ("sans-serif", 32),
-        )
-        .margin(10)
-        .x_label_area_size(60)
-        .y_label_area_size(80)
+        .caption("A. Order parameter r(t)", ("sans-serif", 56))
+        .margin(12)
+        .x_label_area_size(90)
+        .y_label_area_size(110)
         .build_cartesian_2d(0.0f32..x_max.max(1.0), 0.0f32..1.05f32)?;
 
     chart
         .configure_mesh()
         .x_desc("time (s)")
         .y_desc("r")
-        .label_style(("sans-serif", 20).into_font())
-        .axis_desc_style(("sans-serif", 24).into_font())
+        .label_style(("sans-serif", 42).into_font())
+        .axis_desc_style(("sans-serif", 46).into_font())
         .draw()?;
 
     let r_main = main_series.iter().map(|(t, r, _, _, _, _)| (*t, *r));
@@ -18995,6 +18997,7 @@ fn render_e5_order_plot(
         .configure_series_labels()
         .background_style(WHITE.mix(0.8))
         .border_style(BLACK)
+        .label_font(("sans-serif", 32).into_font())
         .draw()?;
 
     root.present()?;
@@ -19084,21 +19087,18 @@ fn render_e5_plv_plot(
     root.fill(&WHITE)?;
 
     let mut chart = ChartBuilder::on(&root)
-        .caption(
-            "PLV_agent_kick — pre-kick k_eff=0 so main/control overlap",
-            ("sans-serif", 32),
-        )
-        .margin(10)
-        .x_label_area_size(60)
-        .y_label_area_size(80)
+        .caption("B. PLV to kick", ("sans-serif", 56))
+        .margin(12)
+        .x_label_area_size(90)
+        .y_label_area_size(110)
         .build_cartesian_2d(0.0f32..x_max.max(1.0), 0.0f32..1.05f32)?;
 
     chart
         .configure_mesh()
         .x_desc("time (s)")
         .y_desc("PLV")
-        .label_style(("sans-serif", 20).into_font())
-        .axis_desc_style(("sans-serif", 24).into_font())
+        .label_style(("sans-serif", 42).into_font())
+        .axis_desc_style(("sans-serif", 46).into_font())
         .draw()?;
 
     let plv_main: Vec<(f32, f32)> = main_series
@@ -19136,6 +19136,7 @@ fn render_e5_plv_plot(
         .configure_series_labels()
         .background_style(WHITE.mix(0.8))
         .border_style(BLACK)
+        .label_font(("sans-serif", 32).into_font())
         .draw()?;
 
     root.present()?;
@@ -19253,6 +19254,7 @@ where
     let style = ShapeStyle::from(&BLACK.mix(0.45)).stroke_width(2);
     let y_span = (y_max - y_min).abs();
     let text_y = y_max - 0.05 * y_span;
+    let font = ("sans-serif", 36).into_font().color(&BLACK).transform(FontTransform::Rotate90);
     for &(x, label) in markers {
         chart.draw_series(std::iter::once(PathElement::new(
             vec![(x, y_min), (x, y_max)],
@@ -19261,7 +19263,7 @@ where
         chart.draw_series(std::iter::once(Text::new(
             label.to_string(),
             (x, text_y),
-            ("sans-serif", 14).into_font().color(&BLACK),
+            font.clone(),
         )))?;
     }
     Ok(())
@@ -19444,13 +19446,13 @@ fn render_e5_seed_sweep_plot(out_path: &Path, rows: &[E5SeedRow]) -> Result<(), 
     if !y_max.is_finite() || y_max <= 0.0 {
         y_max = 1.0;
     }
-    let root = bitmap_root(out_path, (400, 280)).into_drawing_area();
+    let root = bitmap_root(out_path, (600, 700)).into_drawing_area();
     root.fill(&WHITE)?;
     let mut chart = ChartBuilder::on(&root)
-        .caption("PLV post-kick (seed sweep)", ("sans-serif", 22))
-        .margin(8)
-        .x_label_area_size(40)
-        .y_label_area_size(55)
+        .caption("C. PLV post-kick", ("sans-serif", 56))
+        .margin(12)
+        .x_label_area_size(90)
+        .y_label_area_size(110)
         .build_cartesian_2d(-0.5f32..1.5f32, 0.0f32..(y_max * 1.1))?;
 
     chart
@@ -19467,8 +19469,8 @@ fn render_e5_seed_sweep_plot(out_path: &Path, rows: &[E5SeedRow]) -> Result<(), 
                 _ => String::new(),
             }
         })
-        .label_style(("sans-serif", 26).into_font())
-        .axis_desc_style(("sans-serif", 22).into_font())
+        .label_style(("sans-serif", 42).into_font())
+        .axis_desc_style(("sans-serif", 46).into_font())
         .draw()?;
 
     let values = [(main_mean, main_std, PAL_H), (ctrl_mean, ctrl_std, PAL_R)];

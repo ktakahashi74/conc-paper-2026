@@ -53,4 +53,20 @@ The paper uses sequential numbering (Experiment 1–4). The internal experiment 
 
 ## Workflow
 
-- After changing `main.tex`, run `pdflatex main.tex` to rebuild the PDF.
+All build tasks are defined in the top-level `justfile`. Always use `--release` for experiments (debug builds are prohibitively slow); the justfile handles this automatically.
+
+| Command | What it does |
+|---|---|
+| `just all` | Full pipeline: run experiments → SVG→PDF → pdflatex |
+| `just paper-pdf` | Run experiments + SVG→PDF conversion |
+| `just paper` | Run experiments only (release build) |
+| `just svg2pdf` | Convert SVG plots to PDF (rsvg-convert or inkscape) |
+| `just latex` | Build `main.pdf` with pdflatex |
+| `just paper-check` | `cargo check` + `cargo test` |
+| `just clean` | Remove `experiments/plots` and stale lock |
+
+Pass extra args to experiment recipes, e.g.:
+
+```bash
+just all --clean --exp e2
+```

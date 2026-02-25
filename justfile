@@ -1,17 +1,19 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
-set working-directory := ".."
 
 default:
-	@just --justfile experiments/justfile --list
+	@just --list
 
+# Run experiments (release build, default: e1,e2,e3,e5)
 paper *args:
-	cargo run --bin paper -- {{args}}
+	cargo run --release --bin paper -- {{args}}
 
+# Cargo check + test
 paper-check:
 	cargo check --bins
 	cargo check --all-targets
 	cargo test --bins
 
+# Convert SVG plots to PDF
 svg2pdf dir="experiments/plots":
 	@if command -v rsvg-convert >/dev/null 2>&1; then \
 		find "{{dir}}" -type f -name '*.svg' -print0 | \
@@ -32,10 +34,21 @@ svg2pdf dir="experiments/plots":
 		exit 1; \
 	fi
 
+# Run experiments + convert SVGs to PDF
 paper-pdf *args:
-	cargo run --bin paper -- {{args}}
-	just --justfile experiments/justfile svg2pdf
+	just paper {{args}}
+	just svg2pdf
 
+# Build main.pdf with pdflatex
+latex:
+	pdflatex -interaction=nonstopmode main.tex
+
+# Full pipeline: experiments → SVG→PDF → pdflatex
+all *args:
+	just paper-pdf {{args}}
+	just latex
+
+# Archive plots directory
 tar out="experiments/plots.tar" dir="experiments/plots":
 	@if [ ! -d "{{dir}}" ]; then \
 		echo "error: directory not found: {{dir}}"; \
@@ -44,6 +57,7 @@ tar out="experiments/plots.tar" dir="experiments/plots":
 	tar -cf "{{out}}" -C "{{dir}}" .
 	@echo "write {{out}}"
 
+# Remove plots and lock file
 clean:
 	rm -rf experiments/plots
-	rm -rf experiments/.paper_plots.lock
+	rm -f experiments/.paper_plots.lock
