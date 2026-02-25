@@ -100,16 +100,27 @@
 \maketitle
 
 \begin{abstract}
-This paper introduces \textit{Conchordal}, an artificial life system in which sonic agents inhabit and adapt within a psychoacoustic fitness landscape defined in log-frequency space. The system is built on the principle of \emph{Direct Cognitive Coupling} (DCC): the generative process operates directly upon structures isomorphic to those in human perceptual cognition—here, the auditory system—bypassing symbolic intermediaries. The environment integrates roughness (sensory dissonance) and harmonicity (periodicity-based virtual pitch coherence) into a continuous consonance field without presupposing musical scales or harmonic rules. Agents adjust pitch through local proposal-and-accept dynamics under density-based repulsion, regulate survival via a consonance-dependent metabolic policy, and entrain temporally through a Kuramoto-style phase coupling mechanism grounded in neural oscillatory entrainment models. Four empirical results are reported. (1) The psychoacoustic landscape exhibits attractors at simple frequency ratios. (2) Populations self-organize into structured, non-collapsed polyphony with enriched consonant interval distributions relative to ablated conditions. (3) When consonance modulates metabolic recharge, early consonance strongly predicts lifetime, whereas the effect vanishes without recharge. (4) External rhythmic coupling induces rapid, near-unity phase locking across seeds. These findings demonstrate that consonance can function as an ecological resource in a non-traditional computational medium, yielding self-organization, selection, and synchronization in a unified sonic artificial life framework.
+This paper introduces \textit{Conchordal}, an artificial life system in which sonic agents inhabit and adapt within a psychoacoustic fitness landscape defined in log-frequency space. The system is built on the principle of \emph{Direct Cognitive Coupling} (DCC): the generative process operates directly upon structures isomorphic to those in human perceptual cognition—here, the auditory system—bypassing symbolic intermediaries. The environment integrates roughness (sensory dissonance) and harmonicity (periodicity-based virtual pitch coherence) into a continuous consonance field without presupposing musical scales or harmonic rules. Agents adjust pitch through local proposal-and-accept dynamics under density-based repulsion, regulate survival via a consonance-dependent metabolic policy, and entrain temporally through a Kuramoto-style phase coupling mechanism grounded in neural oscillatory entrainment models. Four empirical results are reported. (1) The psychoacoustic landscape exhibits attractors at simple frequency ratios. (2) Populations self-organize into structured, non-collapsed polyphony with enriched consonant interval distributions relative to ablated conditions. (3) When consonance modulates metabolic recharge, early consonance strongly predicts lifetime, whereas the effect vanishes without recharge. (4) External rhythmic coupling induces rapid, near-unity phase locking across seeds. These findings demonstrate that consonance can function as an ecological resource in a non-traditional computational medium, yielding self-organization, selection, and synchronization. Because DCC grounds the fitness landscape in perceptual structure, an ecological--aesthetic duality emerges: adaptive success and musical coherence are not merely correlated but structurally identical.
 \end{abstract}
 
 \section{Introduction}
 
-Artificial life has traditionally unfolded in spatial, chemical, or symbolic domains \citep{langton1989,bedau2000}. Yet sound—despite its rich physical structure and deep entanglement with biological perception—remains largely unexplored as a primary computational medium for life-like dynamics \citep{miranda2002,eldridge2009}. Prior work has explored consonance-based harmony generation through navigation in perceptually motivated tonal spaces \citep{bernardes2016}; Conchordal instead treats consonance as an ecological resource within a continuous psychoacoustic field inhabited by autonomous agents.
+Artificial life has traditionally unfolded in spatial, chemical, or symbolic domains \citep{langton1989,bedau2000}. Yet sound—despite its rich physical structure and deep entanglement with biological perception—remains largely unexplored as a primary computational medium for life-like dynamics. Conchordal treats consonance as an ecological resource within a continuous psychoacoustic field inhabited by autonomous agents.
 
 Conchordal is built on the principle of \emph{Direct Cognitive Coupling} (DCC): the generative process operates directly upon structures isomorphic to those in human perceptual cognition, bypassing symbolic intermediaries \citep{conchordal2025}. In the auditory case this means dispensing with scales, metrical grids, and note durations. In the spectral domain, the fitness landscape is constructed from roughness and harmonicity models grounded in cochlear filtering and periodicity detection \citep{plomp1965,terhardt1979}. In the temporal domain, agent phase oscillators follow the same Kuramoto coupling law invoked by Dynamic Attending Theory to model cortical entrainment to rhythmic stimuli \citep{large1999,lakatos2008}. DCC ensures that the structures agents discover—consonant pitch configurations and phase-locked rhythms—are perceptually salient by construction, not by post-hoc evaluation.
 
 Rather than encoding harmony or rhythm as compositional rules, Conchordal defines a continuous field derived from this perceptual foundation. Agents do not “compose”; they seek locally advantageous regions of a cognitive landscape shaped by harmonicity and roughness. Consonance, in this system, is neither aesthetic nor normative; it is ecological. When linked to metabolism, it becomes a resource. When coupled to temporal oscillators, it enables entrainment.
+
+\subsection*{Related Work}
+
+\textbf{Sonic artificial life.}
+Several systems have explored agent-based music generation \citep{miranda2002}. \citet{blackwell2002} used particle swarm optimization for real-time improvisation, with agents navigating a feature space shaped by performer feedback rather than perceptual models. \citet{mccormack2003} constructed evolutionary ecosystems in which agents reproduce and mutate sonic material—a lineage mechanism absent from the present system (see Limitations). \citet{eldridge2009} recycled spectral energy through a filter-based ecosystem. \citet{eigenfeldt2013} deployed rule-based autonomous agents for real-time composition. \citet{bernardes2016} navigated a perceptually motivated tonal interval space for harmony generation. These systems operate in symbolic or feature-engineered spaces; Conchordal differs in grounding the landscape directly in psychoacoustic structure via DCC.
+
+\textbf{Computational consonance.}
+Beyond the classical Plomp--Levelt roughness model \citep{plomp1965} and Terhardt's virtual-pitch framework \citep{terhardt1979}, recent work has advanced periodicity-based consonance measures \citep{stolzenburg2015} and data-driven approaches using deep neural networks \citep{harrison2020}. Conchordal adopts a first-principles approach: roughness and harmonicity are computed from cochlear and periodicity models and combined through a bilinear consonance core, keeping the landscape interpretable and free of trained parameters.
+
+\textbf{Embodied and predictive cognition.}
+DCC resonates with embodied music cognition \citep{leman2007}, which argues that musical meaning is grounded in bodily and sensorimotor interaction with sound. It also connects to predictive processing frameworks \citep{clark2013}, in which perception and action share a common generative model. DCC operationalises a similar principle: agents and listeners share the same perceptual structure, so emergent configurations are salient without requiring a separate evaluative step.
 
 The present study evaluates whether such a system satisfies core artificial life criteria: (i) self-organization under environmental constraints, (ii) selection mediated by resource dynamics, and (iii) synchronization through interaction and external forcing. Four experiments address these criteria.
 
@@ -128,6 +139,8 @@ The present study evaluates whether such a system satisfies core artificial life
 \end{figure*}
 
 \section{The Psychoacoustic Landscape}
+
+Fitness landscapes have served as a central metaphor in evolutionary biology and artificial life since \citet{wright1932}, with tunably rugged variants such as the NK model \citep{kauffman1993} widely used to study adaptation. Unlike statistical or random landscapes, Conchordal's landscape is derived deterministically from physical acoustics and perceptual processing: its topology is fixed by the harmonic series and cochlear mechanics, not by arbitrary fitness functions. This grounding is what makes DCC possible.
 
 \subsection{Log-Frequency Representation}
 
@@ -281,6 +294,8 @@ The order parameter \citep{kuramoto1984} approached unity only in the coupled co
 
 \section{Discussion}
 
+\subsection{Summary of Findings}
+
 Conchordal demonstrates that psychoacoustic structure can support artificial life phenomena without recourse to symbolic encoding or predefined tonal systems. Four properties are notable.
 
 First, consonance is not imposed but computed from physical and perceptual principles \citep{helmholtz1877,plomp1965}. The landscape attractors (Figure~\ref{fig:e1-landscape}) reflect integer-ratio periodicity inherent to harmonic spectra \citep{terhardt1979}.
@@ -291,9 +306,15 @@ Third, when consonance modulates energy, ecological selection appears \citep{bed
 
 Finally, temporal synchronization (Figure~\ref{fig:e5-entrainment}) shows that rhythmic coherence can be induced through oscillator coupling, linking pitch ecology and temporal order within one framework. The rapid phase-locking ($\text{PLV} \to 0.99$) mirrors cortical entrainment dynamics observed in EEG studies of beat perception \citep{nozaradan2011,doelling2015}.
 
-Taken together, these results illustrate DCC operating across both spectral and temporal axes. In the spectral domain, landscape attractors and self-organized polyphony arise from perceptual primitives shared with the listener's cochlear and periodicity-detection systems. In the temporal domain, phase-locking emerges from the same Kuramoto coupling law hypothesised for cortical beat tracking \citep{large1999}. Because both generative and perceptual processes are grounded in the same psychoacoustic structures, the emergent configurations are perceptually salient by construction—an advantage unavailable to systems that operate in abstract symbol spaces and rely on post-hoc perceptual evaluation.
+\subsection{DCC Across Spectral and Temporal Axes}
 
-Collectively, these findings position sound as a viable non-traditional medium for artificial life, satisfying criteria of self-organization, selection, and synchronization.
+These results illustrate DCC operating across both spectral and temporal axes. In the spectral domain, landscape attractors and self-organized polyphony arise from perceptual primitives shared with the listener's cochlear and periodicity-detection systems. In the temporal domain, phase-locking emerges from the same Kuramoto coupling law hypothesised for cortical beat tracking \citep{large1999}. Because both generative and perceptual processes are grounded in the same psychoacoustic structures, the emergent configurations are perceptually salient by construction—an advantage unavailable to systems that operate in abstract symbol spaces and rely on post-hoc perceptual evaluation.
+
+\subsection{The Ecological--Aesthetic Duality}
+
+A structural duality underlies these results. Because the fitness landscape is derived from perceptual consonance, the conditions for artificial life and the conditions for musically coherent sound are one and the same: agents that survive are those that occupy consonant regions; populations that self-organize produce harmonically structured polyphony; oscillators that entrain generate perceptually salient rhythms. Conversely, musically coherent configurations—consonant pitch arrangements, phase-locked pulse—are precisely those that sustain life-like dynamics in this system.
+
+This duality is not a coincidence but a structural guarantee provided by DCC. In a system whose fitness landscape is arbitrary, ecological success and aesthetic coherence may coincide only by chance. DCC eliminates that gap: because the ecological resource \emph{is} perceptual consonance, adaptive fitness and aesthetic quality are not merely correlated but identical. Any system built on DCC inherits this guarantee—the ecological--aesthetic duality is a general property of the coupling principle, not an artifact of the particular auditory implementation presented here.
 
 \section{Limitations and Future Work}
 
