@@ -100,14 +100,14 @@
 \maketitle
 
 \begin{abstract}
-This paper introduces \textit{Conchordal}, an artificial life system in which sonic agents inhabit and adapt within a psychoacoustic fitness landscape defined in log-frequency space. The environment integrates roughness (sensory dissonance) and harmonicity (periodicity-based virtual pitch coherence) into a continuous consonance field without presupposing musical scales or harmonic rules. Agents adjust pitch through local proposal-and-accept dynamics under density-based repulsion, regulate survival via a consonance-dependent metabolic policy, and entrain temporally through a Kuramoto-style phase coupling mechanism. Four empirical results are reported. (1) The psychoacoustic landscape exhibits attractors at simple frequency ratios. (2) Populations self-organize into structured, non-collapsed polyphony with enriched consonant interval distributions relative to ablated conditions. (3) When consonance modulates metabolic recharge, early consonance strongly predicts lifetime (Pearson $r \approx 0.71$; log-rank $p < 0.001$), whereas the effect vanishes without recharge. (4) External rhythmic coupling induces rapid phase locking (post-kick PLV $\approx 0.99$) across seeds. These findings demonstrate that consonance can function as an ecological resource in a non-traditional computational medium, yielding self-organization, selection, and synchronization in a unified sonic artificial life framework.
+This paper introduces \textit{Conchordal}, an artificial life system in which sonic agents inhabit and adapt within a psychoacoustic fitness landscape defined in log-frequency space. The system is built on the principle of \emph{Direct Cognitive Coupling} (DCC): the generative process operates directly upon structures isomorphic to those in human perceptual cognition—here, the auditory system—bypassing symbolic intermediaries. The environment integrates roughness (sensory dissonance) and harmonicity (periodicity-based virtual pitch coherence) into a continuous consonance field without presupposing musical scales or harmonic rules. Agents adjust pitch through local proposal-and-accept dynamics under density-based repulsion, regulate survival via a consonance-dependent metabolic policy, and entrain temporally through a Kuramoto-style phase coupling mechanism grounded in neural oscillatory entrainment models. Four empirical results are reported. (1) The psychoacoustic landscape exhibits attractors at simple frequency ratios. (2) Populations self-organize into structured, non-collapsed polyphony with enriched consonant interval distributions relative to ablated conditions. (3) When consonance modulates metabolic recharge, early consonance strongly predicts lifetime, whereas the effect vanishes without recharge. (4) External rhythmic coupling induces rapid, near-unity phase locking across seeds. These findings demonstrate that consonance can function as an ecological resource in a non-traditional computational medium, yielding self-organization, selection, and synchronization in a unified sonic artificial life framework.
 \end{abstract}
 
 \section{Introduction}
 
 Artificial life has traditionally unfolded in spatial, chemical, or symbolic domains \citep{langton1989,bedau2000}. Yet sound—despite its rich physical structure and deep entanglement with biological perception—remains largely unexplored as a primary computational medium for life-like dynamics \citep{miranda2002,eldridge2009}. Prior work has explored consonance-based harmony generation through navigation in perceptually motivated tonal spaces \citep{bernardes2016}; Conchordal instead treats consonance as an ecological resource within a continuous psychoacoustic field inhabited by autonomous agents.
 
-Conchordal is built on the principle of \emph{Direct Cognitive Coupling} (DCC): the generative process operates directly upon structures isomorphic to those in the listener's auditory system, bypassing symbolic intermediaries such as scales, metrical grids, or note durations \citep{conchordal2025}. In the spectral domain, the fitness landscape is constructed from roughness and harmonicity models grounded in cochlear filtering and periodicity detection \citep{plomp1965,terhardt1979}. In the temporal domain, agent phase oscillators follow the same Kuramoto coupling law invoked by Dynamic Attending Theory to model cortical entrainment to rhythmic stimuli \citep{large1999,lakatos2008}. DCC ensures that the structures agents discover—consonant pitch configurations and phase-locked rhythms—are perceptually salient by construction, not by post-hoc evaluation.
+Conchordal is built on the principle of \emph{Direct Cognitive Coupling} (DCC): the generative process operates directly upon structures isomorphic to those in human perceptual cognition, bypassing symbolic intermediaries \citep{conchordal2025}. In the auditory case this means dispensing with scales, metrical grids, and note durations. In the spectral domain, the fitness landscape is constructed from roughness and harmonicity models grounded in cochlear filtering and periodicity detection \citep{plomp1965,terhardt1979}. In the temporal domain, agent phase oscillators follow the same Kuramoto coupling law invoked by Dynamic Attending Theory to model cortical entrainment to rhythmic stimuli \citep{large1999,lakatos2008}. DCC ensures that the structures agents discover—consonant pitch configurations and phase-locked rhythms—are perceptually salient by construction, not by post-hoc evaluation.
 
 Rather than encoding harmony or rhythm as compositional rules, Conchordal defines a continuous field derived from this perceptual foundation. Agents do not “compose”; they seek locally advantageous regions of a cognitive landscape shaped by harmonicity and roughness. Consonance, in this system, is neither aesthetic nor normative; it is ecological. When linked to metabolism, it becomes a resource. When coupled to temporal oscillators, it enables entrainment.
 
@@ -209,7 +209,7 @@ C_{\text{level01}} = \sigma\!\bigl(\beta(C_{\text{field}}-\theta)\bigr)\in[0,1],
 
 \subsection{Pitch Adaptation}
 
-Each agent proposes local pitch perturbations sampled within a bounded neighborhood in log-frequency space. A hill-climbing acceptance rule evaluates candidate positions via consonance and a density-based repulsion term. Repulsion is computed through a Gaussian kernel over pitch distances, discouraging collapse to identical frequencies.
+Each agent proposes local pitch perturbations of magnitude $\lambda=0.15$\,st sampled within a bounded neighborhood in log-frequency space. A hill-climbing acceptance rule evaluates candidate positions via $C_{\text{field}}$ and a density-based repulsion term. Repulsion is computed through a Gaussian kernel ($\sigma=0.06$\,st) over pitch distances, discouraging collapse to identical frequencies. Proposals are accepted stochastically with a temperature that decays exponentially ($T_0=0.05$, $\tau=30$\,steps), annealing toward greedy hill-climbing.
 
 Ablation conditions remove either the hill-climbing mechanism or the repulsion term.
 
@@ -221,7 +221,7 @@ Agents possess energy $E$. Dynamics follow:
 E' = E - c_b \Delta t - c_a I_{\text{attack}} + r \cdot C_{\text{level01}} \cdot I_{\text{attack}},
 \end{equation}
 
-where $c_b$ is basal cost, $c_a$ attack cost, and $r$ recharge coefficient. In the baseline condition, recharge scales with consonance; in the ablation condition, recharge is set to zero. Agents perish when $E$ falls below threshold.
+where $c_b$ is basal cost, $c_a$ attack cost, and $r$ recharge coefficient. Agents start with $E=1.0$ and perish when $E\leq 0$. The metabolism rate is $0.5$, and time advances in hops of $512$ samples at $48\,$kHz ($\Delta t\approx 10.7\,$ms). In the baseline condition, recharge scales with consonance ($r>0$); in the ablation condition, $r=0$.
 
 \subsection{Temporal Oscillation}
 
@@ -247,13 +247,13 @@ Populations of 24 agents were simulated for 100 steps (burn-in 10). Three condit
 
 \textbf{Diversity.} Unique pitch bins averaged 20.0 (baseline) versus 13.4 (no repulsion). Nearest-neighbor distances halved under no-repulsion, indicating collapse.
 
-\textbf{Interval Structure.} Shannon entropy of the pairwise interval distribution was 3.95 nats (baseline), rising to 4.92 under no-hill-climbing and falling to 3.57 under no-repulsion. The no-hill increase ($\Delta = +0.97$ nats) reflects a more uniform distribution lacking consonant peaks; the no-repulsion decrease reflects collapse toward fewer intervals.
+\textbf{Interval Structure.} Shannon entropy of the pairwise interval distribution (240 bins of 0.05\,st over 0--12\,st; uniform maximum $\ln 240 = 5.48$\,nats) was 3.95 nats (baseline), rising to 4.92 under no-hill-climbing and falling to 3.57 under no-repulsion. The no-hill increase ($\Delta = +0.97$ nats, toward the uniform ceiling) reflects a distribution lacking consonant peaks; the no-repulsion decrease reflects collapse toward fewer intervals.
 
 These results show that hill-climbing enriches consonant interval structure, while repulsion prevents monophonic collapse \citep{reynolds1987}. Self-organized harmonic distributions arise from the landscape–agent interaction.
 
 \subsection{Consonance as Selection Pressure}
 
-Across 1000 pooled runs, early consonance (first 20 ticks) strongly predicted lifetime under baseline recharge (Pearson $r = 0.7096$; Spearman $\rho = 0.4513$; log-rank $p < 0.001$). Median survival differed markedly between high- and low-consonance groups (372 vs. 339).
+Each run placed 32 agents at random positions within $\pm 1$ octave of a 220\,Hz anchor (pitch locked at birth). Five seeds $\times$ two conditions yielded 1000 pooled agent lifetimes. Early consonance (first 20 ticks) strongly predicted lifetime under baseline recharge (Pearson $r = 0.7096$; Spearman $\rho = 0.4513$; log-rank $p < 0.001$). Median survival differed markedly between high- and low-consonance groups (372 vs. 339).
 
 When recharge was disabled, correlations vanished (Pearson $r = 0.028$; log-rank $p = 0.33$). Thus, consonance functions as a genuine ecological resource, generating measurable selection pressure.
 
@@ -266,7 +266,7 @@ When recharge was disabled, correlations vanished (Pearson $r = 0.028$; log-rank
 
 \subsection{Rhythmic Entrainment}
 
-Simulations over 40 seconds introduced an external forcing (``kick'') at 16 seconds. Before forcing, main and control conditions overlapped (PLV $\approx 0.225$). After forcing, the main condition rapidly converged to PLV $\approx 0.993$ ($\pm 0.021$), while control remained near baseline ($\approx 0.226$).
+Simulations of 32 phase oscillators ($\omega_{\mathrm{mean}}=1.8\cdot2\pi$\,rad/s, jitter $\pm 0.02$) ran for 40 seconds ($dt=0.02$\,s). An external forcing (``kick'', $\omega_k=2\cdot2\pi$\,rad/s, $K=1.6$) was introduced at 16 seconds. Before forcing, main and control conditions overlapped (PLV $\approx 0.225$). After forcing, the main condition rapidly converged to PLV $\approx 0.993$ ($\pm 0.021$), while control remained near baseline ($\approx 0.226$).
 
 The order parameter \citep{kuramoto1984} approached unity only in the coupled condition. Synchronization therefore emerges from dynamical interaction rather than spontaneous drift.
 
@@ -281,7 +281,7 @@ The order parameter \citep{kuramoto1984} approached unity only in the coupled co
 
 \section{Discussion}
 
-Conchordal demonstrates that psychoacoustic structure can support artificial life phenomena without recourse to symbolic encoding or predefined tonal systems. Three properties are notable.
+Conchordal demonstrates that psychoacoustic structure can support artificial life phenomena without recourse to symbolic encoding or predefined tonal systems. Four properties are notable.
 
 First, consonance is not imposed but computed from physical and perceptual principles \citep{helmholtz1877,plomp1965}. The landscape attractors (Figure~\ref{fig:e1-landscape}) reflect integer-ratio periodicity inherent to harmonic spectra \citep{terhardt1979}.
 
@@ -311,7 +311,7 @@ More broadly, DCC is not specific to the auditory domain. The same paradigm—mo
 
 \bigskip
 
-\noindent\textbf{Keywords:} Artificial Life, Psychoacoustics, Consonance, Self-Organization, Synchronization, Computational Music Systems
+\noindent\textbf{Keywords:} Artificial Life, Psychoacoustics, Consonance, Self-Organization, Synchronization, Direct Cognitive Coupling
 
 \bibliographystyle{apalike}
 \bibliography{conc}
