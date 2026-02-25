@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use plotters::coord::types::RangedCoordf32;
 use plotters::coord::{CoordTranslate, Shift};
+use plotters::element::DashedPathElement;
 use plotters::prelude::*;
 
 use crate::sim::{
@@ -3568,23 +3569,22 @@ fn render_e1_plot(
 
     let y01_max = 1.05f32;
 
-    let root = bitmap_root(out_path, (2200, 1240)).into_drawing_area();
+    let root = bitmap_root(out_path, (2200, 1500)).into_drawing_area();
     root.fill(&WHITE)?;
     let panels = root.split_evenly((4, 1));
 
     let ratio_guides = [0.5f32, 6.0 / 5.0, 1.25, 4.0 / 3.0, 1.5, 5.0 / 3.0, 2.0];
     let ratio_guides_log2: Vec<f32> = ratio_guides.iter().map(|r| r.log2()).collect();
+    let x_grid = [-1.5f32, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5];
+    let ratio_guide_style = RGBColor(50, 100, 180).mix(0.55);
     let y_guides = [-0.5f32, 0.0, 0.5, 1.0];
-    let x_axis = 0.0f32;
-
-    // Keep all four panels at the same drawable height.
-    let x_label_area = 52;
 
     let mut chart_h = ChartBuilder::on(&panels[0])
-        .caption("A: Harmonicity H\u{2080}\u{2081}(f)", ("sans-serif", 32))
-        .margin(6)
-        .x_label_area_size(x_label_area)
-        .y_label_area_size(80)
+        .caption("A: Harmonicity H\u{2080}\u{2081}(f)", ("sans-serif", 48))
+        .margin(12)
+        .margin_bottom(24)
+        .x_label_area_size(0)
+        .y_label_area_size(110)
         .build_cartesian_2d(x_min..x_max, 0.0f32..y01_max)?;
 
     chart_h
@@ -3592,23 +3592,24 @@ fn render_e1_plot(
         .disable_mesh()
         .y_desc("H\u{2080}\u{2081}")
         .x_labels(0)
-        .label_style(("sans-serif", 20).into_font())
-        .axis_desc_style(("sans-serif", 24).into_font())
+        .y_labels(6)
+        .label_style(("sans-serif", 42).into_font())
+        .axis_desc_style(("sans-serif", 46).into_font())
         .draw()?;
 
+    for &x in &x_grid {
+        chart_h.draw_series(std::iter::once(PathElement::new(
+            vec![(x, 0.0), (x, y01_max)],
+            BLACK.mix(0.10),
+        )))?;
+    }
     for &x in &ratio_guides_log2 {
         if x >= x_min && x <= x_max {
-            chart_h.draw_series(std::iter::once(PathElement::new(
-                vec![(x, 0.0), (x, y01_max)],
-                BLACK.mix(0.15),
+            chart_h.draw_series(std::iter::once(DashedPathElement::new(
+                vec![(x, 0.0), (x, y01_max)].into_iter(),
+                8, 6, ratio_guide_style,
             )))?;
         }
-    }
-    if x_axis >= x_min && x_axis <= x_max {
-        chart_h.draw_series(std::iter::once(PathElement::new(
-            vec![(x_axis, 0.0), (x_axis, y01_max)],
-            BLACK.mix(0.45),
-        )))?;
     }
     for &y in &y_guides {
         if y >= 0.0 && y <= y01_max {
@@ -3622,10 +3623,11 @@ fn render_e1_plot(
     chart_h.draw_series(LineSeries::new(h_points, &PAL_H))?;
 
     let mut chart_r = ChartBuilder::on(&panels[1])
-        .caption("B: Roughness R\u{2080}\u{2081}(f)", ("sans-serif", 32))
-        .margin(6)
-        .x_label_area_size(x_label_area)
-        .y_label_area_size(80)
+        .caption("B: Roughness R\u{2080}\u{2081}(f)", ("sans-serif", 48))
+        .margin(12)
+        .margin_bottom(24)
+        .x_label_area_size(0)
+        .y_label_area_size(110)
         .build_cartesian_2d(x_min..x_max, 0.0f32..y01_max)?;
 
     chart_r
@@ -3633,23 +3635,24 @@ fn render_e1_plot(
         .disable_mesh()
         .y_desc("R\u{2080}\u{2081}")
         .x_labels(0)
-        .label_style(("sans-serif", 20).into_font())
-        .axis_desc_style(("sans-serif", 24).into_font())
+        .y_labels(6)
+        .label_style(("sans-serif", 42).into_font())
+        .axis_desc_style(("sans-serif", 46).into_font())
         .draw()?;
 
+    for &x in &x_grid {
+        chart_r.draw_series(std::iter::once(PathElement::new(
+            vec![(x, 0.0), (x, y01_max)],
+            BLACK.mix(0.10),
+        )))?;
+    }
     for &x in &ratio_guides_log2 {
         if x >= x_min && x <= x_max {
-            chart_r.draw_series(std::iter::once(PathElement::new(
-                vec![(x, 0.0), (x, y01_max)],
-                BLACK.mix(0.15),
+            chart_r.draw_series(std::iter::once(DashedPathElement::new(
+                vec![(x, 0.0), (x, y01_max)].into_iter(),
+                8, 6, ratio_guide_style,
             )))?;
         }
-    }
-    if x_axis >= x_min && x_axis <= x_max {
-        chart_r.draw_series(std::iter::once(PathElement::new(
-            vec![(x_axis, 0.0), (x_axis, y01_max)],
-            BLACK.mix(0.45),
-        )))?;
     }
     for &y in &y_guides {
         if y >= 0.0 && y <= y01_max {
@@ -3677,10 +3680,11 @@ fn render_e1_plot(
     let pad = 0.05f32;
 
     let mut chart_c = ChartBuilder::on(&panels[2])
-        .caption("C: Consonance field C_field(f)", ("sans-serif", 32))
-        .margin(6)
-        .x_label_area_size(x_label_area)
-        .y_label_area_size(80)
+        .caption("C: Consonance field C_field(f)", ("sans-serif", 48))
+        .margin(12)
+        .margin_bottom(24)
+        .x_label_area_size(0)
+        .y_label_area_size(110)
         .build_cartesian_2d(x_min..x_max, (c_min - pad)..(c_max + pad))?;
 
     chart_c
@@ -3688,23 +3692,24 @@ fn render_e1_plot(
         .disable_mesh()
         .y_desc("C_field")
         .x_labels(0)
-        .label_style(("sans-serif", 20).into_font())
-        .axis_desc_style(("sans-serif", 24).into_font())
+        .y_labels(6)
+        .label_style(("sans-serif", 42).into_font())
+        .axis_desc_style(("sans-serif", 46).into_font())
         .draw()?;
 
+    for &x in &x_grid {
+        chart_c.draw_series(std::iter::once(PathElement::new(
+            vec![(x, c_min - pad), (x, c_max + pad)],
+            BLACK.mix(0.10),
+        )))?;
+    }
     for &x in &ratio_guides_log2 {
         if x >= x_min && x <= x_max {
-            chart_c.draw_series(std::iter::once(PathElement::new(
-                vec![(x, c_min - pad), (x, c_max + pad)],
-                BLACK.mix(0.15),
+            chart_c.draw_series(std::iter::once(DashedPathElement::new(
+                vec![(x, c_min - pad), (x, c_max + pad)].into_iter(),
+                8, 6, ratio_guide_style,
             )))?;
         }
-    }
-    if x_axis >= x_min && x_axis <= x_max {
-        chart_c.draw_series(std::iter::once(PathElement::new(
-            vec![(x_axis, c_min - pad), (x_axis, c_max + pad)],
-            BLACK.mix(0.45),
-        )))?;
     }
     for &y in &y_guides {
         if y >= (c_min - pad) && y <= (c_max + pad) {
@@ -3726,10 +3731,10 @@ fn render_e1_plot(
         * 1.1;
 
     let mut chart_d = ChartBuilder::on(&panels[3])
-        .caption("D: Consonance density C_density(f)", ("sans-serif", 32))
-        .margin(6)
-        .x_label_area_size(x_label_area)
-        .y_label_area_size(80)
+        .caption("D: Consonance density C_density(f)", ("sans-serif", 48))
+        .margin(12)
+        .x_label_area_size(90)
+        .y_label_area_size(110)
         .build_cartesian_2d(x_min..x_max, 0.0f32..d_max)?;
 
     chart_d
@@ -3737,23 +3742,24 @@ fn render_e1_plot(
         .disable_mesh()
         .x_desc("log2(f / f_anchor)")
         .y_desc("C_density")
-        .label_style(("sans-serif", 20).into_font())
-        .axis_desc_style(("sans-serif", 24).into_font())
+        .y_labels(6)
+        .label_style(("sans-serif", 42).into_font())
+        .axis_desc_style(("sans-serif", 46).into_font())
         .draw()?;
 
+    for &x in &x_grid {
+        chart_d.draw_series(std::iter::once(PathElement::new(
+            vec![(x, 0.0), (x, d_max)],
+            BLACK.mix(0.10),
+        )))?;
+    }
     for &x in &ratio_guides_log2 {
         if x >= x_min && x <= x_max {
-            chart_d.draw_series(std::iter::once(PathElement::new(
-                vec![(x, 0.0), (x, d_max)],
-                BLACK.mix(0.15),
+            chart_d.draw_series(std::iter::once(DashedPathElement::new(
+                vec![(x, 0.0), (x, d_max)].into_iter(),
+                8, 6, ratio_guide_style,
             )))?;
         }
-    }
-    if x_axis >= x_min && x_axis <= x_max {
-        chart_d.draw_series(std::iter::once(PathElement::new(
-            vec![(x_axis, 0.0), (x_axis, d_max)],
-            BLACK.mix(0.45),
-        )))?;
     }
     for &y in &y_guides {
         if y >= 0.0 && y <= d_max {

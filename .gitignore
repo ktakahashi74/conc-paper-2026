@@ -12,8 +12,15 @@
 *.synctex.gz
 *.synctex(busy)
 
-# PDF output
+# PDF output (keep experiment plot PDFs tracked)
 *.pdf
+
+# Rust build
+target/
+
+# Profiling
+perf.data
+perf.data.old
 
 # Emacs
 \#*\#
@@ -29,6 +36,6 @@ Thumbs.db
 
 # Paper generator outputs
 experiments/plots/
-experiments/.paper_plots.lock/
+experiments/.paper_plots.lock
 experiments/*.tar
 experiments/*.tar.gz
