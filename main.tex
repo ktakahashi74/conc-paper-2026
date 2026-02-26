@@ -259,11 +259,11 @@ As shown in Figure~\ref{fig:e1-landscape}, scanning a single anchor frequency ac
 
 Populations of 24 agents were simulated for 100 steps (burn-in 10) with the pitch adaptation parameters from the \emph{Pitch Adaptation} subsection above. Three conditions were compared: baseline, no hill-climb, and no repulsion.
 
-\textbf{Diversity.} Unique pitch bins averaged 20.0 (baseline) versus 13.4 (no repulsion). Nearest-neighbor distances halved under no-repulsion, indicating collapse.
+\textbf{Diversity.} Unique pitch bins averaged $19.2 \pm 1.4$ (baseline) versus $13.1 \pm 1.3$ (no repulsion; Welch $t=14.5$, $p<10^{-13}$, Cohen's $d=4.6$). Mean nearest-neighbor distance was $0.57 \pm 0.05$\,st (baseline), dropping to $0.29 \pm 0.11$\,st under no-repulsion ($t=11.0$, $p<10^{-11}$, $d=3.5$), confirming pitch collapse.
 
-\textbf{Interval Structure.} Shannon entropy of the pairwise interval distribution (240 bins of 0.05\,st over 0--12\,st; uniform maximum $\ln 240 = 5.48$\,nats) was 3.95 nats (baseline), rising to 4.92 under no-hill-climbing and falling to 3.57 under no-repulsion. The no-hill increase ($\Delta = +0.97$ nats, toward the uniform ceiling) reflects a distribution lacking consonant peaks; the no-repulsion decrease reflects collapse toward fewer intervals.
+\textbf{Interval Structure.} Shannon entropy of the pairwise interval distribution (240 bins of 0.05\,st over 0--12\,st; uniform maximum $\ln 240 = 5.48$\,nats) was $3.95 \pm 0.17$ nats (baseline), rising to $4.92 \pm 0.06$ under no-hill-climbing ($t=-23.4$, $p<10^{-22}$, $d=7.4$) and falling to $3.57 \pm 0.29$ under no-repulsion ($t=5.1$, $p<10^{-4}$, $d=1.6$). The no-hill increase toward the uniform ceiling reflects a distribution lacking consonant peaks; the no-repulsion decrease reflects collapse toward fewer intervals.
 
-These results show that hill-climbing enriches consonant interval structure, while repulsion prevents monophonic collapse \citep{reynolds1987}. Self-organized harmonic distributions arise from the landscape–agent interaction.
+These results show that hill-climbing enriches consonant interval structure, while repulsion prevents monophonic collapse \citep{reynolds1987}. Self-organized harmonic distributions arise from the landscape--agent interaction.
 
 \subsection{Consonance as Selection Pressure}
 
