@@ -93,6 +93,46 @@ pub struct E3RunConfig {
     pub condition: E3Condition,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum E6Condition {
+    Heredity,
+    Random,
+}
+
+impl E6Condition {
+    pub fn label(self) -> &'static str {
+        match self {
+            E6Condition::Heredity => "heredity",
+            E6Condition::Random => "random",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct E6RunConfig {
+    pub seed: u64,
+    pub steps_cap: usize,
+    pub min_deaths: usize,
+    pub pop_size: usize,
+    pub first_k: usize,
+    pub condition: E6Condition,
+    pub mutation_sigma: f32,
+    pub snapshot_interval: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct E6PitchSnapshot {
+    pub step: usize,
+    pub freqs_hz: Vec<f32>,
+}
+
+#[derive(Clone, Debug)]
+pub struct E6RunResult {
+    pub deaths: Vec<E3DeathRecord>,
+    pub snapshots: Vec<E6PitchSnapshot>,
+    pub total_deaths: usize,
+}
+
 #[derive(Clone, Debug)]
 pub struct E3DeathRecord {
     pub condition: String,
@@ -450,6 +490,236 @@ pub fn run_e3_collect_deaths(cfg: &E3RunConfig) -> Vec<E3DeathRecord> {
     }
 
     deaths
+}
+
+pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
+    let mut out = E6RunResult {
+        deaths: Vec::new(),
+        snapshots: Vec::new(),
+        total_deaths: 0,
+    };
+    if cfg.pop_size == 0 || cfg.steps_cap == 0 {
+        return out;
+    }
+
+    let anchor_hz = E4_ANCHOR_HZ;
+    let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
+    let params = make_landscape_params(&space, E3_FS, 1.0);
+    let mut landscape = build_anchor_landscape(
+        &space,
+        &params,
+        anchor_hz,
+        E4_ENV_PARTIALS_DEFAULT,
+        E4_ENV_PARTIAL_DECAY_DEFAULT,
+    );
+    landscape.rhythm = init_rhythms(E3_THETA_FREQ_HZ);
+
+    let mut pop = Population::new(Timebase {
+        fs: E3_FS,
+        hop: E3_HOP,
+    });
+    pop.set_seed(cfg.seed);
+    pop.set_current_frame(0);
+
+    let spec = e3_spawn_spec(E3Condition::Baseline, anchor_hz);
+    let strategy = e3_spawn_strategy(anchor_hz, &space);
+    let ids: Vec<u64> = (0..cfg.pop_size as u64).collect();
+    pop.apply_action(
+        Action::Spawn {
+            group_id: E3_GROUP_AGENTS,
+            ids,
+            spec: spec.clone(),
+            strategy: Some(strategy.clone()),
+        },
+        &landscape,
+        None,
+    );
+
+    let mut next_life_id = 0u64;
+    let mut states: Vec<E3LifeState> = (0..cfg.pop_size)
+        .map(|_| {
+            let life_id = next_life_id;
+            next_life_id += 1;
+            E3LifeState::new(life_id)
+        })
+        .collect();
+
+    let dt = E3_HOP as f32 / E3_FS;
+    let first_k = cfg.first_k as u32;
+    let snapshot_interval = cfg.snapshot_interval.max(1);
+    let mut rng = SmallRng::seed_from_u64(cfg.seed ^ 0xE600_5EED_u64);
+    let sigma = if cfg.mutation_sigma.is_finite() {
+        cfg.mutation_sigma.max(0.0)
+    } else {
+        0.0
+    };
+    let half = 0.5 * E3_RANGE_OCT;
+    let min_spawn = (anchor_hz * 2.0f32.powf(-half))
+        .clamp(space.fmin, space.fmax)
+        .min((anchor_hz * 2.0f32.powf(half)).clamp(space.fmin, space.fmax));
+    let max_spawn = (anchor_hz * 2.0f32.powf(half))
+        .clamp(space.fmin, space.fmax)
+        .max((anchor_hz * 2.0f32.powf(-half)).clamp(space.fmin, space.fmax));
+
+    for step in 0..cfg.steps_cap {
+        pop.advance(E3_HOP, E3_FS, step as u64, dt, &landscape);
+
+        if step % snapshot_interval == 0 {
+            let freqs_hz: Vec<f32> = pop
+                .individuals
+                .iter()
+                .filter(|agent| agent.is_alive())
+                .map(|agent| agent.body.base_freq_hz())
+                .filter(|f| f.is_finite() && *f > 0.0)
+                .collect();
+            out.snapshots.push(E6PitchSnapshot { step, freqs_hz });
+        }
+
+        let mut respawn_ids: Vec<u64> = Vec::new();
+        for agent in pop.individuals.iter_mut() {
+            let id = agent.id();
+            let idx = id as usize;
+            if idx >= states.len() {
+                continue;
+            }
+            let state = &mut states[idx];
+            let alive = agent.is_alive();
+
+            if alive {
+                let c_level = landscape.evaluate_pitch_level(agent.body.base_freq_hz());
+                if state.pending_birth {
+                    state.birth_step = step as u32;
+                    state.c_level_birth = c_level;
+                    state.pending_birth = false;
+                }
+                state.ticks = state.ticks.saturating_add(1);
+                state.sum_c_level_tick += c_level;
+                state.sum_c_level_tick_sq += c_level * c_level;
+                if state.firstk_count < first_k {
+                    state.sum_c_level_firstk += c_level;
+                    state.firstk_count += 1;
+                }
+            }
+
+            if state.was_alive && !alive {
+                let ticks = state.ticks.max(1);
+                let avg_c_level_tick = if state.ticks > 0 {
+                    state.sum_c_level_tick / state.ticks as f32
+                } else {
+                    0.0
+                };
+                let c_level_std_over_life = if state.ticks > 0 {
+                    let mean_sq = state.sum_c_level_tick_sq / state.ticks as f32;
+                    let var = (mean_sq - avg_c_level_tick * avg_c_level_tick).max(0.0);
+                    var.sqrt()
+                } else {
+                    0.0
+                };
+                let c_level_firstk = if state.firstk_count > 0 {
+                    state.sum_c_level_firstk / state.firstk_count as f32
+                } else {
+                    0.0
+                };
+                let avg_c_level_attack = avg_c_level_tick;
+                let attack_tick_count = ticks;
+
+                out.deaths.push(E3DeathRecord {
+                    condition: cfg.condition.label().to_string(),
+                    seed: cfg.seed,
+                    life_id: state.life_id,
+                    agent_id: idx,
+                    birth_step: state.birth_step,
+                    death_step: step as u32,
+                    lifetime_steps: ticks,
+                    c_level_birth: state.c_level_birth,
+                    c_level_firstk,
+                    avg_c_level_tick,
+                    c_level_std_over_life,
+                    avg_c_level_attack,
+                    attack_tick_count,
+                });
+
+                respawn_ids.push(id);
+                state.reset_for_new_life(next_life_id);
+                next_life_id += 1;
+            } else {
+                state.was_alive = alive;
+            }
+        }
+
+        for id in respawn_ids {
+            pop.remove_agent(id);
+
+            let offspring_strategy = match cfg.condition {
+                E6Condition::Random => strategy.clone(),
+                E6Condition::Heredity => {
+                    let alive_parents: Vec<f32> = pop
+                        .individuals
+                        .iter()
+                        .filter(|a| a.is_alive() && a.id() != id)
+                        .map(|a| a.body.base_freq_hz())
+                        .filter(|f| f.is_finite() && *f > 0.0)
+                        .collect();
+                    if alive_parents.is_empty() {
+                        strategy.clone()
+                    } else {
+                        let parent_idx = rng.random_range(0..alive_parents.len());
+                        let parent_freq = alive_parents[parent_idx];
+                        let offset = sample_normal_zero_mean(&mut rng, sigma);
+                        let mut offspring_freq = parent_freq * 2.0f32.powf(offset);
+                        if !offspring_freq.is_finite() || offspring_freq <= 0.0 {
+                            offspring_freq = parent_freq;
+                        }
+                        offspring_freq = offspring_freq.clamp(min_spawn, max_spawn);
+                        let eps = 0.001f32;
+                        let min_freq =
+                            (offspring_freq * 2.0f32.powf(-eps)).clamp(space.fmin, space.fmax);
+                        let max_freq =
+                            (offspring_freq * 2.0f32.powf(eps)).clamp(space.fmin, space.fmax);
+                        SpawnStrategy::RandomLog {
+                            min_freq: min_freq.min(max_freq),
+                            max_freq: max_freq.max(min_freq),
+                        }
+                    }
+                }
+            };
+
+            pop.apply_action(
+                Action::Spawn {
+                    group_id: E3_GROUP_AGENTS,
+                    ids: vec![id],
+                    spec: spec.clone(),
+                    strategy: Some(offspring_strategy),
+                },
+                &landscape,
+                None,
+            );
+        }
+
+        landscape.rhythm.advance_in_place(dt);
+
+        if out.deaths.len() >= cfg.min_deaths {
+            break;
+        }
+    }
+
+    out.total_deaths = out.deaths.len();
+    out
+}
+
+pub fn e3_reference_landscape(anchor_hz: f32) -> Landscape {
+    let anchor_hz = anchor_hz.max(1.0);
+    let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
+    let params = make_landscape_params(&space, E3_FS, 1.0);
+    let mut landscape = build_anchor_landscape(
+        &space,
+        &params,
+        anchor_hz,
+        E4_ENV_PARTIALS_DEFAULT,
+        E4_ENV_PARTIAL_DECAY_DEFAULT,
+    );
+    landscape.rhythm = init_rhythms(E3_THETA_FREQ_HZ);
+    landscape
 }
 
 #[allow(dead_code)]
@@ -1392,6 +1662,16 @@ fn init_rhythms(theta_freq_hz: f32) -> NeuralRhythms {
         env_open: 1.0,
         env_level: 1.0,
     }
+}
+
+fn sample_normal_zero_mean<R: Rng + ?Sized>(rng: &mut R, sigma: f32) -> f32 {
+    if !sigma.is_finite() || sigma <= 0.0 {
+        return 0.0;
+    }
+    let u1 = rng.random::<f32>().clamp(f32::MIN_POSITIVE, 1.0);
+    let u2 = rng.random::<f32>();
+    let z0 = (-2.0 * u1.ln()).sqrt() * (std::f32::consts::TAU * u2).cos();
+    z0 * sigma
 }
 
 fn e3_spawn_spec(condition: E3Condition, anchor_hz: f32) -> SpawnSpec {

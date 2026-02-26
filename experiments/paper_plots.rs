@@ -15,8 +15,9 @@ use plotters::prelude::*;
 
 use crate::sim::{
     E3Condition, E3DeathRecord, E3RunConfig, E4_ANCHOR_HZ, E4RuntimeOverrides, E4TailSamples,
-    e3_policy_params, e4_paper_meta, run_e3_collect_deaths, run_e4_condition_tail_samples,
-    run_e4_condition_tail_samples_with_wr, run_e4_mirror_schedule_samples,
+    E6Condition, E6RunConfig, E6RunResult, e3_policy_params, e3_reference_landscape,
+    e4_paper_meta, run_e3_collect_deaths, run_e4_condition_tail_samples,
+    run_e4_condition_tail_samples_with_wr, run_e4_mirror_schedule_samples, run_e6,
     set_e4_runtime_overrides,
 };
 use conchordal::core::consonance_kernel::{ConsonanceKernel, ConsonanceRepresentationParams};
@@ -241,6 +242,37 @@ const E5_SEEDS: [u64; 5] = [
     0xC0FFEE_u64 + 3,
     0xC0FFEE_u64 + 4,
 ];
+
+const E6_FIRST_K: usize = 20;
+const E6_POP_SIZE: usize = 32;
+const E6_MIN_DEATHS: usize = 500;
+const E6_STEPS_CAP: usize = 16_000;
+const E6_MUTATION_SIGMA: f32 = 0.03;
+const E6_SNAPSHOT_INTERVAL: usize = 100;
+const E6_CONSONANT_WINDOW_ST: f32 = 0.25;
+const E6_INTERVAL_BIN_ST: f32 = 0.25;
+const E6_SEEDS: [u64; 20] = [
+    0xC0FFEE_u64 + 60,
+    0xC0FFEE_u64 + 61,
+    0xC0FFEE_u64 + 62,
+    0xC0FFEE_u64 + 63,
+    0xC0FFEE_u64 + 64,
+    0xC0FFEE_u64 + 65,
+    0xC0FFEE_u64 + 66,
+    0xC0FFEE_u64 + 67,
+    0xC0FFEE_u64 + 68,
+    0xC0FFEE_u64 + 69,
+    0xC0FFEE_u64 + 70,
+    0xC0FFEE_u64 + 71,
+    0xC0FFEE_u64 + 72,
+    0xC0FFEE_u64 + 73,
+    0xC0FFEE_u64 + 74,
+    0xC0FFEE_u64 + 75,
+    0xC0FFEE_u64 + 76,
+    0xC0FFEE_u64 + 77,
+    0xC0FFEE_u64 + 78,
+    0xC0FFEE_u64 + 79,
+];
 const PAPER_PLOTS_LOCK_FILE: &str = "experiments/.paper_plots.lock";
 const PAPER_PLOTS_BASE_DIR: &str = "experiments/plots";
 
@@ -328,6 +360,7 @@ enum Experiment {
     E3,
     E4,
     E5,
+    E6,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -361,6 +394,7 @@ impl Experiment {
             Experiment::E3 => "E3",
             Experiment::E4 => "E4",
             Experiment::E5 => "E5",
+            Experiment::E6 => "E6",
         }
     }
 
@@ -371,6 +405,7 @@ impl Experiment {
             Experiment::E3 => "e3",
             Experiment::E4 => "e4",
             Experiment::E5 => "e5",
+            Experiment::E6 => "e6",
         }
     }
 
@@ -381,6 +416,7 @@ impl Experiment {
             Experiment::E3,
             Experiment::E4,
             Experiment::E5,
+            Experiment::E6,
         ]
     }
 
@@ -390,6 +426,7 @@ impl Experiment {
             Experiment::E2,
             Experiment::E3,
             Experiment::E5,
+            Experiment::E6,
         ]
     }
 }
@@ -446,7 +483,7 @@ fn usage() -> String {
         "  paper --exp e4 --e4-env-partials 9 --e4-env-decay 0.8",
         "  paper --exp e4 --e4-dyn-exploration 0.9 --e4-dyn-persistence 0.1",
         "  paper --exp e4 --e4-dyn-step-cents 75",
-        "If no experiment is specified, paper defaults (E1,E2,E3,E5) run.",
+        "If no experiment is specified, paper defaults (E1,E2,E3,E5,E6) run.",
         "Use --exp e4 to run E4 explicitly.",
         "E4 histogram dumps default to off (use --e4-hist on to enable).",
         "E4 kernel gate plot default to off (use --e4-kernel-gate on to enable).",
@@ -623,6 +660,7 @@ fn parse_experiments(args: &[String]) -> Result<Vec<Experiment>, String> {
                 "3" | "e3" | "E3" => Experiment::E3,
                 "4" | "e4" | "E4" => Experiment::E4,
                 "5" | "e5" | "E5" => Experiment::E5,
+                "6" | "e6" | "E6" => Experiment::E6,
                 _ => {
                     return Err(format!("Unknown experiment '{token}'.\n{}", usage()));
                 }
@@ -1019,6 +1057,13 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
                 Experiment::E5 => {
                     let h = s.spawn(|| {
                         plot_e5_rhythmic_entrainment(out_dir)
+                            .map_err(|err| io::Error::other(err.to_string()))
+                    });
+                    handles.push((exp.label(), h));
+                }
+                Experiment::E6 => {
+                    let h = s.spawn(|| {
+                        plot_e6_hereditary_adaptation(out_dir, space_ref, anchor_hz)
                             .map_err(|err| io::Error::other(err.to_string()))
                     });
                     handles.push((exp.label(), h));
@@ -3442,6 +3487,534 @@ fn plot_e5_rhythmic_entrainment(out_dir: &Path) -> Result<(), Box<dyn Error>> {
         &sim_ctrl.phase_hist_samples,
         bins,
     )?;
+
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug)]
+struct E6SnapshotPoint {
+    mean_c_level01: f32,
+    consonant_occupation: f32,
+    pairwise_entropy: f32,
+    n_alive: usize,
+}
+
+fn plot_e6_hereditary_adaptation(
+    out_dir: &Path,
+    _space: &Log2Space,
+    _anchor_hz: f32,
+) -> Result<(), Box<dyn Error>> {
+    let conditions = [E6Condition::Heredity, E6Condition::Random];
+    let anchor_hz = E4_ANCHOR_HZ;
+    let landscape = e3_reference_landscape(anchor_hz);
+
+    let mut all_results: Vec<(E6Condition, u64, E6RunResult)> = Vec::new();
+    for condition in conditions {
+        for &seed in &E6_SEEDS {
+            let cfg = E6RunConfig {
+                seed,
+                steps_cap: E6_STEPS_CAP,
+                min_deaths: E6_MIN_DEATHS,
+                pop_size: E6_POP_SIZE,
+                first_k: E6_FIRST_K,
+                condition,
+                mutation_sigma: E6_MUTATION_SIGMA,
+                snapshot_interval: E6_SNAPSHOT_INTERVAL,
+            };
+            let result = run_e6(&cfg);
+            all_results.push((condition, seed, result));
+        }
+    }
+
+    let mut deaths_long_csv = String::from(
+        "condition,seed,life_id,agent_id,birth_step,death_step,lifetime_steps,c_level01_birth,c_level01_firstk,avg_c_level01_tick,c_level01_std_over_life,avg_c_level01_attack,attack_tick_count\n",
+    );
+    let mut snapshots_csv = String::from(
+        "condition,seed,step,agent_idx,freq_hz,semitones_from_anchor,c_level01,is_consonant_window\n",
+    );
+    let mut summary_csv = String::from(
+        "condition,seed,total_deaths,n_snapshots,mean_c_start,mean_c_end,delta_mean_c,occ_start,occ_end,delta_occ,entropy_start,entropy_end,delta_entropy,mean_n_alive\n",
+    );
+
+    let mut mean_c_by_cond_step: HashMap<&'static str, HashMap<usize, Vec<f32>>> = HashMap::new();
+    let mut occ_by_cond_step: HashMap<&'static str, HashMap<usize, Vec<f32>>> = HashMap::new();
+    let mut deaths_by_cond: HashMap<&'static str, Vec<f32>> = HashMap::new();
+    let mut heat_counts: HashMap<(usize, i32), f32> = HashMap::new();
+
+    for (condition, seed, result) in &all_results {
+        let cond_label = condition.label();
+        deaths_by_cond
+            .entry(cond_label)
+            .or_default()
+            .push(result.total_deaths as f32);
+
+        for rec in &result.deaths {
+            deaths_long_csv.push_str(&format!(
+                "{},{},{},{},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{}\n",
+                rec.condition,
+                rec.seed,
+                rec.life_id,
+                rec.agent_id,
+                rec.birth_step,
+                rec.death_step,
+                rec.lifetime_steps,
+                rec.c_level_birth,
+                rec.c_level_firstk,
+                rec.avg_c_level_tick,
+                rec.c_level_std_over_life,
+                rec.avg_c_level_attack,
+                rec.attack_tick_count
+            ));
+        }
+
+        let mut run_points: Vec<E6SnapshotPoint> = Vec::with_capacity(result.snapshots.len());
+        for snap in &result.snapshots {
+            let point = e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape);
+            run_points.push(point);
+            mean_c_by_cond_step
+                .entry(cond_label)
+                .or_default()
+                .entry(snap.step)
+                .or_default()
+                .push(point.mean_c_level01);
+            occ_by_cond_step
+                .entry(cond_label)
+                .or_default()
+                .entry(snap.step)
+                .or_default()
+                .push(point.consonant_occupation);
+
+            for (agent_idx, &freq) in snap.freqs_hz.iter().enumerate() {
+                if !freq.is_finite() || freq <= 0.0 {
+                    continue;
+                }
+                let semitone = 12.0 * (freq / anchor_hz).log2();
+                let c_level = landscape.evaluate_pitch_level(freq);
+                let is_consonant = e6_is_consonant_step(semitone, E6_CONSONANT_WINDOW_ST);
+                snapshots_csv.push_str(&format!(
+                    "{},{},{},{},{:.6},{:.6},{:.6},{}\n",
+                    cond_label,
+                    seed,
+                    snap.step,
+                    agent_idx,
+                    freq,
+                    semitone,
+                    c_level,
+                    if is_consonant { 1 } else { 0 }
+                ));
+
+                if *condition == E6Condition::Heredity {
+                    let clamped = semitone.clamp(-12.0, 12.0 - f32::EPSILON);
+                    let bin = ((clamped + 12.0) / E6_INTERVAL_BIN_ST).floor() as i32;
+                    *heat_counts.entry((snap.step, bin)).or_insert(0.0) += 1.0;
+                }
+            }
+        }
+
+        let start = run_points.first().copied().unwrap_or(E6SnapshotPoint {
+            mean_c_level01: 0.0,
+            consonant_occupation: 0.0,
+            pairwise_entropy: 0.0,
+            n_alive: 0,
+        });
+        let end = run_points.last().copied().unwrap_or(start);
+        let mean_n_alive = if run_points.is_empty() {
+            0.0
+        } else {
+            run_points.iter().map(|p| p.n_alive as f32).sum::<f32>() / run_points.len() as f32
+        };
+        summary_csv.push_str(&format!(
+            "{},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.3}\n",
+            cond_label,
+            seed,
+            result.total_deaths,
+            result.snapshots.len(),
+            start.mean_c_level01,
+            end.mean_c_level01,
+            end.mean_c_level01 - start.mean_c_level01,
+            start.consonant_occupation,
+            end.consonant_occupation,
+            end.consonant_occupation - start.consonant_occupation,
+            start.pairwise_entropy,
+            end.pairwise_entropy,
+            end.pairwise_entropy - start.pairwise_entropy,
+            mean_n_alive
+        ));
+    }
+
+    write_with_log(out_dir.join("paper_e6_deaths_long.csv"), deaths_long_csv)?;
+    write_with_log(out_dir.join("paper_e6_snapshots.csv"), snapshots_csv)?;
+    write_with_log(out_dir.join("paper_e6_summary.csv"), summary_csv)?;
+
+    let c_heredity = e6_series_stats(mean_c_by_cond_step.get(E6Condition::Heredity.label()));
+    let c_random = e6_series_stats(mean_c_by_cond_step.get(E6Condition::Random.label()));
+    let occ_heredity = e6_series_stats(occ_by_cond_step.get(E6Condition::Heredity.label()));
+    let occ_random = e6_series_stats(occ_by_cond_step.get(E6Condition::Random.label()));
+    let deaths_heredity = deaths_by_cond
+        .get(E6Condition::Heredity.label())
+        .map(|v| v.as_slice())
+        .unwrap_or(&[]);
+    let deaths_random = deaths_by_cond
+        .get(E6Condition::Random.label())
+        .map(|v| v.as_slice())
+        .unwrap_or(&[]);
+
+    render_e6_figure(
+        &out_dir.join("paper_e6_figure.svg"),
+        &c_heredity,
+        &c_random,
+        &occ_heredity,
+        &occ_random,
+        &heat_counts,
+        deaths_heredity,
+        deaths_random,
+    )?;
+
+    Ok(())
+}
+
+fn e6_snapshot_point(
+    freqs_hz: &[f32],
+    anchor_hz: f32,
+    landscape: &conchordal::core::landscape::Landscape,
+) -> E6SnapshotPoint {
+    let valid_freqs: Vec<f32> = freqs_hz
+        .iter()
+        .copied()
+        .filter(|f| f.is_finite() && *f > 0.0)
+        .collect();
+    if valid_freqs.is_empty() {
+        return E6SnapshotPoint {
+            mean_c_level01: 0.0,
+            consonant_occupation: 0.0,
+            pairwise_entropy: 0.0,
+            n_alive: 0,
+        };
+    }
+
+    let mean_c_level01 = valid_freqs
+        .iter()
+        .copied()
+        .map(|f| landscape.evaluate_pitch_level(f))
+        .sum::<f32>()
+        / valid_freqs.len() as f32;
+    let consonant_occupation = e6_consonant_occupation(&valid_freqs, anchor_hz, E6_CONSONANT_WINDOW_ST);
+
+    let semitones: Vec<f32> = valid_freqs
+        .iter()
+        .map(|f| 12.0 * (*f / anchor_hz).log2())
+        .collect();
+    let pairwise = pairwise_interval_samples(&semitones);
+    let pairwise_probs = histogram_probabilities_fixed(&pairwise, 0.0, 12.0, E6_INTERVAL_BIN_ST);
+    let pairwise_entropy = hist_structure_metrics_from_probs(&pairwise_probs).entropy;
+
+    E6SnapshotPoint {
+        mean_c_level01,
+        consonant_occupation,
+        pairwise_entropy,
+        n_alive: valid_freqs.len(),
+    }
+}
+
+fn e6_consonant_occupation(freqs: &[f32], anchor_hz: f32, window_st: f32) -> f32 {
+    let mut n_total = 0usize;
+    let mut n_hit = 0usize;
+    for &freq in freqs {
+        if !freq.is_finite() || freq <= 0.0 {
+            continue;
+        }
+        let semitone = 12.0 * (freq / anchor_hz).log2();
+        n_total += 1;
+        if e6_is_consonant_step(semitone, window_st) {
+            n_hit += 1;
+        }
+    }
+    if n_total == 0 {
+        0.0
+    } else {
+        n_hit as f32 / n_total as f32
+    }
+}
+
+fn e6_is_consonant_step(semitone: f32, window_st: f32) -> bool {
+    let st_mod = semitone.rem_euclid(12.0);
+    E2_CONSONANT_STEPS.iter().any(|target| {
+        let t_mod = target.rem_euclid(12.0);
+        let d = (st_mod - t_mod).abs();
+        d.min(12.0 - d) <= window_st
+    })
+}
+
+fn e6_series_stats(by_step: Option<&HashMap<usize, Vec<f32>>>) -> Vec<(f32, f32, f32)> {
+    let Some(by_step) = by_step else {
+        return Vec::new();
+    };
+    let mut keys: Vec<usize> = by_step.keys().copied().collect();
+    keys.sort_unstable();
+
+    let mut out = Vec::with_capacity(keys.len());
+    for step in keys {
+        let Some(values) = by_step.get(&step) else {
+            continue;
+        };
+        let finite: Vec<f32> = values.iter().copied().filter(|v| v.is_finite()).collect();
+        if finite.is_empty() {
+            continue;
+        }
+        let (mean, std) = mean_std_scalar(&finite);
+        let ci95 = ci95_from_std(std, finite.len());
+        out.push((step as f32, mean, ci95));
+    }
+    out
+}
+
+fn render_e6_figure(
+    out_path: &Path,
+    c_heredity: &[(f32, f32, f32)],
+    c_random: &[(f32, f32, f32)],
+    occ_heredity: &[(f32, f32, f32)],
+    occ_random: &[(f32, f32, f32)],
+    heat_counts: &HashMap<(usize, i32), f32>,
+    deaths_heredity: &[f32],
+    deaths_random: &[f32],
+) -> Result<(), Box<dyn Error>> {
+    let root = bitmap_root(out_path, (2200, 1600)).into_drawing_area();
+    root.fill(&WHITE)?;
+    let panels = root.split_evenly((2, 2));
+
+    draw_e6_series_panel(
+        &panels[0],
+        "A. Mean consonance C_level01 over time",
+        "mean C_level01",
+        c_heredity,
+        c_random,
+        0.0,
+        1.0,
+    )?;
+    draw_e6_heatmap_panel(&panels[1], heat_counts)?;
+    draw_e6_series_panel(
+        &panels[2],
+        "C. Consonant occupation over time",
+        "occupation fraction",
+        occ_heredity,
+        occ_random,
+        0.0,
+        1.0,
+    )?;
+    draw_e6_deaths_panel(&panels[3], deaths_heredity, deaths_random)?;
+
+    root.present()?;
+    Ok(())
+}
+
+fn draw_e6_series_panel<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    caption: &str,
+    y_desc: &str,
+    heredity: &[(f32, f32, f32)],
+    random: &[(f32, f32, f32)],
+    y_lo: f32,
+    y_hi: f32,
+) -> Result<(), Box<dyn Error>>
+where
+    <DB as DrawingBackend>::ErrorType: 'static,
+{
+    let x_max = heredity
+        .iter()
+        .chain(random.iter())
+        .map(|(x, _, _)| *x)
+        .fold(0.0f32, f32::max)
+        .max(1.0);
+    let mut chart = ChartBuilder::on(area)
+        .caption(caption, ("sans-serif", 30))
+        .margin(12)
+        .x_label_area_size(55)
+        .y_label_area_size(70)
+        .build_cartesian_2d(0.0f32..x_max, y_lo..y_hi)?;
+
+    chart
+        .configure_mesh()
+        .x_desc("step")
+        .y_desc(y_desc)
+        .label_style(("sans-serif", 20).into_font())
+        .axis_desc_style(("sans-serif", 24).into_font())
+        .draw()?;
+
+    for (label, series, color) in [
+        ("heredity", heredity, PAL_H),
+        ("random", random, PAL_R),
+    ] {
+        if series.is_empty() {
+            continue;
+        }
+        let mut band: Vec<(f32, f32)> = Vec::with_capacity(series.len() * 2);
+        for (x, mean, ci) in series.iter().copied() {
+            band.push((x, (mean + ci).clamp(y_lo, y_hi)));
+        }
+        for (x, mean, ci) in series.iter().rev().copied() {
+            band.push((x, (mean - ci).clamp(y_lo, y_hi)));
+        }
+        chart.draw_series(std::iter::once(Polygon::new(band, color.mix(0.20).filled())))?;
+
+        chart
+            .draw_series(LineSeries::new(
+                series.iter().map(|(x, mean, _)| (*x, *mean)),
+                color,
+            ))?
+            .label(label)
+            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
+    }
+
+    chart
+        .configure_series_labels()
+        .background_style(WHITE.mix(0.85))
+        .border_style(BLACK)
+        .label_font(("sans-serif", 18).into_font())
+        .draw()?;
+
+    Ok(())
+}
+
+fn draw_e6_heatmap_panel<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    heat_counts: &HashMap<(usize, i32), f32>,
+) -> Result<(), Box<dyn Error>>
+where
+    <DB as DrawingBackend>::ErrorType: 'static,
+{
+    let x_max = heat_counts
+        .keys()
+        .map(|(step, _)| *step as f32)
+        .fold(0.0f32, f32::max)
+        + E6_SNAPSHOT_INTERVAL as f32;
+    let mut chart = ChartBuilder::on(area)
+        .caption(
+            "B. Heredity pitch distribution heatmap",
+            ("sans-serif", 30),
+        )
+        .margin(12)
+        .x_label_area_size(55)
+        .y_label_area_size(70)
+        .build_cartesian_2d(0.0f32..x_max.max(1.0), -12.0f32..12.0f32)?;
+
+    chart
+        .configure_mesh()
+        .x_desc("step")
+        .y_desc("semitones from anchor")
+        .label_style(("sans-serif", 20).into_font())
+        .axis_desc_style(("sans-serif", 24).into_font())
+        .draw()?;
+
+    let max_count = heat_counts.values().copied().fold(0.0f32, f32::max).max(1.0);
+    for ((step, bin), count) in heat_counts {
+        let x0 = *step as f32;
+        let x1 = x0 + E6_SNAPSHOT_INTERVAL as f32;
+        let y0 = -12.0 + *bin as f32 * E6_INTERVAL_BIN_ST;
+        let y1 = y0 + E6_INTERVAL_BIN_ST;
+        let t = (*count / max_count).clamp(0.0, 1.0);
+        let color = HSLColor(
+            (220.0f64 - 220.0f64 * t as f64) / 360.0,
+            0.72,
+            0.94 - 0.50 * t as f64,
+        );
+        chart.draw_series(std::iter::once(Rectangle::new(
+            [(x0, y0), (x1, y1)],
+            color.filled(),
+        )))?;
+    }
+
+    for &target in &E2_CONSONANT_STEPS {
+        for y in [target, target - 12.0] {
+            if !(-12.0..=12.0).contains(&y) {
+                continue;
+            }
+            chart.draw_series(std::iter::once(PathElement::new(
+                vec![(0.0, y), (x_max.max(1.0), y)],
+                BLACK.mix(0.18),
+            )))?;
+        }
+    }
+
+    Ok(())
+}
+
+fn draw_e6_deaths_panel<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    deaths_heredity: &[f32],
+    deaths_random: &[f32],
+) -> Result<(), Box<dyn Error>>
+where
+    <DB as DrawingBackend>::ErrorType: 'static,
+{
+    let mut y_max = 1.0f32;
+    for values in [deaths_heredity, deaths_random] {
+        if values.is_empty() {
+            continue;
+        }
+        let (mean, std) = mean_std_scalar(values);
+        let ci = ci95_from_std(std, values.len());
+        y_max = y_max.max(mean + ci);
+    }
+    for &v in deaths_heredity.iter().chain(deaths_random.iter()) {
+        y_max = y_max.max(v);
+    }
+    y_max *= 1.15;
+
+    let mut chart = ChartBuilder::on(area)
+        .caption("D. Total deaths per condition", ("sans-serif", 30))
+        .margin(12)
+        .x_label_area_size(55)
+        .y_label_area_size(70)
+        .build_cartesian_2d(-0.5f32..1.5f32, 0.0f32..y_max.max(1.0))?;
+
+    chart
+        .configure_mesh()
+        .x_desc("condition")
+        .y_desc("total deaths")
+        .x_labels(2)
+        .x_label_formatter(&|x| {
+            if *x < 0.5 {
+                "heredity".to_string()
+            } else {
+                "random".to_string()
+            }
+        })
+        .label_style(("sans-serif", 20).into_font())
+        .axis_desc_style(("sans-serif", 24).into_font())
+        .draw()?;
+
+    for (x, values, color) in [
+        (0.0f32, deaths_heredity, PAL_H),
+        (1.0f32, deaths_random, PAL_R),
+    ] {
+        if values.is_empty() {
+            continue;
+        }
+        let (mean, std) = mean_std_scalar(values);
+        let ci = ci95_from_std(std, values.len());
+
+        chart.draw_series(std::iter::once(Rectangle::new(
+            [(x - 0.28, 0.0), (x + 0.28, mean)],
+            color.mix(0.35).filled(),
+        )))?;
+        chart.draw_series(std::iter::once(PathElement::new(
+            vec![(x, (mean - ci).max(0.0)), (x, mean + ci)],
+            color,
+        )))?;
+        chart.draw_series(std::iter::once(PathElement::new(
+            vec![(x - 0.08, mean + ci), (x + 0.08, mean + ci)],
+            color,
+        )))?;
+        chart.draw_series(std::iter::once(PathElement::new(
+            vec![(x - 0.08, (mean - ci).max(0.0)), (x + 0.08, (mean - ci).max(0.0))],
+            color,
+        )))?;
+
+        chart.draw_series(values.iter().enumerate().map(|(i, v)| {
+            let jitter = ((i as f32 * 1.618_034).sin()) * 0.10;
+            Circle::new((x + jitter, *v), 3, ShapeStyle::from(&color).filled())
+        }))?;
+    }
 
     Ok(())
 }
