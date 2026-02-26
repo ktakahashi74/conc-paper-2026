@@ -3646,18 +3646,70 @@ fn plot_e6_hereditary_adaptation(
     write_with_log(out_dir.join("paper_e6_snapshots.csv"), snapshots_csv)?;
     write_with_log(out_dir.join("paper_e6_summary.csv"), summary_csv)?;
 
+    // Carry-forward: pad every condition×seed to the global max step so that
+    // (a) within a condition, short seeds carry their last value forward, and
+    // (b) across conditions, the shorter condition extends to the longer one's range.
+    // This eliminates survivorship bias in the per-step mean.
+    for maps in [&mut mean_c_by_cond_step, &mut occ_by_cond_step] {
+        // Global max step across all conditions
+        let global_max_step = maps
+            .values()
+            .flat_map(|by_step| by_step.keys().copied())
+            .max()
+            .unwrap_or(0);
+        let snapshot_interval = E6_SNAPSHOT_INTERVAL;
+
+        for (_cond, by_step) in maps.iter_mut() {
+            let n_seeds = by_step.values().map(|v| v.len()).max().unwrap_or(0);
+            if n_seeds == 0 {
+                continue;
+            }
+            let mut steps_sorted: Vec<usize> = by_step.keys().copied().collect();
+            steps_sorted.sort_unstable();
+            let local_max = steps_sorted.last().copied().unwrap_or(0);
+
+            // Pass 1: within existing steps, pad short vecs with carried values
+            let mut carry = vec![0.0f32; n_seeds];
+            for &step in &steps_sorted {
+                let vals = by_step.get_mut(&step).unwrap();
+                for (i, &v) in vals.iter().enumerate() {
+                    carry[i] = v;
+                }
+                while vals.len() < n_seeds {
+                    let i = vals.len();
+                    vals.push(carry[i]);
+                }
+            }
+
+            // Pass 2: extend beyond local_max to global_max with carry values
+            let mut step = local_max + snapshot_interval;
+            while step <= global_max_step {
+                by_step.insert(step, carry.clone());
+                step += snapshot_interval;
+            }
+        }
+    }
+
     let c_heredity = e6_series_stats(mean_c_by_cond_step.get(E6Condition::Heredity.label()));
     let c_random = e6_series_stats(mean_c_by_cond_step.get(E6Condition::Random.label()));
     let occ_heredity = e6_series_stats(occ_by_cond_step.get(E6Condition::Heredity.label()));
     let occ_random = e6_series_stats(occ_by_cond_step.get(E6Condition::Random.label()));
-    let deaths_heredity = deaths_by_cond
-        .get(E6Condition::Heredity.label())
-        .map(|v| v.as_slice())
-        .unwrap_or(&[]);
-    let deaths_random = deaths_by_cond
-        .get(E6Condition::Random.label())
-        .map(|v| v.as_slice())
-        .unwrap_or(&[]);
+    // Collect final-snapshot pitches (semitones from anchor) for Panel D histogram
+    let mut final_st_heredity: Vec<f32> = Vec::new();
+    let mut final_st_random: Vec<f32> = Vec::new();
+    for (condition, _seed, result) in &all_results {
+        if let Some(last_snap) = result.snapshots.last() {
+            let dst = match condition {
+                E6Condition::Heredity => &mut final_st_heredity,
+                E6Condition::Random => &mut final_st_random,
+            };
+            for &freq in &last_snap.freqs_hz {
+                if freq.is_finite() && freq > 0.0 {
+                    dst.push(12.0 * (freq / anchor_hz).log2());
+                }
+            }
+        }
+    }
 
     render_e6_figure(
         &out_dir.join("paper_e6_figure.svg"),
@@ -3666,8 +3718,8 @@ fn plot_e6_hereditary_adaptation(
         &occ_heredity,
         &occ_random,
         &heat_counts,
-        deaths_heredity,
-        deaths_random,
+        &final_st_heredity,
+        &final_st_random,
     )?;
 
     Ok(())
@@ -3775,8 +3827,8 @@ fn render_e6_figure(
     occ_heredity: &[(f32, f32, f32)],
     occ_random: &[(f32, f32, f32)],
     heat_counts: &HashMap<(usize, i32), f32>,
-    deaths_heredity: &[f32],
-    deaths_random: &[f32],
+    final_st_heredity: &[f32],
+    final_st_random: &[f32],
 ) -> Result<(), Box<dyn Error>> {
     let root = bitmap_root(out_path, (2200, 1600)).into_drawing_area();
     root.fill(&WHITE)?;
@@ -3801,7 +3853,7 @@ fn render_e6_figure(
         0.0,
         1.0,
     )?;
-    draw_e6_deaths_panel(&panels[3], deaths_heredity, deaths_random)?;
+    draw_e6_pitch_histogram_panel(&panels[3], final_st_heredity, final_st_random)?;
 
     root.present()?;
     Ok(())
@@ -3863,6 +3915,24 @@ where
             ))?
             .label(label)
             .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
+
+        // Dashed extension from last point to x_max
+        if let Some(&(last_x, last_mean, _)) = series.last() {
+            if last_x < x_max - 1.0 {
+                let dash_len = (x_max - last_x) / 80.0;
+                let mut segments: Vec<PathElement<(f32, f32)>> = Vec::new();
+                let mut cx = last_x;
+                while cx < x_max {
+                    let nx = (cx + dash_len).min(x_max);
+                    segments.push(PathElement::new(
+                        vec![(cx, last_mean), (nx, last_mean)],
+                        color.mix(0.5).stroke_width(1),
+                    ));
+                    cx = nx + dash_len; // gap
+                }
+                chart.draw_series(segments)?;
+            }
+        }
     }
 
     chart
@@ -3938,83 +4008,103 @@ where
     Ok(())
 }
 
-fn draw_e6_deaths_panel<DB: DrawingBackend>(
+fn draw_e6_pitch_histogram_panel<DB: DrawingBackend>(
     area: &DrawingArea<DB, Shift>,
-    deaths_heredity: &[f32],
-    deaths_random: &[f32],
+    st_heredity: &[f32],
+    st_random: &[f32],
 ) -> Result<(), Box<dyn Error>>
 where
     <DB as DrawingBackend>::ErrorType: 'static,
 {
-    let mut y_max = 1.0f32;
-    for values in [deaths_heredity, deaths_random] {
-        if values.is_empty() {
-            continue;
+    let bin_width = 0.5f32; // semitones per bin
+    let lo = -13.0f32;
+    let hi = 13.0f32;
+    let n_bins = ((hi - lo) / bin_width).ceil() as usize;
+
+    let histogram = |data: &[f32]| -> Vec<f32> {
+        let mut counts = vec![0.0f32; n_bins];
+        let total = data.len().max(1) as f32;
+        for &v in data {
+            let idx = ((v - lo) / bin_width).floor() as isize;
+            if idx >= 0 && (idx as usize) < n_bins {
+                counts[idx as usize] += 1.0 / total;
+            }
         }
-        let (mean, std) = mean_std_scalar(values);
-        let ci = ci95_from_std(std, values.len());
-        y_max = y_max.max(mean + ci);
-    }
-    for &v in deaths_heredity.iter().chain(deaths_random.iter()) {
-        y_max = y_max.max(v);
-    }
-    y_max *= 1.15;
+        counts
+    };
+
+    let hist_h = histogram(st_heredity);
+    let hist_r = histogram(st_random);
+    let y_max = hist_h
+        .iter()
+        .chain(hist_r.iter())
+        .copied()
+        .fold(0.0f32, f32::max)
+        * 1.15;
 
     let mut chart = ChartBuilder::on(area)
-        .caption("D. Total deaths per condition", ("sans-serif", 30))
+        .caption("D. Final pitch distribution", ("sans-serif", 30))
         .margin(12)
         .x_label_area_size(55)
         .y_label_area_size(70)
-        .build_cartesian_2d(-0.5f32..1.5f32, 0.0f32..y_max.max(1.0))?;
+        .build_cartesian_2d(lo..hi, 0.0f32..y_max.max(0.01))?;
 
     chart
         .configure_mesh()
-        .x_desc("condition")
-        .y_desc("total deaths")
-        .x_labels(2)
-        .x_label_formatter(&|x| {
-            if *x < 0.5 {
-                "heredity".to_string()
-            } else {
-                "random".to_string()
-            }
-        })
+        .x_desc("semitones from anchor")
+        .y_desc("density")
         .label_style(("sans-serif", 20).into_font())
         .axis_desc_style(("sans-serif", 24).into_font())
         .draw()?;
 
-    for (x, values, color) in [
-        (0.0f32, deaths_heredity, PAL_H),
-        (1.0f32, deaths_random, PAL_R),
-    ] {
-        if values.is_empty() {
-            continue;
+    // Draw consonant ratio reference lines
+    for &target in &E2_CONSONANT_STEPS {
+        for st in [target, target - 12.0] {
+            if st > lo && st < hi {
+                chart.draw_series(std::iter::once(PathElement::new(
+                    vec![(st, 0.0), (st, y_max)],
+                    BLACK.mix(0.12),
+                )))?;
+            }
         }
-        let (mean, std) = mean_std_scalar(values);
-        let ci = ci95_from_std(std, values.len());
-
-        chart.draw_series(std::iter::once(Rectangle::new(
-            [(x - 0.28, 0.0), (x + 0.28, mean)],
-            color.mix(0.35).filled(),
-        )))?;
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(x, (mean - ci).max(0.0)), (x, mean + ci)],
-            color,
-        )))?;
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(x - 0.08, mean + ci), (x + 0.08, mean + ci)],
-            color,
-        )))?;
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(x - 0.08, (mean - ci).max(0.0)), (x + 0.08, (mean - ci).max(0.0))],
-            color,
-        )))?;
-
-        chart.draw_series(values.iter().enumerate().map(|(i, v)| {
-            let jitter = ((i as f32 * 1.618_034).sin()) * 0.10;
-            Circle::new((x + jitter, *v), 3, ShapeStyle::from(&color).filled())
-        }))?;
     }
+
+    // Offset bars so they don't overlap: heredity left half, random right half
+    let half = bin_width * 0.45;
+    for (hist, color, offset) in [
+        (&hist_h, PAL_H, -half / 2.0),
+        (&hist_r, PAL_R, half / 2.0),
+    ] {
+        chart.draw_series(hist.iter().enumerate().filter(|(_, h)| **h > 0.0).map(
+            |(i, h)| {
+                let x0 = lo + i as f32 * bin_width + offset;
+                Rectangle::new([(x0, 0.0), (x0 + half, *h)], color.mix(0.55).filled())
+            },
+        ))?;
+    }
+
+    // Legend
+    chart
+        .draw_series(std::iter::once(Rectangle::new(
+            [(lo, 0.0), (lo, 0.0)],
+            PAL_H.filled(),
+        )))?
+        .label("heredity")
+        .legend(move |(x, y)| Rectangle::new([(x, y - 5), (x + 20, y + 5)], PAL_H.filled()));
+    chart
+        .draw_series(std::iter::once(Rectangle::new(
+            [(lo, 0.0), (lo, 0.0)],
+            PAL_R.filled(),
+        )))?
+        .label("random")
+        .legend(move |(x, y)| Rectangle::new([(x, y - 5), (x + 20, y + 5)], PAL_R.filled()));
+
+    chart
+        .configure_series_labels()
+        .background_style(WHITE.mix(0.85))
+        .border_style(BLACK)
+        .label_font(("sans-serif", 18).into_font())
+        .draw()?;
 
     Ok(())
 }
