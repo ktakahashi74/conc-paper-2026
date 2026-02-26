@@ -3520,6 +3520,7 @@ fn plot_e6_hereditary_adaptation(
                 condition,
                 mutation_sigma: E6_MUTATION_SIGMA,
                 snapshot_interval: E6_SNAPSHOT_INTERVAL,
+                pitch_free: true,
             };
             let result = run_e6(&cfg);
             all_results.push((condition, seed, result));
