@@ -42,7 +42,7 @@ See `experiments/README.md` for run instructions and available options.
 
 ### Experiment ID Mapping
 
-The paper uses sequential numbering (Experiment 1–4). The internal experiment IDs in the codebase differ. E4 is excluded from the paper.
+The paper uses sequential numbering (Experiment 1–5). The internal experiment IDs in the codebase differ. E4 is excluded from the paper.
 
 | Paper | Internal ID | Topic |
 |---|---|---|
@@ -50,6 +50,7 @@ The paper uses sequential numbering (Experiment 1–4). The internal experiment 
 | Experiment 2 | E2 | Self-Organized Polyphony |
 | Experiment 3 | E3 | Consonance as Selection Pressure |
 | Experiment 4 | E5 | Rhythmic Entrainment |
+| Experiment 5 | E6 | Hereditary Adaptation |
 
 ## Workflow
 

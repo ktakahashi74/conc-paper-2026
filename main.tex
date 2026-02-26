@@ -100,7 +100,7 @@
 \maketitle
 
 \begin{abstract}
-This paper introduces \textit{Conchordal}, an artificial life system in which sonic agents inhabit and adapt within a psychoacoustic fitness landscape defined in log-frequency space. The system is built on the principle of \emph{Direct Cognitive Coupling} (DCC): the generative process operates directly upon structures isomorphic to those in human perceptual cognition—here, the auditory system—bypassing symbolic intermediaries. The environment integrates roughness (sensory dissonance) and harmonicity (periodicity-based virtual pitch coherence) into a continuous consonance field without presupposing musical scales or harmonic rules. Agents adjust pitch through local proposal-and-accept dynamics under density-based repulsion, regulate survival via a consonance-dependent metabolic policy, and entrain temporally through a Kuramoto-style phase coupling mechanism grounded in neural oscillatory entrainment models. Four empirical results are reported. (1) The psychoacoustic landscape exhibits attractors at simple frequency ratios. (2) Populations self-organize into structured, non-collapsed polyphony with enriched consonant interval distributions relative to ablated conditions. (3) When consonance modulates metabolic recharge, early consonance strongly predicts lifetime, whereas the effect vanishes without recharge. (4) External rhythmic coupling induces rapid, near-unity phase locking across seeds. These findings demonstrate that consonance can function as an ecological resource in a non-traditional computational medium, yielding self-organization, selection, and synchronization. Because DCC grounds the fitness landscape in perceptual structure, an ecological--aesthetic duality emerges: adaptive success and musical coherence are not merely correlated but structurally identical.
+This paper introduces \textit{Conchordal}, an artificial life system in which sonic agents inhabit and adapt within a psychoacoustic fitness landscape defined in log-frequency space. The system is built on the principle of \emph{Direct Cognitive Coupling} (DCC): the generative process operates directly upon structures isomorphic to those in human perceptual cognition—here, the auditory system—bypassing symbolic intermediaries. The environment integrates roughness (sensory dissonance) and harmonicity (periodicity-based virtual pitch coherence) into a continuous consonance field without presupposing musical scales or harmonic rules. Agents adjust pitch through local proposal-and-accept dynamics under density-based repulsion, regulate survival via a consonance-dependent metabolic policy, and entrain temporally through a Kuramoto-style phase coupling mechanism grounded in neural oscillatory entrainment models. Five empirical results are reported. (1) The psychoacoustic landscape exhibits attractors at simple frequency ratios. (2) Populations self-organize into structured, non-collapsed polyphony with enriched consonant interval distributions relative to ablated conditions. (3) When consonance modulates metabolic recharge, early consonance strongly predicts lifetime, whereas the effect vanishes without recharge. (4) External rhythmic coupling induces rapid, near-unity phase locking across seeds. (5) Hereditary pitch inheritance with mutation produces significantly higher consonance and consonant-ratio occupation than random respawn, demonstrating that adaptive lineages can consolidate ecological advantage across generations. These findings demonstrate that consonance can function as an ecological resource in a non-traditional computational medium, yielding self-organization, selection, synchronization, and hereditary adaptation. Because DCC grounds the fitness landscape in perceptual structure, an ecological--aesthetic duality emerges: adaptive success and musical coherence are not merely correlated but structurally identical.
 \end{abstract}
 
 \section{Introduction}
@@ -122,7 +122,7 @@ Beyond the classical Plomp--Levelt roughness model \citep{plomp1965} and Terhard
 \textbf{Embodied and predictive cognition.}
 DCC resonates with embodied music cognition \citep{leman2007}, which argues that musical meaning is grounded in bodily and sensorimotor interaction with sound. It also connects to predictive processing frameworks \citep{clark2013}, in which perception and action share a common generative model. DCC operationalises a similar principle: agents and listeners share the same perceptual structure, so emergent configurations are salient without requiring a separate evaluative step.
 
-The present study evaluates whether such a system satisfies core artificial life criteria: (i) self-organization under environmental constraints, (ii) selection mediated by resource dynamics, and (iii) synchronization through interaction and external forcing. Four experiments address these criteria.
+The present study evaluates whether such a system satisfies core artificial life criteria: (i) self-organization under environmental constraints, (ii) selection mediated by resource dynamics, (iii) synchronization through interaction and external forcing, and (iv) hereditary adaptation through lineage-based pitch inheritance. Five experiments address these criteria.
 
 \begin{figure*}[t]
 \centering
@@ -292,11 +292,24 @@ The order parameter \citep{kuramoto1984} approached unity only in the coupled co
 \label{fig:e5-entrainment}
 \end{figure*}
 
+\subsection{Hereditary Adaptation}
+
+Experiments 1--4 establish selection but not heredity: agents survive differentially yet do not transmit traits to offspring. To test whether lineage-based inheritance can consolidate ecological advantage, we compare two respawn conditions. In the \emph{heredity} condition, a dead agent is replaced by an offspring whose pitch is drawn from a normal distribution centered on a randomly chosen surviving parent ($\sigma=0.03$\,log$_2$, i.e.\ $\approx 0.36$\,st). In the \emph{random} condition, offspring pitch is drawn uniformly within $\pm 1$ octave of the anchor, as in Experiment~3. All other parameters match Experiment~3 (32 agents, 220\,Hz anchor, pitch locked at birth to isolate metabolic selection from pitch adaptation). Twenty seeds per condition were run until 500 deaths accumulated.
+
+Figure~\ref{fig:e6-hereditary} shows that hereditary runs exhibit markedly higher variance in final consonance and consonant-ratio occupation than random controls. Of 20 heredity seeds, 5 reached final mean $C_{\text{level01}}>0.6$ and 8 achieved consonant occupation $>0.5$; no random seed exceeded either threshold. Welch's $t$-test confirmed significantly higher final consonance (heredity $0.579 \pm 0.074$ vs.\ random $0.537 \pm 0.007$; $t=2.56$, $p=0.019$) and occupation ($0.477 \pm 0.209$ vs.\ $0.315 \pm 0.104$; $t=3.10$, $p=0.004$). Levene's test detected significantly greater variance under heredity for both metrics ($p=0.009$, $p=0.016$), consistent with stochastic lineage divergence at $N\!=\!32$. The pitch heatmap (Figure~\ref{fig:e6-hereditary}B) reveals that converging seeds cluster near the octave ($\pm 12$\,st), the strongest landscape attractor identified in Experiment~1.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{experiments/plots/e6/paper_e6_figure.pdf}
+\caption{Hereditary adaptation (20 seeds $\times$ 2 conditions, 500 deaths each). (A)~Mean consonance $C_{\text{level01}}$ over time (shaded: 95\% CI across seeds). (B)~Pitch distribution heatmap for heredity runs; grey lines mark consonant ratios. (C)~Consonant-ratio occupation fraction over time. (D)~Total deaths per condition (bar: mean; whiskers: 95\% CI; dots: individual seeds).}
+\label{fig:e6-hereditary}
+\end{figure*}
+
 \section{Discussion}
 
 \subsection{Summary of Findings}
 
-Conchordal demonstrates that psychoacoustic structure can support artificial life phenomena without recourse to symbolic encoding or predefined tonal systems. Four properties are notable.
+Conchordal demonstrates that psychoacoustic structure can support artificial life phenomena without recourse to symbolic encoding or predefined tonal systems. Five properties are notable.
 
 First, consonance is not imposed but computed from physical and perceptual principles \citep{helmholtz1877,plomp1965}. The landscape attractors (Figure~\ref{fig:e1-landscape}) reflect integer-ratio periodicity inherent to harmonic spectra \citep{terhardt1979}.
 
@@ -304,7 +317,9 @@ Second, harmonic structure in populations arises from local optimization and den
 
 Third, when consonance modulates energy, ecological selection appears \citep{bedau2000} (Figure~\ref{fig:e3-selection}). Agents that occupy more consonant regions survive longer. Removing recharge abolishes the effect, confirming causality.
 
-Finally, temporal synchronization (Figure~\ref{fig:e5-entrainment}) shows that rhythmic coherence can be induced through oscillator coupling, linking pitch ecology and temporal order within one framework. The rapid phase-locking ($\text{PLV} \to 0.99$) mirrors cortical entrainment dynamics observed in EEG studies of beat perception \citep{nozaradan2011,doelling2015}.
+Fourth, temporal synchronization (Figure~\ref{fig:e5-entrainment}) shows that rhythmic coherence can be induced through oscillator coupling, linking pitch ecology and temporal order within one framework. The rapid phase-locking ($\text{PLV} \to 0.99$) mirrors cortical entrainment dynamics observed in EEG studies of beat perception \citep{nozaradan2011,doelling2015}.
+
+Fifth, hereditary pitch inheritance amplifies ecological advantage across generations (Figure~\ref{fig:e6-hereditary}). Lineages that inherit consonant pitch positions persist and concentrate near landscape attractors, while random respawn produces no such consolidation. The high seed-to-seed variance under heredity reflects stochastic lineage divergence characteristic of small populations ($N\!=\!32$), analogous to genetic drift in population genetics \citep{kimura1983}.
 
 \subsection{DCC Across Spectral and Temporal Axes}
 
@@ -312,13 +327,13 @@ These results illustrate DCC operating across both spectral and temporal axes. I
 
 \subsection{The Ecological--Aesthetic Duality}
 
-A structural duality underlies these results. Because the fitness landscape is derived from perceptual consonance, the conditions for artificial life and the conditions for musically coherent sound are one and the same: agents that survive are those that occupy consonant regions; populations that self-organize produce harmonically structured polyphony; oscillators that entrain generate perceptually salient rhythms. Conversely, musically coherent configurations—consonant pitch arrangements, phase-locked pulse—are precisely those that sustain life-like dynamics in this system.
+A structural duality underlies these results. Because the fitness landscape is derived from perceptual consonance, the conditions for artificial life and the conditions for musically coherent sound are one and the same: agents that survive are those that occupy consonant regions; populations that self-organize produce harmonically structured polyphony; lineages that inherit consonant pitch positions persist across generations; oscillators that entrain generate perceptually salient rhythms. Conversely, musically coherent configurations—consonant pitch arrangements, phase-locked pulse—are precisely those that sustain life-like dynamics in this system.
 
 This duality is not a coincidence but a structural guarantee provided by DCC. In a system whose fitness landscape is arbitrary, ecological success and aesthetic coherence may coincide only by chance. DCC eliminates that gap: because the ecological resource \emph{is} perceptual consonance, adaptive fitness and aesthetic quality are not merely correlated but identical. Any system built on DCC inherits this guarantee—the ecological--aesthetic duality is a general property of the coupling principle, not an artifact of the particular auditory implementation presented here.
 
 \section{Limitations and Future Work}
 
-The current system demonstrates selection but not heredity: agents survive differentially yet do not reproduce or mutate. Adding lineage-based inheritance would open the door to open-ended spectral evolution, where timbral traits themselves become subject to adaptation.
+Experiment~5 introduces pitch-level heredity, but inheritance remains limited to a single scalar trait. Extending lineage-based transmission to timbral parameters—partial amplitudes, spectral envelope shape—would open the door to open-ended spectral evolution, where timbral traits themselves become subject to adaptation.
 
 The consonance landscape currently assumes harmonic spectra. Extending the roughness and harmonicity kernels to inharmonic or noise-bearing timbres would broaden the ecology to percussion, bells, and other non-pitched sound sources, testing whether DCC generalises beyond tonal contexts.
 
@@ -326,7 +341,7 @@ The present system realises the first stage of DCC: mapping from cognitive model
 
 \section{Conclusion}
 
-Conchordal establishes a psychoacoustic artificial life environment in which consonance acts as an ecological resource. In log-frequency space, harmonicity and roughness define a continuous landscape supporting attractors, population-level structure, survival differentials, and rhythmic entrainment. These results suggest that life-like adaptive dynamics need not be confined to spatial or chemical substrates. Sound itself—structured by perceptual law—can sustain artificial ecologies.
+Conchordal establishes a psychoacoustic artificial life environment in which consonance acts as an ecological resource. In log-frequency space, harmonicity and roughness define a continuous landscape supporting attractors, population-level structure, survival differentials, hereditary adaptation, and rhythmic entrainment. These results suggest that life-like adaptive dynamics need not be confined to spatial or chemical substrates. Sound itself—structured by perceptual law—can sustain artificial ecologies.
 
 More broadly, DCC is not specific to the auditory domain. The same paradigm—modelling the evaluative axes of human sensation and cognition as a continuous landscape in which autonomous agents operate—can in principle be applied to any creative medium whose perceptual basis is well characterised: colour and composition in visual art, tension and expectation in narrative, or proprioceptive comfort in spatial design \citep{conchordal2025}. Conchordal serves as a proof of concept for the auditory case; extending DCC to other sensory modalities is a promising direction for interdisciplinary artificial life research.
 
