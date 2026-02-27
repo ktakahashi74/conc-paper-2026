@@ -21,6 +21,7 @@ use crate::sim::{
     set_e4_runtime_overrides,
 };
 use conchordal::core::consonance_kernel::{ConsonanceKernel, ConsonanceRepresentationParams};
+use conchordal::life::articulation_core::kuramoto_phase_step;
 use conchordal::core::erb::hz_to_erb;
 use conchordal::core::harmonicity_kernel::{HarmonicityKernel, HarmonicityParams};
 use conchordal::core::landscape::{LandscapeParams, RoughnessScalarMode};
@@ -222,26 +223,48 @@ const E3_SEEDS: [u64; 5] = [
     0xC0FFEE_u64 + 34,
 ];
 
+// ── E5: Vitality-Coupled Entrainment ─────────────────────────────
 const E5_KICK_OMEGA: f32 = 2.0 * PI * 2.0;
 const E5_AGENT_OMEGA_MEAN: f32 = 2.0 * PI * 1.8;
 const E5_AGENT_JITTER: f32 = 0.02;
-const E5_K_KICK: f32 = 1.6;
+const E5_K_BASE: f32 = 3.0;
 const E5_N_AGENTS: usize = 32;
 const E5_DT: f32 = 0.02;
 const E5_STEPS: usize = 2000;
-const E5_BURN_IN_STEPS: usize = 500;
-const E5_SAMPLE_WINDOW_STEPS: usize = 250;
 const E5_TIME_PLV_WINDOW_STEPS: usize = 200;
-const E5_MIN_R_FOR_GROUP_PHASE: f32 = 0.2;
-const E5_KICK_ON_STEP: Option<usize> = Some(800);
-const E5_SEED: u64 = 0xC0FFEE_u64 + 2;
-const E5_SEEDS: [u64; 5] = [
-    0xC0FFEE_u64,
-    0xC0FFEE_u64 + 1,
-    0xC0FFEE_u64 + 2,
-    0xC0FFEE_u64 + 3,
-    0xC0FFEE_u64 + 4,
+const E5_ANCHOR_HZ: f32 = 220.0;
+const E5_E_CAP: f32 = 1.0;
+const E5_E_INIT: f32 = 0.1;
+const E5_CB: f32 = 0.05;
+const E5_RECHARGE: f32 = 0.1;
+const E5_N_SEEDS: usize = 20;
+const E5_SEEDS: [u64; 20] = [
+    0xE5C0FF_u64,
+    0xE5C0FF_u64 + 1,
+    0xE5C0FF_u64 + 2,
+    0xE5C0FF_u64 + 3,
+    0xE5C0FF_u64 + 4,
+    0xE5C0FF_u64 + 5,
+    0xE5C0FF_u64 + 6,
+    0xE5C0FF_u64 + 7,
+    0xE5C0FF_u64 + 8,
+    0xE5C0FF_u64 + 9,
+    0xE5C0FF_u64 + 10,
+    0xE5C0FF_u64 + 11,
+    0xE5C0FF_u64 + 12,
+    0xE5C0FF_u64 + 13,
+    0xE5C0FF_u64 + 14,
+    0xE5C0FF_u64 + 15,
+    0xE5C0FF_u64 + 16,
+    0xE5C0FF_u64 + 17,
+    0xE5C0FF_u64 + 18,
+    0xE5C0FF_u64 + 19,
 ];
+const E5_REPRESENTATIVE_SEED_IDX: usize = 2;
+
+const PAL_E5_VITALITY: RGBColor = PAL_CD; // cobalt blue for vitality condition
+const PAL_E5_UNIFORM: RGBColor = PAL_R;   // dark rose for uniform condition
+const PAL_E5_CONTROL: RGBColor = PAL_C;   // purple grey for control
 
 const E6_FIRST_K: usize = 20;
 const E6_POP_SIZE: usize = 32;
@@ -1056,7 +1079,7 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
                 }
                 Experiment::E5 => {
                     let h = s.spawn(|| {
-                        plot_e5_rhythmic_entrainment(out_dir)
+                        plot_e5_vitality_entrainment(out_dir)
                             .map_err(|err| io::Error::other(err.to_string()))
                     });
                     handles.push((exp.label(), h));
@@ -3446,47 +3469,143 @@ fn pick_e3_representative_seed(outputs: &[E3SeedOutput]) -> Option<u64> {
     Some(baseline[baseline.len() / 2].0)
 }
 
-fn plot_e5_rhythmic_entrainment(out_dir: &Path) -> Result<(), Box<dyn Error>> {
-    let sim_main = simulate_e5_kick(E5_SEED, E5_STEPS, E5_K_KICK, E5_KICK_ON_STEP);
-    let sim_ctrl = simulate_e5_kick(E5_SEED, E5_STEPS, 0.0, E5_KICK_ON_STEP);
+fn plot_e5_vitality_entrainment(out_dir: &Path) -> Result<(), Box<dyn Error>> {
+    let landscape = e3_reference_landscape(E5_ANCHOR_HZ);
 
-    let csv_path = out_dir.join("paper_e5_kick_entrainment.csv");
-    write_with_log(&csv_path, e5_kick_csv(&sim_main, &sim_ctrl))?;
+    let conditions = [E5Condition::Vitality, E5Condition::Uniform, E5Condition::Control];
 
-    let summary_path = out_dir.join("paper_e5_kick_summary.csv");
-    write_with_log(&summary_path, e5_kick_summary_csv(&sim_main, &sim_ctrl))?;
+    // Run all seeds × conditions
+    let mut all_results: Vec<E5VitalityResult> = Vec::new();
+    for &cond in &conditions {
+        for &seed in &E5_SEEDS {
+            all_results.push(simulate_e5_vitality(seed, cond, &landscape));
+        }
+    }
 
-    let meta_path = out_dir.join("paper_e5_meta.txt");
-    write_with_log(&meta_path, e5_meta_text(E5_STEPS))?;
+    // ── CSV: per-seed summary ────────────────────────────────────
+    let mut summary_csv = String::from("condition,seed,pearson_r,group_plv_final\n");
+    for res in &all_results {
+        let final_plv = res
+            .group_plv_series
+            .last()
+            .map(|(_, p)| *p)
+            .unwrap_or(f32::NAN);
+        summary_csv.push_str(&format!(
+            "{},{},{:.6},{:.6}\n",
+            res.condition.label(),
+            res.seed,
+            res.pearson_r,
+            final_plv,
+        ));
+    }
+    write_with_log(&out_dir.join("paper_e5_summary.csv"), &summary_csv)?;
 
-    let order_path = out_dir.join("paper_e5_order_over_time.svg");
-    render_e5_order_plot(&order_path, &sim_main.series, &sim_ctrl.series)?;
+    // ── CSV: per-agent for representative seed ───────────────────
+    let mut agent_csv = String::from("condition,seed,agent,consonance,plv_final\n");
+    for res in &all_results {
+        if res.seed != E5_SEEDS[E5_REPRESENTATIVE_SEED_IDX] {
+            continue;
+        }
+        for (i, a) in res.agent_final.iter().enumerate() {
+            agent_csv.push_str(&format!(
+                "{},{},{},{:.6},{:.6}\n",
+                res.condition.label(),
+                res.seed,
+                i,
+                a.consonance,
+                a.plv,
+            ));
+        }
+    }
+    write_with_log(&out_dir.join("paper_e5_agent_detail.csv"), &agent_csv)?;
 
-    let delta_path = out_dir.join("paper_e5_delta_phi_over_time.svg");
-    render_e5_delta_phi_plot(&delta_path, &sim_main.series, &sim_ctrl.series)?;
+    // ── Compute per-condition group PLV series (mean ± 95% CI) ──
+    // (scatter data written after stratified sims below)
+    let mut cond_series: Vec<(E5Condition, Vec<(f32, f32, f32)>)> = Vec::new();
+    for &cond in &conditions {
+        let cond_results: Vec<&E5VitalityResult> =
+            all_results.iter().filter(|r| r.condition == cond).collect();
+        let n_steps = cond_results
+            .first()
+            .map(|r| r.group_plv_series.len())
+            .unwrap_or(0);
+        let n_seeds = cond_results.len() as f32;
+        let mut series: Vec<(f32, f32, f32)> = Vec::with_capacity(n_steps);
+        for step in 0..n_steps {
+            let t = cond_results[0].group_plv_series[step].0;
+            let vals: Vec<f32> = cond_results
+                .iter()
+                .filter_map(|r| {
+                    let p = r.group_plv_series[step].1;
+                    p.is_finite().then_some(p)
+                })
+                .collect();
+            if vals.is_empty() {
+                series.push((t, f32::NAN, 0.0));
+                continue;
+            }
+            let mean = vals.iter().copied().sum::<f32>() / vals.len() as f32;
+            let var = vals.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / vals.len() as f32;
+            let ci = 1.96 * var.sqrt() / n_seeds.sqrt();
+            series.push((t, mean, ci));
+        }
+        cond_series.push((cond, series));
+    }
 
-    let plv_path = out_dir.join("paper_e5_plv_over_time.svg");
-    render_e5_plv_plot(&plv_path, &sim_main.series, &sim_ctrl.series)?;
+    // ── Panel B: stratified-pitch scatter (separate simulation) ───
+    let rep_seed = E5_SEEDS[E5_REPRESENTATIVE_SEED_IDX];
+    let scatter_vitality = simulate_e5_stratified(rep_seed, E5Condition::Vitality, &landscape);
+    let scatter_control = simulate_e5_stratified(rep_seed, E5Condition::Control, &landscape);
 
-    let seed_rows = e5_seed_sweep_rows(E5_STEPS);
-    let seed_csv_path = out_dir.join("paper_e5_seed_sweep.csv");
-    write_with_log(&seed_csv_path, e5_seed_sweep_csv(&seed_rows))?;
-    let seed_plot_path = out_dir.join("paper_e5_seed_sweep.svg");
-    render_e5_seed_sweep_plot(&seed_plot_path, &seed_rows)?;
+    // Write scatter CSV (stratified pitches, Panel B only)
+    {
+        let mut csv = String::from("condition,seed,agent,consonance,plv_final\n");
+        for res in [&scatter_vitality, &scatter_control] {
+            for (i, a) in res.agent_final.iter().enumerate() {
+                csv.push_str(&format!(
+                    "{},{},{},{:.6},{:.6}\n",
+                    res.condition.label(), res.seed, i, a.consonance, a.plv,
+                ));
+            }
+        }
+        write_with_log(&out_dir.join("paper_e5_scatter_detail.csv"), &csv)?;
+    }
 
-    let bins = phase_hist_bins(
-        sim_main
-            .phase_hist_samples
-            .len()
-            .max(sim_ctrl.phase_hist_samples.len()),
-    );
-    let phase_path = out_dir.join("paper_e5_phase_diff_histogram.svg");
-    render_phase_histogram_compare(
-        &phase_path,
-        &sim_main.phase_hist_samples,
-        &sim_ctrl.phase_hist_samples,
-        bins,
+    // ── Per-condition Pearson r values ───────────────────────────
+    let mut pearson_by_cond: Vec<(E5Condition, Vec<f32>)> = Vec::new();
+    for &cond in &conditions {
+        let rs: Vec<f32> = all_results
+            .iter()
+            .filter(|r| r.condition == cond && r.pearson_r.is_finite())
+            .map(|r| r.pearson_r)
+            .collect();
+        pearson_by_cond.push((cond, rs));
+    }
+
+    // ── Render 3-panel figure ────────────────────────────────────
+    let fig_path = out_dir.join("paper_e5_figure.svg");
+    render_e5_combined_figure(
+        &fig_path,
+        &cond_series,
+        Some(&scatter_vitality),
+        Some(&scatter_control),
+        &pearson_by_cond,
     )?;
+
+    // ── Print summary stats ──────────────────────────────────────
+    for (cond, rs) in &pearson_by_cond {
+        if rs.is_empty() {
+            continue;
+        }
+        let (m, s) = mean_std_scalar(rs);
+        eprintln!(
+            "  E5 {} : Pearson r(consonance, PLV) = {:.3} ± {:.3} (n={})",
+            cond.label(),
+            m,
+            s,
+            rs.len()
+        );
+    }
 
     Ok(())
 }
@@ -3536,8 +3655,10 @@ fn plot_e6_hereditary_adaptation(
         "condition,seed,total_deaths,n_snapshots,mean_c_start,mean_c_end,delta_mean_c,occ_start,occ_end,delta_occ,entropy_start,entropy_end,delta_entropy,mean_n_alive\n",
     );
 
-    let mut mean_c_by_cond_step: HashMap<&'static str, HashMap<usize, Vec<f32>>> = HashMap::new();
-    let mut occ_by_cond_step: HashMap<&'static str, HashMap<usize, Vec<f32>>> = HashMap::new();
+    let mut mean_c_by_cond_seed: HashMap<&'static str, HashMap<u64, Vec<(usize, f32)>>> =
+        HashMap::new();
+    let mut occ_by_cond_seed: HashMap<&'static str, HashMap<u64, Vec<(usize, f32)>>> =
+        HashMap::new();
     let mut deaths_by_cond: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut heat_counts: HashMap<(usize, i32), f32> = HashMap::new();
     // Track per-seed last snapshot bins for heatmap carry-forward
@@ -3574,18 +3695,18 @@ fn plot_e6_hereditary_adaptation(
         for snap in &result.snapshots {
             let point = e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape);
             run_points.push(point);
-            mean_c_by_cond_step
+            mean_c_by_cond_seed
                 .entry(cond_label)
                 .or_default()
-                .entry(snap.step)
+                .entry(*seed)
                 .or_default()
-                .push(point.mean_c_score);
-            occ_by_cond_step
+                .push((snap.step, point.mean_c_score));
+            occ_by_cond_seed
                 .entry(cond_label)
                 .or_default()
-                .entry(snap.step)
+                .entry(*seed)
                 .or_default()
-                .push(point.consonant_occupation);
+                .push((snap.step, point.consonant_occupation));
 
             for (agent_idx, &freq) in snap.freqs_hz.iter().enumerate() {
                 if !freq.is_finite() || freq <= 0.0 {
@@ -3657,50 +3778,6 @@ fn plot_e6_hereditary_adaptation(
     write_with_log(out_dir.join("paper_e6_snapshots.csv"), snapshots_csv)?;
     write_with_log(out_dir.join("paper_e6_summary.csv"), summary_csv)?;
 
-    // Carry-forward: pad every condition×seed to the global max step so that
-    // (a) within a condition, short seeds carry their last value forward, and
-    // (b) across conditions, the shorter condition extends to the longer one's range.
-    // This eliminates survivorship bias in the per-step mean.
-    for maps in [&mut mean_c_by_cond_step, &mut occ_by_cond_step] {
-        // Global max step across all conditions
-        let global_max_step = maps
-            .values()
-            .flat_map(|by_step| by_step.keys().copied())
-            .max()
-            .unwrap_or(0);
-        let snapshot_interval = E6_SNAPSHOT_INTERVAL;
-
-        for (_cond, by_step) in maps.iter_mut() {
-            let n_seeds = by_step.values().map(|v| v.len()).max().unwrap_or(0);
-            if n_seeds == 0 {
-                continue;
-            }
-            let mut steps_sorted: Vec<usize> = by_step.keys().copied().collect();
-            steps_sorted.sort_unstable();
-            let local_max = steps_sorted.last().copied().unwrap_or(0);
-
-            // Pass 1: within existing steps, pad short vecs with carried values
-            let mut carry = vec![0.0f32; n_seeds];
-            for &step in &steps_sorted {
-                let vals = by_step.get_mut(&step).unwrap();
-                for (i, &v) in vals.iter().enumerate() {
-                    carry[i] = v;
-                }
-                while vals.len() < n_seeds {
-                    let i = vals.len();
-                    vals.push(carry[i]);
-                }
-            }
-
-            // Pass 2: extend beyond local_max to global_max with carry values
-            let mut step = local_max + snapshot_interval;
-            while step <= global_max_step {
-                by_step.insert(step, carry.clone());
-                step += snapshot_interval;
-            }
-        }
-    }
-
     // Carry-forward for heatmap: extend each heredity seed's last bins to global_max_step
     {
         let global_max_step = heat_counts
@@ -3720,10 +3797,22 @@ fn plot_e6_hereditary_adaptation(
         }
     }
 
-    let c_heredity = e6_series_stats(mean_c_by_cond_step.get(E6Condition::Heredity.label()));
-    let c_random = e6_series_stats(mean_c_by_cond_step.get(E6Condition::Random.label()));
-    let occ_heredity = e6_series_stats(occ_by_cond_step.get(E6Condition::Heredity.label()));
-    let occ_random = e6_series_stats(occ_by_cond_step.get(E6Condition::Random.label()));
+    let c_heredity = e6_series_stats(
+        mean_c_by_cond_seed.get(E6Condition::Heredity.label()),
+        E6_SNAPSHOT_INTERVAL,
+    );
+    let c_random = e6_series_stats(
+        mean_c_by_cond_seed.get(E6Condition::Random.label()),
+        E6_SNAPSHOT_INTERVAL,
+    );
+    let occ_heredity = e6_series_stats(
+        occ_by_cond_seed.get(E6Condition::Heredity.label()),
+        E6_SNAPSHOT_INTERVAL,
+    );
+    let occ_random = e6_series_stats(
+        occ_by_cond_seed.get(E6Condition::Random.label()),
+        E6_SNAPSHOT_INTERVAL,
+    );
     // Collect final-snapshot pitches (semitones from anchor) for Panel D histogram
     let mut final_st_heredity: Vec<f32> = Vec::new();
     let mut final_st_random: Vec<f32> = Vec::new();
@@ -3827,10 +3916,67 @@ fn e6_is_consonant_step(semitone: f32, window_st: f32) -> bool {
     })
 }
 
-fn e6_series_stats(by_step: Option<&HashMap<usize, Vec<f32>>>) -> Vec<(f32, f32, f32)> {
-    let Some(by_step) = by_step else {
+fn e6_series_stats(
+    by_seed: Option<&HashMap<u64, Vec<(usize, f32)>>>,
+    snapshot_interval: usize,
+) -> Vec<(f32, f32, f32)> {
+    let Some(by_seed) = by_seed else {
         return Vec::new();
     };
+    if by_seed.is_empty() {
+        return Vec::new();
+    }
+
+    // Seed-aware carry-forward:
+    // each seed keeps its own last observation, then we aggregate by step.
+    let mut min_step = usize::MAX;
+    let mut max_step = 0usize;
+    let mut has_any = false;
+    for samples in by_seed.values() {
+        for &(step, value) in samples {
+            if !value.is_finite() {
+                continue;
+            }
+            min_step = min_step.min(step);
+            max_step = max_step.max(step);
+            has_any = true;
+        }
+    }
+    if !has_any {
+        return Vec::new();
+    }
+
+    let step_interval = snapshot_interval.max(1);
+    let mut by_step: HashMap<usize, Vec<f32>> = HashMap::new();
+    for samples in by_seed.values() {
+        let mut ordered: Vec<(usize, f32)> = samples
+            .iter()
+            .copied()
+            .filter(|(_, v)| v.is_finite())
+            .collect();
+        if ordered.is_empty() {
+            continue;
+        }
+        ordered.sort_unstable_by_key(|(step, _)| *step);
+
+        let mut idx = 0usize;
+        let mut carry: Option<f32> = None;
+        let mut step = min_step;
+        while step <= max_step {
+            while idx < ordered.len() && ordered[idx].0 <= step {
+                carry = Some(ordered[idx].1);
+                idx += 1;
+            }
+            if let Some(v) = carry {
+                by_step.entry(step).or_default().push(v);
+            }
+            let Some(next_step) = step.checked_add(step_interval) else {
+                break;
+            };
+            step = next_step;
+        }
+    }
+
     let mut keys: Vec<usize> = by_step.keys().copied().collect();
     keys.sort_unstable();
 
@@ -4139,107 +4285,369 @@ where
     Ok(())
 }
 
-struct E5KickSimResult {
-    series: Vec<(f32, f32, f32, f32, f32, f32)>,
-    phase_hist_samples: Vec<f32>,
-    plv_time: f32,
+// ── E5 Vitality-Coupled Entrainment: condition enum ──────────────
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum E5Condition {
+    Vitality,
+    Uniform,
+    Control,
 }
 
-fn simulate_e5_kick(
+impl E5Condition {
+    fn label(self) -> &'static str {
+        match self {
+            E5Condition::Vitality => "vitality",
+            E5Condition::Uniform => "uniform",
+            E5Condition::Control => "control",
+        }
+    }
+    fn color(self) -> RGBColor {
+        match self {
+            E5Condition::Vitality => PAL_E5_VITALITY,
+            E5Condition::Uniform => PAL_E5_UNIFORM,
+            E5Condition::Control => PAL_E5_CONTROL,
+        }
+    }
+}
+
+// ── E5 result structs ────────────────────────────────────────────
+struct E5VitalityResult {
+    /// Per-step group mean PLV
+    group_plv_series: Vec<(f32, f32)>,
+    /// Per-agent final PLV and consonance
+    agent_final: Vec<E5AgentFinal>,
+    /// Pearson r(consonance, final PLV) for this run
+    pearson_r: f32,
+    condition: E5Condition,
     seed: u64,
-    steps: usize,
-    k_kick: f32,
-    kick_on_step: Option<usize>,
-) -> E5KickSimResult {
-    let mut rng = seeded_rng(seed);
-    let mut theta_kick = 0.0f32;
-    let mut thetas: Vec<f32> = (0..E5_N_AGENTS)
-        .map(|_| rng.random_range(0.0f32..(2.0 * PI)))
-        .collect();
-    let omegas: Vec<f32> = (0..E5_N_AGENTS)
-        .map(|_| {
-            let jitter_scale = rng.random_range(-E5_AGENT_JITTER..E5_AGENT_JITTER);
-            E5_AGENT_OMEGA_MEAN * (1.0 + jitter_scale)
+}
+
+#[derive(Clone, Copy)]
+struct E5AgentFinal {
+    consonance: f32,
+    plv: f32,
+}
+
+// ── E5 pitch selection: stratified by consonance ────────────────
+/// Scan the landscape over ±1 octave and return N pitches whose
+/// consonance values are approximately uniformly distributed in [0,1].
+/// This ensures the independent variable (consonance) spans the full range.
+fn e5_stratified_pitches(
+    n: usize,
+    landscape: &conchordal::core::landscape::Landscape,
+    rng: &mut impl rand::Rng,
+) -> (Vec<f32>, Vec<f32>) {
+    let log2_lo = E5_ANCHOR_HZ.log2() - 1.0;
+    let log2_hi = E5_ANCHOR_HZ.log2() + 1.0;
+
+    // Dense scan: 4000 candidate pitches
+    let n_scan = 4000usize;
+    let candidates: Vec<(f32, f32)> = (0..n_scan)
+        .map(|i| {
+            let log2_f = log2_lo + (log2_hi - log2_lo) * (i as f32 / (n_scan - 1) as f32);
+            let hz = 2.0f32.powf(log2_f);
+            let score = landscape.evaluate_pitch_score(hz);
+            (hz, score)
         })
         .collect();
 
+    // Normalise scores to [0,1]
+    let s_min = candidates.iter().map(|c| c.1).fold(f32::INFINITY, f32::min);
+    let s_max = candidates.iter().map(|c| c.1).fold(f32::NEG_INFINITY, f32::max);
+    let s_range = (s_max - s_min).max(1e-6);
+    let normed: Vec<(f32, f32)> = candidates
+        .iter()
+        .map(|&(hz, s)| (hz, ((s - s_min) / s_range).clamp(0.0, 1.0)))
+        .collect();
+
+    // Assign each candidate to one of N strata
+    let mut strata: Vec<Vec<(f32, f32)>> = (0..n).map(|_| Vec::new()).collect();
+    for &(hz, c) in &normed {
+        let bin = ((c * n as f32) as usize).min(n - 1);
+        strata[bin].push((hz, c));
+    }
+
+    // Pick one random candidate from each stratum.
+    // If a stratum is empty, pick the nearest candidate to that stratum's midpoint.
+    let mut pitches = Vec::with_capacity(n);
+    let mut consonances = Vec::with_capacity(n);
+    for i in 0..n {
+        let mid = (i as f32 + 0.5) / n as f32;
+        if !strata[i].is_empty() {
+            let idx = rng.random_range(0..strata[i].len());
+            let (hz, c) = strata[i][idx];
+            pitches.push(hz);
+            consonances.push(c);
+        } else {
+            // Fallback: find candidate closest to stratum midpoint
+            let (hz, c) = *normed
+                .iter()
+                .min_by(|a, b| (a.1 - mid).abs().partial_cmp(&(b.1 - mid).abs()).unwrap())
+                .unwrap();
+            pitches.push(hz);
+            consonances.push(c);
+        }
+    }
+    (pitches, consonances)
+}
+
+/// Run E5 simulation with stratified pitches (for Panel B scatter only).
+/// Same dynamics as `simulate_e5_vitality` but pitches span the full
+/// consonance range so the scatter plot is informative.
+fn simulate_e5_stratified(
+    seed: u64,
+    condition: E5Condition,
+    landscape: &conchordal::core::landscape::Landscape,
+) -> E5VitalityResult {
+    let mut rng = seeded_rng(seed);
+    let (_pitches_hz, consonances) = e5_stratified_pitches(E5_N_AGENTS, landscape, &mut rng);
+
+    // --- rest is identical to simulate_e5_vitality ---
+    let omegas: Vec<f32> = (0..E5_N_AGENTS)
+        .map(|_| {
+            let jitter = rng.random_range(-E5_AGENT_JITTER..E5_AGENT_JITTER);
+            E5_AGENT_OMEGA_MEAN * (1.0 + jitter)
+        })
+        .collect();
+    let mut phases: Vec<f32> = (0..E5_N_AGENTS)
+        .map(|_| rng.random_range(0.0f32..(2.0 * PI)))
+        .collect();
+    let mut energies: Vec<f32> = vec![E5_E_INIT; E5_N_AGENTS];
+    let mut theta_kick = 0.0f32;
     let mut plv_buffers: Vec<SlidingPlv> = (0..E5_N_AGENTS)
         .map(|_| SlidingPlv::new(E5_TIME_PLV_WINDOW_STEPS))
         .collect();
-    let mut group_plv = SlidingPlv::new(E5_TIME_PLV_WINDOW_STEPS);
+    let mut group_plv_series: Vec<(f32, f32)> = Vec::with_capacity(E5_STEPS);
 
-    let mut series: Vec<(f32, f32, f32, f32, f32, f32)> = Vec::with_capacity(steps);
-    let mut phase_hist_samples: Vec<f32> = Vec::new();
-    let sample_start = e5_sample_start_step(steps);
-
-    for step in 0..steps {
+    for step in 0..E5_STEPS {
         let t = step as f32 * E5_DT;
-        let k_eff = if let Some(on_step) = kick_on_step {
-            if step < on_step { 0.0 } else { k_kick }
-        } else {
-            k_kick
-        };
-
-        theta_kick += E5_KICK_OMEGA * E5_DT;
+        // Energy dynamics
         for i in 0..E5_N_AGENTS {
-            let theta_i = thetas[i];
-            let dtheta = omegas[i] + k_eff * (theta_kick - theta_i).sin();
-            thetas[i] = theta_i + dtheta * E5_DT;
+            let de = (-E5_CB + E5_RECHARGE * consonances[i]) * E5_DT;
+            energies[i] = (energies[i] + de).clamp(0.0, E5_E_CAP);
         }
-
-        let mut mean_cos = 0.0f32;
-        let mut mean_sin = 0.0f32;
-        for &theta in &thetas {
-            mean_cos += theta.cos();
-            mean_sin += theta.sin();
+        // Vitality
+        let vitalities: Vec<f32> = energies
+            .iter()
+            .map(|&e| (e / E5_E_CAP).clamp(0.0, 1.0).sqrt())
+            .collect();
+        let mean_v: f32 = vitalities.iter().sum::<f32>() / E5_N_AGENTS as f32;
+        // Coupling
+        let k_effs: Vec<f32> = match condition {
+            E5Condition::Vitality => vitalities.iter().map(|&v| E5_K_BASE * v).collect(),
+            E5Condition::Uniform => vec![E5_K_BASE * mean_v; E5_N_AGENTS],
+            E5Condition::Control => vec![0.0; E5_N_AGENTS],
+        };
+        // Phase update (couple each agent to external kick only)
+        for i in 0..E5_N_AGENTS {
+            let coupling_term = k_effs[i] * (theta_kick - phases[i]).sin();
+            let d_phase = omegas[i] + coupling_term;
+            phases[i] = wrap_to_pi(phases[i] + d_phase * E5_DT);
         }
-        let inv = 1.0 / E5_N_AGENTS as f32;
-        mean_cos *= inv;
-        mean_sin *= inv;
-        let r = (mean_cos * mean_cos + mean_sin * mean_sin).sqrt();
-        let psi = mean_sin.atan2(mean_cos);
-        let delta_phi = wrap_to_pi(psi - theta_kick);
-
+        theta_kick = wrap_to_pi(theta_kick + E5_KICK_OMEGA * E5_DT);
+        // PLV tracking
         let mut plv_sum = 0.0f32;
         let mut plv_count = 0usize;
         for i in 0..E5_N_AGENTS {
-            let d_i = wrap_to_pi(thetas[i] - theta_kick);
-            plv_buffers[i].push(d_i);
-            let plv_i = if plv_buffers[i].is_full() {
-                plv_buffers[i].plv()
-            } else {
-                f32::NAN
-            };
-            if plv_i.is_finite() {
-                plv_sum += plv_i;
-                plv_count += 1;
-            }
-            if step >= sample_start {
-                phase_hist_samples.push(d_i);
+            let dp = wrap_to_pi(phases[i] - theta_kick);
+            plv_buffers[i].push(dp);
+            if plv_buffers[i].is_full() {
+                let p = plv_buffers[i].plv();
+                if p.is_finite() {
+                    plv_sum += p;
+                    plv_count += 1;
+                }
             }
         }
-        let plv_agent_kick = if plv_count > 0 {
+        let group_plv = if plv_count > 0 {
             plv_sum / plv_count as f32
         } else {
             f32::NAN
         };
-        group_plv.push(delta_phi);
-        let plv_group_delta_phi = if r < E5_MIN_R_FOR_GROUP_PHASE {
-            f32::NAN
-        } else if group_plv.is_full() {
-            group_plv.plv()
+        group_plv_series.push((t, group_plv));
+    }
+    let agent_final: Vec<E5AgentFinal> = (0..E5_N_AGENTS)
+        .map(|i| E5AgentFinal {
+            consonance: consonances[i],
+            plv: if plv_buffers[i].is_full() {
+                plv_buffers[i].plv()
+            } else {
+                f32::NAN
+            },
+        })
+        .collect();
+    let pr = pearson_r_e5(&agent_final);
+    E5VitalityResult {
+        group_plv_series,
+        agent_final,
+        pearson_r: pr,
+        condition,
+        seed,
+    }
+}
+
+// ── E5 simulation ────────────────────────────────────────────────
+fn simulate_e5_vitality(
+    seed: u64,
+    condition: E5Condition,
+    landscape: &conchordal::core::landscape::Landscape,
+) -> E5VitalityResult {
+    let mut rng = seeded_rng(seed);
+
+    // Random pitches within ±1 octave of anchor
+    let log2_anchor = E5_ANCHOR_HZ.log2();
+    let pitches_hz: Vec<f32> = (0..E5_N_AGENTS)
+        .map(|_| {
+            let log2_f = rng.random_range((log2_anchor - 1.0)..(log2_anchor + 1.0));
+            2.0f32.powf(log2_f)
+        })
+        .collect();
+
+    // Evaluate consonance (raw score, min-max normalised to [0,1])
+    let raw_scores: Vec<f32> = pitches_hz
+        .iter()
+        .map(|&f| landscape.evaluate_pitch_score(f))
+        .collect();
+    let s_min = raw_scores.iter().copied().fold(f32::INFINITY, f32::min);
+    let s_max = raw_scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let s_range = (s_max - s_min).max(1e-6);
+    let consonances: Vec<f32> = raw_scores
+        .iter()
+        .map(|&s| ((s - s_min) / s_range).clamp(0.0, 1.0))
+        .collect();
+
+    // Intrinsic frequencies with jitter
+    let omegas: Vec<f32> = (0..E5_N_AGENTS)
+        .map(|_| {
+            let jitter = rng.random_range(-E5_AGENT_JITTER..E5_AGENT_JITTER);
+            E5_AGENT_OMEGA_MEAN * (1.0 + jitter)
+        })
+        .collect();
+
+    // Initial phases (random)
+    let mut phases: Vec<f32> = (0..E5_N_AGENTS)
+        .map(|_| rng.random_range(0.0f32..(2.0 * PI)))
+        .collect();
+
+    // Energy state
+    let mut energies: Vec<f32> = vec![E5_E_INIT; E5_N_AGENTS];
+
+    // External kick phase
+    let mut theta_kick = 0.0f32;
+
+    // PLV tracking
+    let mut plv_buffers: Vec<SlidingPlv> = (0..E5_N_AGENTS)
+        .map(|_| SlidingPlv::new(E5_TIME_PLV_WINDOW_STEPS))
+        .collect();
+
+    let mut group_plv_series: Vec<(f32, f32)> = Vec::with_capacity(E5_STEPS);
+
+    for step in 0..E5_STEPS {
+        let t = step as f32 * E5_DT;
+
+        // Energy dynamics: dE/dt = -c_b + r * C_i
+        for i in 0..E5_N_AGENTS {
+            let de = (-E5_CB + E5_RECHARGE * consonances[i]) * E5_DT;
+            energies[i] = (energies[i] + de).clamp(0.0, E5_E_CAP);
+        }
+
+        // Compute vitality per agent
+        let vitalities: Vec<f32> = energies
+            .iter()
+            .map(|&e| (e / E5_E_CAP).clamp(0.0, 1.0).sqrt())
+            .collect();
+
+        // Compute per-agent coupling
+        let mean_vitality: f32 =
+            vitalities.iter().copied().sum::<f32>() / E5_N_AGENTS as f32;
+
+        // Advance kick phase
+        theta_kick += E5_KICK_OMEGA * E5_DT;
+
+        // Phase update per agent
+        for i in 0..E5_N_AGENTS {
+            let k_eff_i = match condition {
+                E5Condition::Vitality => E5_K_BASE * vitalities[i],
+                E5Condition::Uniform => E5_K_BASE * mean_vitality,
+                E5Condition::Control => 0.0,
+            };
+            phases[i] =
+                kuramoto_phase_step(phases[i], omegas[i], theta_kick, k_eff_i, 0.0, E5_DT);
+        }
+
+        // Per-agent PLV to kick
+        let mut plv_sum = 0.0f32;
+        let mut plv_count = 0usize;
+        for i in 0..E5_N_AGENTS {
+            let d_i = wrap_to_pi(phases[i] - theta_kick);
+            plv_buffers[i].push(d_i);
+            if plv_buffers[i].is_full() {
+                let p = plv_buffers[i].plv();
+                if p.is_finite() {
+                    plv_sum += p;
+                    plv_count += 1;
+                }
+            }
+        }
+        let group_plv = if plv_count > 0 {
+            plv_sum / plv_count as f32
         } else {
             f32::NAN
         };
-
-        series.push((t, r, delta_phi, plv_agent_kick, plv_group_delta_phi, k_eff));
+        group_plv_series.push((t, group_plv));
     }
 
-    let plv_time = plv_time_from_series(&series, E5_TIME_PLV_WINDOW_STEPS);
-    E5KickSimResult {
-        series,
-        phase_hist_samples,
-        plv_time,
+    // Collect per-agent final PLV
+    let agent_final: Vec<E5AgentFinal> = (0..E5_N_AGENTS)
+        .map(|i| E5AgentFinal {
+            consonance: consonances[i],
+            plv: if plv_buffers[i].is_full() {
+                plv_buffers[i].plv()
+            } else {
+                f32::NAN
+            },
+        })
+        .collect();
+
+    // Pearson r(consonance, final PLV)
+    let pearson_r = pearson_r_e5(&agent_final);
+
+    E5VitalityResult {
+        group_plv_series,
+        agent_final,
+        pearson_r,
+        condition,
+        seed,
+    }
+}
+
+fn pearson_r_e5(agents: &[E5AgentFinal]) -> f32 {
+    let valid: Vec<(f32, f32)> = agents
+        .iter()
+        .filter(|a| a.plv.is_finite())
+        .map(|a| (a.consonance, a.plv))
+        .collect();
+    if valid.len() < 3 {
+        return f32::NAN;
+    }
+    let n = valid.len() as f32;
+    let mean_x = valid.iter().map(|(x, _)| x).sum::<f32>() / n;
+    let mean_y = valid.iter().map(|(_, y)| y).sum::<f32>() / n;
+    let mut cov = 0.0f32;
+    let mut var_x = 0.0f32;
+    let mut var_y = 0.0f32;
+    for &(x, y) in &valid {
+        let dx = x - mean_x;
+        let dy = y - mean_y;
+        cov += dx * dy;
+        var_x += dx * dx;
+        var_y += dy * dy;
+    }
+    let denom = (var_x * var_y).sqrt();
+    if denom < 1e-12 {
+        0.0
+    } else {
+        cov / denom
     }
 }
 
@@ -19901,288 +20309,242 @@ fn render_survival_by_c_level(
     Ok(())
 }
 
-fn render_e5_order_plot(
+// ── E5 Combined 3-Panel Figure ───────────────────────────────────
+fn render_e5_combined_figure(
     out_path: &Path,
-    main_series: &[(f32, f32, f32, f32, f32, f32)],
-    ctrl_series: &[(f32, f32, f32, f32, f32, f32)],
+    cond_series: &[(E5Condition, Vec<(f32, f32, f32)>)],
+    rep_vitality: Option<&E5VitalityResult>,
+    rep_control: Option<&E5VitalityResult>,
+    pearson_by_cond: &[(E5Condition, Vec<f32>)],
 ) -> Result<(), Box<dyn Error>> {
-    let x_max = main_series
-        .last()
-        .map(|(x, _, _, _, _, _)| *x)
-        .unwrap_or(0.0);
-    let eval_start = e5_sample_start_step(main_series.len()) as f32 * E5_DT;
-    let root = bitmap_root(out_path, (1200, 700)).into_drawing_area();
+    let root = bitmap_root(out_path, (3600, 1100)).into_drawing_area();
     root.fill(&WHITE)?;
+    let panels = root.split_evenly((1, 3));
 
-    let mut chart = ChartBuilder::on(&root)
-        .caption("A. Order parameter r(t)", ("sans-serif", 56))
-        .margin(12)
-        .x_label_area_size(90)
-        .y_label_area_size(110)
-        .build_cartesian_2d(0.0f32..x_max.max(1.0), 0.0f32..1.05f32)?;
-
-    chart
-        .configure_mesh()
-        .x_desc("time (s)")
-        .y_desc("r")
-        .label_style(("sans-serif", 42).into_font())
-        .axis_desc_style(("sans-serif", 46).into_font())
-        .draw()?;
-
-    let r_main = main_series.iter().map(|(t, r, _, _, _, _)| (*t, *r));
-    let r_ctrl = ctrl_series.iter().map(|(t, r, _, _, _, _)| (*t, *r));
-
-    chart.draw_series(std::iter::once(Rectangle::new(
-        [(eval_start, 0.0f32), (x_max.max(1.0), 1.05f32)],
-        RGBColor(160, 160, 160).mix(0.15).filled(),
-    )))?;
-
-    chart
-        .draw_series(LineSeries::new(
-            r_ctrl,
-            ShapeStyle::from(&PAL_R.mix(0.4)).stroke_width(2),
-        ))?
-        .label("control r(t)")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_R.mix(0.4)));
-    chart
-        .draw_series(LineSeries::new(
-            r_main,
-            ShapeStyle::from(&PAL_H).stroke_width(3),
-        ))?
-        .label("main r(t)")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_H));
-
-    let markers = e5_marker_specs(E5_STEPS);
-    draw_vertical_guides_labeled(&mut chart, &markers, 0.0, 1.05)?;
-
-    chart
-        .configure_series_labels()
-        .background_style(WHITE.mix(0.8))
-        .border_style(BLACK)
-        .label_font(("sans-serif", 32).into_font())
-        .draw()?;
+    draw_e5_plv_panel(&panels[0], cond_series)?;
+    draw_e5_scatter_panel(&panels[1], rep_vitality, rep_control)?;
+    draw_e5_pearson_panel(&panels[2], pearson_by_cond)?;
 
     root.present()?;
     Ok(())
 }
 
-fn render_e5_delta_phi_plot(
-    out_path: &Path,
-    main_series: &[(f32, f32, f32, f32, f32, f32)],
-    ctrl_series: &[(f32, f32, f32, f32, f32, f32)],
-) -> Result<(), Box<dyn Error>> {
-    let x_max = main_series
-        .last()
-        .map(|(x, _, _, _, _, _)| *x)
-        .unwrap_or(0.0);
-    let eval_start = e5_sample_start_step(main_series.len()) as f32 * E5_DT;
-    let root = bitmap_root(out_path, (1200, 700)).into_drawing_area();
-    root.fill(&WHITE)?;
-
-    let mut chart = ChartBuilder::on(&root)
-        .caption(
-            "Group Phase Offset Δφ(t) — pre-kick k_eff=0 so main/control overlap",
-            ("sans-serif", 20),
-        )
-        .margin(10)
-        .x_label_area_size(40)
-        .y_label_area_size(60)
-        .build_cartesian_2d(0.0f32..x_max.max(1.0), -PI..PI)?;
-
-    chart
-        .configure_mesh()
-        .x_desc("time (s)")
-        .y_desc("Δφ (rad)")
-        .draw()?;
-
-    let main_points = main_series
+/// Panel A: Group mean PLV over time with CI shading
+fn draw_e5_plv_panel<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    cond_series: &[(E5Condition, Vec<(f32, f32, f32)>)],
+) -> Result<(), Box<dyn Error>>
+where
+    <DB as DrawingBackend>::ErrorType: 'static,
+{
+    let x_max = cond_series
         .iter()
-        .map(|(t, _, delta_phi, _, _, _)| (*t, *delta_phi));
-    let ctrl_points = ctrl_series
-        .iter()
-        .map(|(t, _, delta_phi, _, _, _)| (*t, *delta_phi));
+        .flat_map(|(_, s)| s.iter().map(|(t, _, _)| *t))
+        .fold(0.0f32, f32::max)
+        .max(1.0);
 
-    chart.draw_series(std::iter::once(Rectangle::new(
-        [(eval_start, -PI), (x_max.max(1.0), PI)],
-        RGBColor(160, 160, 160).mix(0.15).filled(),
-    )))?;
-
-    chart
-        .draw_series(LineSeries::new(
-            ctrl_points,
-            ShapeStyle::from(&PAL_R.mix(0.4)).stroke_width(2),
-        ))?
-        .label("control Δφ(t)")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_R.mix(0.4)));
-    chart
-        .draw_series(LineSeries::new(
-            main_points,
-            ShapeStyle::from(&PAL_H).stroke_width(3),
-        ))?
-        .label("main Δφ(t)")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_H));
-
-    let markers = e5_marker_specs(E5_STEPS);
-    draw_vertical_guides_labeled(&mut chart, &markers, -PI, PI)?;
-
-    chart
-        .configure_series_labels()
-        .background_style(WHITE.mix(0.8))
-        .border_style(BLACK)
-        .draw()?;
-
-    root.present()?;
-    Ok(())
-}
-
-fn render_e5_plv_plot(
-    out_path: &Path,
-    main_series: &[(f32, f32, f32, f32, f32, f32)],
-    ctrl_series: &[(f32, f32, f32, f32, f32, f32)],
-) -> Result<(), Box<dyn Error>> {
-    let x_max = main_series
-        .last()
-        .map(|(x, _, _, _, _, _)| *x)
-        .unwrap_or(0.0);
-    let eval_start = e5_sample_start_step(main_series.len()) as f32 * E5_DT;
-    let root = bitmap_root(out_path, (1200, 700)).into_drawing_area();
-    root.fill(&WHITE)?;
-
-    let mut chart = ChartBuilder::on(&root)
-        .caption("B. PLV to kick", ("sans-serif", 56))
-        .margin(12)
+    let mut chart = ChartBuilder::on(area)
+        .caption("A. Group PLV over time", ("sans-serif", 72))
+        .margin(20)
         .x_label_area_size(90)
-        .y_label_area_size(110)
-        .build_cartesian_2d(0.0f32..x_max.max(1.0), 0.0f32..1.05f32)?;
+        .y_label_area_size(120)
+        .build_cartesian_2d(0.0f32..x_max, 0.15f32..0.50f32)?;
 
     chart
         .configure_mesh()
         .x_desc("time (s)")
         .y_desc("PLV")
-        .label_style(("sans-serif", 42).into_font())
-        .axis_desc_style(("sans-serif", 46).into_font())
+        .label_style(("sans-serif", 52).into_font())
+        .axis_desc_style(("sans-serif", 56).into_font())
         .draw()?;
 
-    let plv_main: Vec<(f32, f32)> = main_series
-        .iter()
-        .filter_map(|(t, _, _, plv, _, _)| plv.is_finite().then_some((*t, *plv)))
-        .collect();
-    let plv_ctrl: Vec<(f32, f32)> = ctrl_series
-        .iter()
-        .filter_map(|(t, _, _, plv, _, _)| plv.is_finite().then_some((*t, *plv)))
-        .collect();
-    chart.draw_series(std::iter::once(Rectangle::new(
-        [(eval_start, 0.0f32), (x_max.max(1.0), 1.05f32)],
-        RGBColor(160, 160, 160).mix(0.15).filled(),
-    )))?;
+    for (cond, series) in cond_series {
+        if series.is_empty() {
+            continue;
+        }
+        let color = cond.color();
+        // CI band
+        let mut band: Vec<(f32, f32)> = Vec::with_capacity(series.len() * 2);
+        for &(x, mean, ci) in series {
+            if mean.is_finite() {
+                band.push((x, (mean + ci).clamp(0.15, 0.50)));
+            }
+        }
+        for &(x, mean, ci) in series.iter().rev() {
+            if mean.is_finite() {
+                band.push((x, (mean - ci).clamp(0.15, 0.50)));
+            }
+        }
+        if band.len() >= 3 {
+            chart.draw_series(std::iter::once(Polygon::new(band, color.mix(0.18).filled())))?;
+        }
 
-    chart
-        .draw_series(LineSeries::new(
-            plv_ctrl,
-            ShapeStyle::from(&PAL_R.mix(0.4)).stroke_width(2),
-        ))?
-        .label("control PLV_agent_kick")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_R.mix(0.4)));
-    chart
-        .draw_series(LineSeries::new(
-            plv_main,
-            ShapeStyle::from(&PAL_H).stroke_width(3),
-        ))?
-        .label("main PLV_agent_kick")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_H));
-
-    let markers = e5_marker_specs(E5_STEPS);
-    draw_vertical_guides_labeled(&mut chart, &markers, 0.0, 1.05)?;
+        // Mean line
+        let line_points: Vec<(f32, f32)> = series
+            .iter()
+            .filter(|(_, m, _)| m.is_finite())
+            .map(|(x, m, _)| (*x, *m))
+            .collect();
+        chart
+            .draw_series(LineSeries::new(line_points, ShapeStyle::from(&color).stroke_width(3)))?
+            .label(cond.label())
+            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
+    }
 
     chart
         .configure_series_labels()
+        .position(SeriesLabelPosition::UpperRight)
         .background_style(WHITE.mix(0.8))
         .border_style(BLACK)
-        .label_font(("sans-serif", 32).into_font())
+        .label_font(("sans-serif", 48).into_font())
         .draw()?;
 
-    root.present()?;
     Ok(())
 }
 
-fn render_phase_histogram_compare(
-    out_path: &Path,
-    main_samples: &[f32],
-    ctrl_samples: &[f32],
-    bins: usize,
-) -> Result<(), Box<dyn Error>> {
-    if bins == 0 {
-        return Ok(());
-    }
-    let min = -PI;
-    let max = PI;
-    let bin_width = (max - min) / bins as f32;
-    let counts_main = histogram_counts(main_samples, min, max, bin_width);
-    let counts_ctrl = histogram_counts(ctrl_samples, min, max, bin_width);
-    let y_max = counts_main
-        .iter()
-        .zip(counts_ctrl.iter())
-        .map(|((_, c1), (_, c2))| (*c1).max(*c2) as f32)
-        .fold(0.0f32, f32::max)
-        .max(1.0);
-
-    let root = bitmap_root(out_path, (1200, 700)).into_drawing_area();
-    root.fill(&WHITE)?;
-    let mut chart = ChartBuilder::on(&root)
-        .caption(
-            "Phase Difference Histogram (Main vs Control)",
-            ("sans-serif", 20),
-        )
-        .margin(10)
-        .x_label_area_size(40)
-        .y_label_area_size(60)
-        .build_cartesian_2d(min..max, 0.0f32..(y_max * 1.1))?;
+/// Panel B: Per-agent final PLV vs consonance scatter (representative seed)
+fn draw_e5_scatter_panel<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    rep_vitality: Option<&E5VitalityResult>,
+    rep_control: Option<&E5VitalityResult>,
+) -> Result<(), Box<dyn Error>>
+where
+    <DB as DrawingBackend>::ErrorType: 'static,
+{
+    let mut chart = ChartBuilder::on(area)
+        .caption("B. PLV vs consonance", ("sans-serif", 72))
+        .margin(20)
+        .x_label_area_size(90)
+        .y_label_area_size(120)
+        .build_cartesian_2d(0.0f32..1.0f32, 0.0f32..1.05f32)?;
 
     chart
         .configure_mesh()
-        .x_desc("θ_i - θ_kick (rad)")
-        .y_desc("count")
-        .x_labels(9)
+        .x_desc("consonance")
+        .y_desc("final PLV")
+        .label_style(("sans-serif", 52).into_font())
+        .axis_desc_style(("sans-serif", 56).into_font())
         .draw()?;
 
-    let half = bin_width * 0.45;
-    for ((bin_start, count_main), (_, count_ctrl)) in counts_main.iter().zip(counts_ctrl.iter()) {
-        let x0 = *bin_start;
-        let x1 = x0 + bin_width;
-        let mid = 0.5 * (x0 + x1);
-        chart.draw_series(std::iter::once(Rectangle::new(
-            [(mid - half, 0.0), (mid, *count_main as f32)],
-            PAL_H.mix(0.6).filled(),
-        )))?;
-        chart.draw_series(std::iter::once(Rectangle::new(
-            [(mid, 0.0), (mid + half, *count_ctrl as f32)],
-            PAL_R.mix(0.6).filled(),
-        )))?;
+    // Draw control first (behind), then vitality on top
+    for (result, color, label) in [
+        (rep_control, PAL_E5_CONTROL, "control"),
+        (rep_vitality, PAL_E5_VITALITY, "vitality"),
+    ] {
+        if let Some(res) = result {
+            let points: Vec<(f32, f32)> = res
+                .agent_final
+                .iter()
+                .filter(|a| a.plv.is_finite())
+                .map(|a| (a.consonance, a.plv))
+                .collect();
+            chart
+                .draw_series(points.iter().map(|&(x, y)| {
+                    Circle::new((x, y), 8, ShapeStyle::from(&color).filled())
+                }))?
+                .label(format!("{} (r={:.2})", label, res.pearson_r))
+                .legend(move |(x, y)| Circle::new((x, y), 6, color.filled()));
+        }
     }
-
-    chart
-        .draw_series(std::iter::once(PathElement::new(
-            vec![(0.0, y_max * 1.05), (0.1, y_max * 1.05)],
-            PAL_H,
-        )))?
-        .label("main")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_H));
-
-    chart
-        .draw_series(std::iter::once(PathElement::new(
-            vec![(0.0, y_max * 1.02), (0.1, y_max * 1.02)],
-            PAL_R,
-        )))?
-        .label("control")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_R));
 
     chart
         .configure_series_labels()
         .background_style(WHITE.mix(0.8))
         .border_style(BLACK)
+        .label_font(("sans-serif", 48).into_font())
         .draw()?;
 
-    root.present()?;
+    Ok(())
+}
+
+/// Panel C: Seed-level Pearson r dot + box summary
+fn draw_e5_pearson_panel<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    pearson_by_cond: &[(E5Condition, Vec<f32>)],
+) -> Result<(), Box<dyn Error>>
+where
+    <DB as DrawingBackend>::ErrorType: 'static,
+{
+    let n_conds = pearson_by_cond.len() as f32;
+    let y_lo = pearson_by_cond
+        .iter()
+        .flat_map(|(_, rs)| rs.iter().copied())
+        .fold(0.0f32, f32::min)
+        .min(-0.1)
+        - 0.05;
+    let y_hi = pearson_by_cond
+        .iter()
+        .flat_map(|(_, rs)| rs.iter().copied())
+        .fold(0.0f32, f32::max)
+        .max(0.6)
+        + 0.05;
+
+    let mut chart = ChartBuilder::on(area)
+        .caption("C. Pearson r(C, PLV)", ("sans-serif", 72))
+        .margin(20)
+        .x_label_area_size(90)
+        .y_label_area_size(120)
+        .build_cartesian_2d(-0.5f32..(n_conds - 0.5), y_lo..y_hi)?;
+
+    chart
+        .configure_mesh()
+        .disable_mesh()
+        .x_desc("condition")
+        .y_desc("Pearson r")
+        .x_labels(pearson_by_cond.len())
+        .x_label_formatter(&|x| {
+            let idx = x.round() as usize;
+            pearson_by_cond
+                .get(idx)
+                .map(|(c, _)| c.label().to_string())
+                .unwrap_or_default()
+        })
+        .label_style(("sans-serif", 52).into_font())
+        .axis_desc_style(("sans-serif", 56).into_font())
+        .draw()?;
+
+    // Zero line
+    chart.draw_series(std::iter::once(DashedPathElement::new(
+        vec![(-0.5f32, 0.0f32), (n_conds - 0.5, 0.0)],
+        2,
+        6,
+        ShapeStyle::from(&BLACK.mix(0.3)).stroke_width(2),
+    )))?;
+
+    for (i, (cond, rs)) in pearson_by_cond.iter().enumerate() {
+        let color = cond.color();
+        let center = i as f32;
+
+        if rs.is_empty() {
+            continue;
+        }
+
+        // Individual dots with jitter
+        let mut jitter_rng = seeded_rng(i as u64 + 0xD07);
+        for &r in rs {
+            let jx = jitter_rng.random_range(-0.15f32..0.15);
+            chart.draw_series(std::iter::once(Circle::new(
+                (center + jx, r),
+                5,
+                color.mix(0.5).filled(),
+            )))?;
+        }
+
+        // Box: mean +/- std
+        let (mean, std) = mean_std_scalar(rs);
+        let x0 = center - 0.2;
+        let x1 = center + 0.2;
+        chart.draw_series(std::iter::once(Rectangle::new(
+            [(x0, (mean - std).max(y_lo)), (x1, (mean + std).min(y_hi))],
+            color.mix(0.25).filled(),
+        )))?;
+        // Mean line
+        chart.draw_series(std::iter::once(PathElement::new(
+            vec![(x0, mean), (x1, mean)],
+            ShapeStyle::from(&color).stroke_width(4),
+        )))?;
+    }
+
     Ok(())
 }
 
@@ -20231,270 +20593,6 @@ where
     Ok(())
 }
 
-fn e5_sample_start_step(steps: usize) -> usize {
-    steps
-        .saturating_sub(E5_SAMPLE_WINDOW_STEPS)
-        .max(E5_BURN_IN_STEPS)
-}
-
-fn e5_marker_specs(steps: usize) -> Vec<(f32, &'static str)> {
-    let mut markers = Vec::new();
-    let burn_t = E5_BURN_IN_STEPS as f32 * E5_DT;
-    markers.push((burn_t, "burn-in end"));
-    if let Some(kick_on) = E5_KICK_ON_STEP {
-        markers.push((kick_on as f32 * E5_DT, "kick ON"));
-    }
-    let sample_start = e5_sample_start_step(steps);
-    markers.push((sample_start as f32 * E5_DT, "eval start"));
-    markers.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-    markers.dedup_by(|a, b| (a.0 - b.0).abs() < 1e-6);
-    markers
-}
-
-fn e5_kick_csv(main: &E5KickSimResult, ctrl: &E5KickSimResult) -> String {
-    let mut out =
-        String::from("condition,t,r,delta_phi,plv_agent_kick,plv_group_delta_phi,k_eff\n");
-    for (label, sim) in [("main", main), ("control", ctrl)] {
-        for (t, r, delta_phi, plv_agent, plv_group, k_eff) in &sim.series {
-            out.push_str(&format!(
-                "{label},{t:.4},{r:.6},{delta_phi:.6},{plv_agent:.6},{plv_group:.6},{k_eff:.4}\n"
-            ));
-        }
-    }
-    out
-}
-
-fn e5_mean_plv_range(
-    series: &[(f32, f32, f32, f32, f32, f32)],
-    t_min: f32,
-    t_max: f32,
-) -> (f32, f32, usize) {
-    let mut values = Vec::new();
-    for (t, _, _, plv_agent, _, _) in series {
-        if *t >= t_min && *t < t_max && plv_agent.is_finite() {
-            values.push(*plv_agent);
-        }
-    }
-    if values.is_empty() {
-        return (f32::NAN, f32::NAN, 0);
-    }
-    let mean = values.iter().copied().sum::<f32>() / values.len() as f32;
-    let var = values
-        .iter()
-        .map(|v| (*v - mean) * (*v - mean))
-        .sum::<f32>()
-        / values.len() as f32;
-    (mean, var.sqrt(), values.len())
-}
-
-fn e5_mean_group_range(
-    series: &[(f32, f32, f32, f32, f32, f32)],
-    t_min: f32,
-    t_max: f32,
-) -> (f32, f32, usize) {
-    let mut values = Vec::new();
-    for (t, _, _, _, plv_group, _) in series {
-        if *t >= t_min && *t < t_max && plv_group.is_finite() {
-            values.push(*plv_group);
-        }
-    }
-    if values.is_empty() {
-        return (f32::NAN, f32::NAN, 0);
-    }
-    let mean = values.iter().copied().sum::<f32>() / values.len() as f32;
-    let var = values
-        .iter()
-        .map(|v| (*v - mean) * (*v - mean))
-        .sum::<f32>()
-        / values.len() as f32;
-    (mean, var.sqrt(), values.len())
-}
-
-fn e5_plv_ranges(steps: usize) -> (f32, f32, f32, f32) {
-    let burn_end_t = E5_BURN_IN_STEPS as f32 * E5_DT;
-    let kick_on_t = E5_KICK_ON_STEP
-        .map(|s| s as f32 * E5_DT)
-        .unwrap_or(burn_end_t);
-    let window_t = E5_TIME_PLV_WINDOW_STEPS as f32 * E5_DT;
-    let sample_start_t = e5_sample_start_step(steps) as f32 * E5_DT;
-    let pre_start = burn_end_t;
-    let pre_end = kick_on_t;
-    let post_start = (kick_on_t + window_t).max(burn_end_t);
-    let post_end = sample_start_t;
-    (pre_start, pre_end, post_start, post_end)
-}
-
-fn e5_kick_summary_csv(main: &E5KickSimResult, ctrl: &E5KickSimResult) -> String {
-    let mut out = String::from(
-        "condition,plv_pre_mean,plv_pre_std,plv_post_mean,plv_post_std,delta_phi_post_plv,plv_time\n",
-    );
-    let (pre_start, pre_end, post_start, post_end) = e5_plv_ranges(E5_STEPS);
-
-    let (pre_main, pre_main_std, _) = e5_mean_plv_range(&main.series, pre_start, pre_end);
-    let (post_main, post_main_std, _) = e5_mean_plv_range(&main.series, post_start, post_end);
-    let (post_group_main, _, _) = e5_mean_group_range(&main.series, post_start, post_end);
-
-    let (pre_ctrl, pre_ctrl_std, _) = e5_mean_plv_range(&ctrl.series, pre_start, pre_end);
-    let (post_ctrl, post_ctrl_std, _) = e5_mean_plv_range(&ctrl.series, post_start, post_end);
-    let (post_group_ctrl, _, _) = e5_mean_group_range(&ctrl.series, post_start, post_end);
-
-    out.push_str(&format!(
-        "main,{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
-        pre_main, pre_main_std, post_main, post_main_std, post_group_main, main.plv_time
-    ));
-    out.push_str(&format!(
-        "control,{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
-        pre_ctrl, pre_ctrl_std, post_ctrl, post_ctrl_std, post_group_ctrl, ctrl.plv_time
-    ));
-    out
-}
-
-struct E5SeedRow {
-    condition: &'static str,
-    seed: u64,
-    plv_post_mean: f32,
-}
-
-fn e5_seed_sweep_rows(steps: usize) -> Vec<E5SeedRow> {
-    let mut rows = Vec::new();
-    let (_, _, post_start, post_end) = e5_plv_ranges(steps);
-    for &seed in &E5_SEEDS {
-        let sim_main = simulate_e5_kick(seed, steps, E5_K_KICK, E5_KICK_ON_STEP);
-        let sim_ctrl = simulate_e5_kick(seed, steps, 0.0, E5_KICK_ON_STEP);
-        let (post_main, _, _) = e5_mean_plv_range(&sim_main.series, post_start, post_end);
-        let (post_ctrl, _, _) = e5_mean_plv_range(&sim_ctrl.series, post_start, post_end);
-        rows.push(E5SeedRow {
-            condition: "main",
-            seed,
-            plv_post_mean: post_main,
-        });
-        rows.push(E5SeedRow {
-            condition: "control",
-            seed,
-            plv_post_mean: post_ctrl,
-        });
-    }
-    rows
-}
-
-fn e5_seed_sweep_csv(rows: &[E5SeedRow]) -> String {
-    let mut out = String::from("condition,seed,plv_post_mean\n");
-    for row in rows {
-        out.push_str(&format!(
-            "{},{},{:.6}\n",
-            row.condition, row.seed, row.plv_post_mean
-        ));
-    }
-    out
-}
-
-fn render_e5_seed_sweep_plot(out_path: &Path, rows: &[E5SeedRow]) -> Result<(), Box<dyn Error>> {
-    let mut main_vals = Vec::new();
-    let mut ctrl_vals = Vec::new();
-    for row in rows {
-        if !row.plv_post_mean.is_finite() {
-            continue;
-        }
-        match row.condition {
-            "main" => main_vals.push(row.plv_post_mean),
-            "control" => ctrl_vals.push(row.plv_post_mean),
-            _ => {}
-        }
-    }
-    let (main_mean, main_std) = mean_std_scalar(&main_vals);
-    let (ctrl_mean, ctrl_std) = mean_std_scalar(&ctrl_vals);
-
-    let mut y_max = (main_mean + main_std).max(ctrl_mean + ctrl_std);
-    if !y_max.is_finite() || y_max <= 0.0 {
-        y_max = 1.0;
-    }
-    let root = bitmap_root(out_path, (600, 700)).into_drawing_area();
-    root.fill(&WHITE)?;
-    let mut chart = ChartBuilder::on(&root)
-        .caption("C. PLV post-kick", ("sans-serif", 56))
-        .margin(12)
-        .x_label_area_size(90)
-        .y_label_area_size(110)
-        .build_cartesian_2d(-0.5f32..1.5f32, 0.0f32..(y_max * 1.1))?;
-
-    chart
-        .configure_mesh()
-        .disable_mesh()
-        .x_desc("condition")
-        .y_desc("PLV post-kick")
-        .x_labels(2)
-        .x_label_formatter(&|x| {
-            let idx = x.round() as isize;
-            match idx {
-                0 => "main".to_string(),
-                1 => "control".to_string(),
-                _ => String::new(),
-            }
-        })
-        .label_style(("sans-serif", 42).into_font())
-        .axis_desc_style(("sans-serif", 46).into_font())
-        .draw()?;
-
-    let values = [(main_mean, main_std, PAL_H), (ctrl_mean, ctrl_std, PAL_R)];
-    let cap = 0.05f32;
-    for (i, (mean, std, color)) in values.iter().enumerate() {
-        let center = i as f32;
-        let x0 = center - 0.25;
-        let x1 = center + 0.25;
-        chart.draw_series(std::iter::once(Rectangle::new(
-            [(x0, 0.0), (x1, *mean)],
-            color.filled(),
-        )))?;
-        let y0 = (mean - std).max(0.0);
-        let y1 = mean + std;
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(center, y0), (center, y1)],
-            color.mix(0.8),
-        )))?;
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(center - cap, y0), (center + cap, y0)],
-            color.mix(0.8),
-        )))?;
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(center - cap, y1), (center + cap, y1)],
-            color.mix(0.8),
-        )))?;
-    }
-
-    root.present()?;
-    Ok(())
-}
-
-fn e5_meta_text(steps: usize) -> String {
-    let sample_start = e5_sample_start_step(steps);
-    let kick_on_time = E5_KICK_ON_STEP.map(|s| s as f32 * E5_DT);
-    let eval_start_time = sample_start as f32 * E5_DT;
-    let mut out = String::new();
-    out.push_str(&format!("dt={}\n", E5_DT));
-    out.push_str(&format!("steps={}\n", steps));
-    out.push_str(&format!("burn_in_steps={}\n", E5_BURN_IN_STEPS));
-    out.push_str(&format!("sample_window_steps={}\n", E5_SAMPLE_WINDOW_STEPS));
-    out.push_str(&format!(
-        "time_plv_window_steps={}\n",
-        E5_TIME_PLV_WINDOW_STEPS
-    ));
-    match E5_KICK_ON_STEP {
-        Some(step) => {
-            out.push_str(&format!("kick_on_step={step}\n"));
-            if let Some(t) = kick_on_time {
-                out.push_str(&format!("kick_on_time_s={t}\n"));
-            }
-        }
-        None => {
-            out.push_str("kick_on_step=none\n");
-            out.push_str("kick_on_time_s=none\n");
-        }
-    }
-    out.push_str(&format!("eval_start_step={sample_start}\n"));
-    out.push_str(&format!("eval_start_time_s={eval_start_time}\n"));
-    out
-}
-
 fn histogram_counts(values: &[f32], min: f32, max: f32, bin_width: f32) -> Vec<(f32, usize)> {
     if bin_width <= 0.0 {
         return Vec::new();
@@ -20524,24 +20622,6 @@ fn phase_hist_bins(sample_count: usize) -> usize {
     }
     let bins = ((sample_count as f32).sqrt() * 2.0).round() as usize;
     bins.clamp(12, 96)
-}
-
-fn plv_time_from_series(series: &[(f32, f32, f32, f32, f32, f32)], window: usize) -> f32 {
-    if series.is_empty() {
-        return 0.0;
-    }
-    let window = window.clamp(1, series.len());
-    let start = series.len().saturating_sub(window);
-    let mut mean_cos = 0.0f32;
-    let mut mean_sin = 0.0f32;
-    for (_, _, delta_phi, _, _, _) in series.iter().skip(start) {
-        mean_cos += delta_phi.cos();
-        mean_sin += delta_phi.sin();
-    }
-    let inv = 1.0 / window as f32;
-    mean_cos *= inv;
-    mean_sin *= inv;
-    (mean_cos * mean_cos + mean_sin * mean_sin).sqrt()
 }
 
 struct SlidingPlv {
@@ -20656,40 +20736,6 @@ fn build_survival_series(lifetimes: &[u32], max_t: usize) -> Vec<(f32, f32)> {
 mod tests {
     use super::*;
 
-    fn mean_plv_over_time(series: &[(f32, f32, f32, f32, f32, f32)], t_min: f32) -> f32 {
-        let mut sum = 0.0f32;
-        let mut count = 0usize;
-        for (t, _, _, plv_agent, _, _) in series {
-            if *t >= t_min && plv_agent.is_finite() {
-                sum += *plv_agent;
-                count += 1;
-            }
-        }
-        if count == 0 {
-            return f32::NAN;
-        }
-        sum / count as f32
-    }
-
-    fn mean_plv_tail(series: &[(f32, f32, f32, f32, f32, f32)], window: usize) -> f32 {
-        if series.is_empty() {
-            return f32::NAN;
-        }
-        let window = window.min(series.len());
-        let start = series.len() - window;
-        let mut sum = 0.0f32;
-        let mut count = 0usize;
-        for (_, _, _, plv_agent, _, _) in series.iter().skip(start) {
-            if plv_agent.is_finite() {
-                sum += *plv_agent;
-                count += 1;
-            }
-        }
-        if count == 0 {
-            return f32::NAN;
-        }
-        sum / count as f32
-    }
 
     fn test_e2_run(metric: f32, seed: u64) -> E2Run {
         E2Run {
@@ -22651,115 +22697,62 @@ mod tests {
     }
 
     #[test]
-    fn e5_sim_outputs_have_expected_shapes() {
-        let sim = simulate_e5_kick(E5_SEED, 120, E5_K_KICK, E5_KICK_ON_STEP);
-        assert_eq!(sim.series.len(), 120);
-        let last_t = sim.series.last().unwrap().0;
-        assert!((last_t - (119.0 * E5_DT)).abs() < 1e-6, "last_t mismatch");
+    fn e5_vitality_sim_produces_correct_output_length() {
+        let landscape = e3_reference_landscape(E5_ANCHOR_HZ);
+        let res = simulate_e5_vitality(E5_SEEDS[0], E5Condition::Vitality, &landscape);
+        assert_eq!(res.group_plv_series.len(), E5_STEPS);
+        assert_eq!(res.agent_final.len(), E5_N_AGENTS);
     }
 
     #[test]
-    fn e5_phase_hist_sample_count_matches() {
-        let steps = E5_BURN_IN_STEPS + E5_SAMPLE_WINDOW_STEPS + 10;
-        let sim = simulate_e5_kick(E5_SEED, steps, E5_K_KICK, E5_KICK_ON_STEP);
-        let sample_start = e5_sample_start_step(steps);
-        let expected = (steps.saturating_sub(sample_start)) * E5_N_AGENTS;
-        assert_eq!(sim.phase_hist_samples.len(), expected);
-    }
-
-    #[test]
-    fn e5_plv_agent_kick_within_unit_range() {
-        let sim = simulate_e5_kick(E5_SEED, 200, E5_K_KICK, E5_KICK_ON_STEP);
-        for (_, _, _, plv_agent, plv_group, _) in &sim.series {
-            if plv_agent.is_finite() {
-                assert!(
-                    *plv_agent >= -1e-6 && *plv_agent <= 1.0 + 1e-6,
-                    "plv_agent_kick out of range: {plv_agent}"
-                );
-            } else {
-                assert!(plv_agent.is_nan());
-            }
-            if plv_group.is_finite() {
-                assert!(
-                    *plv_group >= -1e-6 && *plv_group <= 1.0 + 1e-6,
-                    "plv_group_delta_phi out of range: {plv_group}"
-                );
-            } else {
-                assert!(plv_group.is_nan());
-            }
-        }
-    }
-
-    #[test]
-    fn e5_main_plv_exceeds_control() {
-        let steps = if let Some(on_step) = E5_KICK_ON_STEP {
-            on_step + E5_SAMPLE_WINDOW_STEPS + 50
-        } else {
-            E5_SAMPLE_WINDOW_STEPS + 200
-        };
-        let sim_main = simulate_e5_kick(E5_SEED, steps, E5_K_KICK, E5_KICK_ON_STEP);
-        let sim_ctrl = simulate_e5_kick(E5_SEED, steps, 0.0, E5_KICK_ON_STEP);
-        let main_mean = mean_plv_tail(&sim_main.series, E5_SAMPLE_WINDOW_STEPS);
-        let ctrl_mean = mean_plv_tail(&sim_ctrl.series, E5_SAMPLE_WINDOW_STEPS);
+    fn e5_control_has_near_zero_plv() {
+        let landscape = e3_reference_landscape(E5_ANCHOR_HZ);
+        let res = simulate_e5_vitality(E5_SEEDS[0], E5Condition::Control, &landscape);
+        // Control should have low final group PLV (no coupling)
+        let final_plv = res.group_plv_series.last().map(|(_, p)| *p).unwrap_or(1.0);
         assert!(
-            main_mean > ctrl_mean + 0.2,
-            "expected main PLV to exceed control (main={main_mean:.3}, ctrl={ctrl_mean:.3})"
+            final_plv < 0.5,
+            "control final PLV should be low, got {final_plv:.3}"
         );
     }
 
     #[test]
-    fn e5_kick_on_step_changes_k_eff() {
-        let sim = simulate_e5_kick(E5_SEED, 120, E5_K_KICK, E5_KICK_ON_STEP);
-        if let Some(on_step) = E5_KICK_ON_STEP {
-            if on_step < sim.series.len() {
-                let k_before = sim.series[0].5;
-                let k_after = sim.series[on_step].5;
-                assert!(k_before.abs() < 1e-6);
-                assert!((k_after - E5_K_KICK).abs() < 1e-6);
-            }
-        }
+    fn e5_vitality_pearson_r_is_finite() {
+        let landscape = e3_reference_landscape(E5_ANCHOR_HZ);
+        let res = simulate_e5_vitality(E5_SEEDS[0], E5Condition::Vitality, &landscape);
+        assert!(res.pearson_r.is_finite(), "Pearson r should be finite");
     }
 
     #[test]
-    fn e5_plv_nan_until_window_full() {
-        let steps = 300;
-        let sim = simulate_e5_kick(E5_SEED, steps, E5_K_KICK, None);
-        let window_full_step = E5_TIME_PLV_WINDOW_STEPS.saturating_sub(1);
-        for (step, (_, r, _, plv_agent, plv_group, _)) in sim.series.iter().enumerate() {
-            if step < window_full_step {
-                assert!(plv_agent.is_nan());
-                assert!(plv_group.is_nan());
-            } else {
-                assert!(plv_agent.is_finite());
-                if *r >= E5_MIN_R_FOR_GROUP_PHASE {
-                    assert!(plv_group.is_finite());
-                } else {
-                    assert!(plv_group.is_nan());
-                }
-            }
-        }
+    fn e5_pearson_r_helper_known_values() {
+        // Perfect positive correlation
+        let agents = vec![
+            E5AgentFinal { consonance: 0.0, plv: 0.0 },
+            E5AgentFinal { consonance: 0.5, plv: 0.5 },
+            E5AgentFinal { consonance: 1.0, plv: 1.0 },
+        ];
+        let r = pearson_r_e5(&agents);
+        assert!((r - 1.0).abs() < 1e-5, "expected r≈1, got {r}");
     }
 
     #[test]
-    fn e5_main_entrains_control_does_not() {
-        let sim_main = simulate_e5_kick(E5_SEED, E5_STEPS, E5_K_KICK, E5_KICK_ON_STEP);
-        let sim_ctrl = simulate_e5_kick(E5_SEED, E5_STEPS, 0.0, E5_KICK_ON_STEP);
-        let kick_on_t = E5_KICK_ON_STEP.map(|s| s as f32 * E5_DT).unwrap_or(0.0);
-        let t_min = kick_on_t + E5_TIME_PLV_WINDOW_STEPS as f32 * E5_DT;
+    fn e6_series_stats_carry_forward_is_seed_aware() {
+        let mut by_seed: std::collections::HashMap<u64, Vec<(usize, f32)>> =
+            std::collections::HashMap::new();
+        // Seed 1 terminates early at step 100; this value should be carried to 200.
+        by_seed.insert(1, vec![(0, 1.0), (100, 2.0)]);
+        by_seed.insert(2, vec![(0, 10.0), (100, 20.0), (200, 30.0)]);
 
-        let mean_main = mean_plv_over_time(&sim_main.series, t_min);
-        let mean_ctrl = mean_plv_over_time(&sim_ctrl.series, t_min);
-        assert!(mean_main > 0.9, "mean main PLV too low: {mean_main}");
-        assert!(mean_ctrl < 0.5, "mean ctrl PLV too high: {mean_ctrl}");
+        let stats = e6_series_stats(Some(&by_seed), 100);
+        let means_by_step: std::collections::HashMap<usize, f32> = stats
+            .into_iter()
+            .map(|(step, mean, _)| (step as usize, mean))
+            .collect();
 
-        if let Some(on_step) = E5_KICK_ON_STEP {
-            if on_step < sim_main.series.len() {
-                let k_before = sim_main.series[0].5;
-                let k_after = sim_main.series[on_step].5;
-                assert!(k_before.abs() < 1e-6);
-                assert!((k_after - E5_K_KICK).abs() < 1e-6);
-            }
-        }
+        assert!((means_by_step[&0] - 5.5).abs() < 1e-6);
+        assert!((means_by_step[&100] - 11.0).abs() < 1e-6);
+        // Expected: (2.0 carried from seed 1 + 30.0 from seed 2) / 2 = 16.0
+        assert!((means_by_step[&200] - 16.0).abs() < 1e-6);
     }
 
     #[test]

@@ -10,7 +10,7 @@ Paper scenarios used for headless behavioral checks are under `experiments/scena
 cargo run --bin paper
 ```
 
-`--exp` を省略した場合は論文向けの既定セット `e1,e2,e3,e5` のみ実行します。
+`--exp` を省略した場合は論文向けの既定セット `e1,e2,e3,e5,e6` のみ実行します。
 `e4` は `--exp e4` を明示した場合にのみ実行されます。
 
 ## Just recipes
