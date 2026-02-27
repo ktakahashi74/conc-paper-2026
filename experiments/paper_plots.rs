@@ -3582,11 +3582,36 @@ fn plot_e5_vitality_entrainment(out_dir: &Path) -> Result<(), Box<dyn Error>> {
         pearson_by_cond.push((cond, rs));
     }
 
+    // ── Build paired contrast series for Panel A (bottom) ───────
+    let result_by_cond_seed: HashMap<(E5Condition, u64), &E5VitalityResult> = all_results
+        .iter()
+        .map(|r| ((r.condition, r.seed), r))
+        .collect();
+    let delta_series = vec![
+        build_e5_delta_series(
+            "vitality - uniform",
+            PAL_E5_UNIFORM,
+            E5Condition::Vitality,
+            E5Condition::Uniform,
+            &E5_SEEDS,
+            &result_by_cond_seed,
+        ),
+        build_e5_delta_series(
+            "vitality - control",
+            PAL_E5_VITALITY,
+            E5Condition::Vitality,
+            E5Condition::Control,
+            &E5_SEEDS,
+            &result_by_cond_seed,
+        ),
+    ];
+
     // ── Render 3-panel figure ────────────────────────────────────
     let fig_path = out_dir.join("paper_e5_figure.svg");
     render_e5_combined_figure(
         &fig_path,
         &cond_series,
+        &delta_series,
         Some(&scatter_vitality),
         Some(&scatter_control),
         &pearson_by_cond,
@@ -4286,7 +4311,7 @@ where
 }
 
 // ── E5 Vitality-Coupled Entrainment: condition enum ──────────────
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum E5Condition {
     Vitality,
     Uniform,
@@ -4320,6 +4345,20 @@ struct E5VitalityResult {
     pearson_r: f32,
     condition: E5Condition,
     seed: u64,
+}
+
+struct E5DeltaSeries {
+    label: &'static str,
+    color: RGBColor,
+    /// (t, mean, ci95)
+    series: Vec<(f32, f32, f32)>,
+}
+
+struct E5SigmoidFit {
+    intercept: f32,
+    slope: f32,
+    c50: f32,
+    s: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -4649,6 +4688,153 @@ fn pearson_r_e5(agents: &[E5AgentFinal]) -> f32 {
     } else {
         cov / denom
     }
+}
+
+fn build_e5_delta_series<'a>(
+    label: &'static str,
+    color: RGBColor,
+    lhs: E5Condition,
+    rhs: E5Condition,
+    seeds: &[u64],
+    result_by_cond_seed: &HashMap<(E5Condition, u64), &'a E5VitalityResult>,
+) -> E5DeltaSeries {
+    let mut first_len: Option<usize> = None;
+    let mut t_axis: Vec<f32> = Vec::new();
+    for &seed in seeds {
+        let (Some(lhs_res), Some(rhs_res)) = (
+            result_by_cond_seed.get(&(lhs, seed)),
+            result_by_cond_seed.get(&(rhs, seed)),
+        ) else {
+            continue;
+        };
+        let n = lhs_res.group_plv_series.len().min(rhs_res.group_plv_series.len());
+        if n == 0 {
+            continue;
+        }
+        first_len = Some(n);
+        t_axis = lhs_res.group_plv_series.iter().take(n).map(|(t, _)| *t).collect();
+        break;
+    }
+
+    let n_steps = first_len.unwrap_or(0);
+    if n_steps == 0 {
+        return E5DeltaSeries {
+            label,
+            color,
+            series: Vec::new(),
+        };
+    }
+
+    let mut diffs_by_step: Vec<Vec<f32>> = (0..n_steps).map(|_| Vec::new()).collect();
+    for &seed in seeds {
+        let (Some(lhs_res), Some(rhs_res)) = (
+            result_by_cond_seed.get(&(lhs, seed)),
+            result_by_cond_seed.get(&(rhs, seed)),
+        ) else {
+            continue;
+        };
+        let n = n_steps
+            .min(lhs_res.group_plv_series.len())
+            .min(rhs_res.group_plv_series.len());
+        for step in 0..n {
+            let v_l = lhs_res.group_plv_series[step].1;
+            let v_r = rhs_res.group_plv_series[step].1;
+            if v_l.is_finite() && v_r.is_finite() {
+                diffs_by_step[step].push(v_l - v_r);
+            }
+        }
+    }
+
+    let mut series: Vec<(f32, f32, f32)> = Vec::with_capacity(n_steps);
+    for step in 0..n_steps {
+        let t = t_axis.get(step).copied().unwrap_or(step as f32 * E5_DT);
+        let vals = &diffs_by_step[step];
+        if vals.is_empty() {
+            series.push((t, f32::NAN, 0.0));
+            continue;
+        }
+        let mean = vals.iter().copied().sum::<f32>() / vals.len() as f32;
+        let var = vals.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / vals.len() as f32;
+        let ci95 = 1.96 * var.sqrt() / (vals.len() as f32).sqrt();
+        series.push((t, mean, ci95));
+    }
+
+    E5DeltaSeries {
+        label,
+        color,
+        series,
+    }
+}
+
+#[inline]
+fn e5_sigmoid_value(x: f32, c50: f32, s: f32) -> f32 {
+    let z = -((x - c50) / s.max(1e-4));
+    1.0 / (1.0 + z.exp())
+}
+
+fn fit_e5_sigmoid(points: &[(f32, f32)]) -> Option<E5SigmoidFit> {
+    if points.len() < 6 {
+        return None;
+    }
+
+    let n = points.len() as f32;
+    let mut best_fit: Option<E5SigmoidFit> = None;
+    let mut best_sse = f32::INFINITY;
+
+    // Grid search over midpoint and slope; solve intercept/slope by OLS for each grid.
+    // This keeps fitting robust and dependency-free.
+    for i_c in 10..=90 {
+        let c50 = i_c as f32 / 100.0;
+        for i_s in 4..=50 {
+            let s = i_s as f32 / 200.0; // 0.02 .. 0.25
+
+            let mut sum_g = 0.0f32;
+            let mut sum_y = 0.0f32;
+            let mut sum_gg = 0.0f32;
+            let mut sum_gy = 0.0f32;
+
+            for &(x, y) in points {
+                let g = e5_sigmoid_value(x, c50, s);
+                sum_g += g;
+                sum_y += y;
+                sum_gg += g * g;
+                sum_gy += g * y;
+            }
+
+            let var_g = sum_gg - (sum_g * sum_g) / n;
+            if var_g <= 1e-8 {
+                continue;
+            }
+            let cov_gy = sum_gy - (sum_g * sum_y) / n;
+            let slope = cov_gy / var_g;
+            if !slope.is_finite() || slope <= 0.0 {
+                continue;
+            }
+            let intercept = (sum_y - slope * sum_g) / n;
+            if !intercept.is_finite() {
+                continue;
+            }
+
+            let mut sse = 0.0f32;
+            for &(x, y) in points {
+                let g = e5_sigmoid_value(x, c50, s);
+                let y_hat = intercept + slope * g;
+                let e = y - y_hat;
+                sse += e * e;
+            }
+            if sse < best_sse {
+                best_sse = sse;
+                best_fit = Some(E5SigmoidFit {
+                    intercept,
+                    slope,
+                    c50,
+                    s,
+                });
+            }
+        }
+    }
+
+    best_fit
 }
 
 fn render_e1_plot(
@@ -20313,6 +20499,7 @@ fn render_survival_by_c_level(
 fn render_e5_combined_figure(
     out_path: &Path,
     cond_series: &[(E5Condition, Vec<(f32, f32, f32)>)],
+    delta_series: &[E5DeltaSeries],
     rep_vitality: Option<&E5VitalityResult>,
     rep_control: Option<&E5VitalityResult>,
     pearson_by_cond: &[(E5Condition, Vec<f32>)],
@@ -20321,7 +20508,7 @@ fn render_e5_combined_figure(
     root.fill(&WHITE)?;
     let panels = root.split_evenly((1, 3));
 
-    draw_e5_plv_panel(&panels[0], cond_series)?;
+    draw_e5_plv_panel(&panels[0], cond_series, delta_series)?;
     draw_e5_scatter_panel(&panels[1], rep_vitality, rep_control)?;
     draw_e5_pearson_panel(&panels[2], pearson_by_cond)?;
 
@@ -20331,6 +20518,20 @@ fn render_e5_combined_figure(
 
 /// Panel A: Group mean PLV over time with CI shading
 fn draw_e5_plv_panel<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    cond_series: &[(E5Condition, Vec<(f32, f32, f32)>)],
+    delta_series: &[E5DeltaSeries],
+) -> Result<(), Box<dyn Error>>
+where
+    <DB as DrawingBackend>::ErrorType: 'static,
+{
+    let panels = area.split_evenly((2, 1));
+    draw_e5_plv_raw_subpanel(&panels[0], cond_series)?;
+    draw_e5_plv_delta_subpanel(&panels[1], cond_series, delta_series)?;
+    Ok(())
+}
+
+fn draw_e5_plv_raw_subpanel<DB: DrawingBackend>(
     area: &DrawingArea<DB, Shift>,
     cond_series: &[(E5Condition, Vec<(f32, f32, f32)>)],
 ) -> Result<(), Box<dyn Error>>
@@ -20344,18 +20545,19 @@ where
         .max(1.0);
 
     let mut chart = ChartBuilder::on(area)
-        .caption("A. Group PLV over time", ("sans-serif", 72))
-        .margin(20)
-        .x_label_area_size(90)
-        .y_label_area_size(120)
+        .caption("A1. Group PLV (raw)", ("sans-serif", 72))
+        .margin(14)
+        .x_label_area_size(64)
+        .y_label_area_size(90)
         .build_cartesian_2d(0.0f32..x_max, 0.15f32..0.50f32)?;
 
     chart
         .configure_mesh()
-        .x_desc("time (s)")
+        .x_desc("")
         .y_desc("PLV")
-        .label_style(("sans-serif", 52).into_font())
-        .axis_desc_style(("sans-serif", 56).into_font())
+        .y_label_formatter(&|v| format!("{:.1}", v))
+        .label_style(("sans-serif", 40).into_font())
+        .axis_desc_style(("sans-serif", 44).into_font())
         .draw()?;
 
     for (cond, series) in cond_series {
@@ -20396,7 +20598,111 @@ where
         .position(SeriesLabelPosition::UpperRight)
         .background_style(WHITE.mix(0.8))
         .border_style(BLACK)
-        .label_font(("sans-serif", 48).into_font())
+        .label_font(("sans-serif", 40).into_font())
+        .draw()?;
+
+    Ok(())
+}
+
+fn draw_e5_plv_delta_subpanel<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    cond_series: &[(E5Condition, Vec<(f32, f32, f32)>)],
+    delta_series: &[E5DeltaSeries],
+) -> Result<(), Box<dyn Error>>
+where
+    <DB as DrawingBackend>::ErrorType: 'static,
+{
+    let x_max = cond_series
+        .iter()
+        .flat_map(|(_, s)| s.iter().map(|(t, _, _)| *t))
+        .fold(0.0f32, f32::max)
+        .max(1.0);
+
+    let mut y_min = f32::INFINITY;
+    let mut y_max = f32::NEG_INFINITY;
+    for ds in delta_series {
+        for &(_, mean, ci) in &ds.series {
+            if mean.is_finite() {
+                y_min = y_min.min(mean - ci);
+                y_max = y_max.max(mean + ci);
+            }
+        }
+    }
+    if !y_min.is_finite() || !y_max.is_finite() {
+        y_min = -0.1;
+        y_max = 0.1;
+    }
+    let pad = ((y_max - y_min) * 0.15).max(0.02);
+    let y_lo = (y_min - pad).min(-0.01);
+    let y_hi = (y_max + pad).max(0.01);
+
+    let mut chart = ChartBuilder::on(area)
+        .caption("A2. Paired contrast ΔPLV", ("sans-serif", 72))
+        .margin(14)
+        .x_label_area_size(96)
+        .y_label_area_size(90)
+        .build_cartesian_2d(0.0f32..x_max, y_lo..y_hi)?;
+
+    chart
+        .configure_mesh()
+        .x_desc("time (s)")
+        .y_desc("ΔPLV")
+        .y_label_formatter(&|v| format!("{:.1}", v))
+        .label_style(("sans-serif", 40).into_font())
+        .axis_desc_style(("sans-serif", 44).into_font())
+        .draw()?;
+
+    chart.draw_series(std::iter::once(DashedPathElement::new(
+        vec![(0.0f32, 0.0f32), (x_max, 0.0f32)],
+        2,
+        6,
+        ShapeStyle::from(&BLACK.mix(0.35)).stroke_width(2),
+    )))?;
+
+    for ds in delta_series {
+        if ds.series.is_empty() {
+            continue;
+        }
+
+        let mut band: Vec<(f32, f32)> = Vec::with_capacity(ds.series.len() * 2);
+        for &(x, mean, ci) in &ds.series {
+            if mean.is_finite() {
+                band.push((x, (mean + ci).clamp(y_lo, y_hi)));
+            }
+        }
+        for &(x, mean, ci) in ds.series.iter().rev() {
+            if mean.is_finite() {
+                band.push((x, (mean - ci).clamp(y_lo, y_hi)));
+            }
+        }
+        if band.len() >= 3 {
+            chart.draw_series(std::iter::once(Polygon::new(
+                band,
+                ds.color.mix(0.18).filled(),
+            )))?;
+        }
+
+        let line_points: Vec<(f32, f32)> = ds
+            .series
+            .iter()
+            .filter(|(_, m, _)| m.is_finite())
+            .map(|(x, m, _)| (*x, *m))
+            .collect();
+        chart
+            .draw_series(LineSeries::new(
+                line_points,
+                ShapeStyle::from(&ds.color).stroke_width(3),
+            ))?
+            .label(ds.label)
+            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], ds.color));
+    }
+
+    chart
+        .configure_series_labels()
+        .position(SeriesLabelPosition::UpperRight)
+        .background_style(WHITE.mix(0.8))
+        .border_style(BLACK)
+        .label_font(("sans-serif", 40).into_font())
         .draw()?;
 
     Ok(())
@@ -20426,32 +20732,106 @@ where
         .axis_desc_style(("sans-serif", 56).into_font())
         .draw()?;
 
-    // Draw control first (behind), then vitality on top
-    for (result, color, label) in [
-        (rep_control, PAL_E5_CONTROL, "control"),
-        (rep_vitality, PAL_E5_VITALITY, "vitality"),
-    ] {
-        if let Some(res) = result {
-            let points: Vec<(f32, f32)> = res
-                .agent_final
+    let control_points: Vec<(f32, f32)> = rep_control
+        .map(|res| {
+            res.agent_final
                 .iter()
                 .filter(|a| a.plv.is_finite())
                 .map(|a| (a.consonance, a.plv))
+                .collect()
+        })
+        .unwrap_or_default();
+    let vitality_points: Vec<(f32, f32)> = rep_vitality
+        .map(|res| {
+            res.agent_final
+                .iter()
+                .filter(|a| a.plv.is_finite())
+                .map(|a| (a.consonance, a.plv))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Draw control first (behind), then vitality on top
+    if rep_control.is_some() {
+        chart
+            .draw_series(control_points.iter().map(|&(x, y)| {
+                Cross::new(
+                    (x, y),
+                    8,
+                    ShapeStyle::from(&PAL_E5_CONTROL).stroke_width(3),
+                )
+            }))?
+            .label("control")
+            .legend(|(x, y)| Cross::new((x, y), 9, ShapeStyle::from(&PAL_E5_CONTROL).stroke_width(3)));
+    }
+    if rep_vitality.is_some() {
+        chart
+            .draw_series(vitality_points.iter().map(|&(x, y)| {
+                EmptyElement::at((x, y))
+                    + PathElement::new(
+                        vec![(-8, 0), (8, 0)],
+                        ShapeStyle::from(&PAL_E5_VITALITY).stroke_width(3),
+                    )
+                    + PathElement::new(
+                        vec![(0, -12), (0, 12)],
+                        ShapeStyle::from(&PAL_E5_VITALITY).stroke_width(3),
+                    )
+            }))?
+            .label("vitality")
+            .legend(|(x, y)| {
+                EmptyElement::at((x, y))
+                    + PathElement::new(
+                        vec![(-9, 0), (9, 0)],
+                        ShapeStyle::from(&PAL_E5_VITALITY).stroke_width(3),
+                    )
+                    + PathElement::new(
+                        vec![(0, -9), (0, 9)],
+                        ShapeStyle::from(&PAL_E5_VITALITY).stroke_width(3),
+                    )
+            });
+    }
+
+    // Add fitted guides: vitality sigmoid, control mean baseline
+    if !vitality_points.is_empty() {
+        if let Some(fit) = fit_e5_sigmoid(&vitality_points) {
+            let curve: Vec<(f32, f32)> = (0..=200)
+                .map(|i| {
+                    let x = i as f32 / 200.0;
+                    let y = (fit.intercept + fit.slope * e5_sigmoid_value(x, fit.c50, fit.s))
+                        .clamp(0.0, 1.05);
+                    (x, y)
+                })
                 .collect();
-            chart
-                .draw_series(points.iter().map(|&(x, y)| {
-                    Circle::new((x, y), 8, ShapeStyle::from(&color).filled())
-                }))?
-                .label(format!("{} (r={:.2})", label, res.pearson_r))
-                .legend(move |(x, y)| Circle::new((x, y), 6, color.filled()));
+            chart.draw_series(std::iter::once(DashedPathElement::new(
+                curve,
+                10,
+                8,
+                ShapeStyle::from(&PAL_E5_VITALITY.mix(0.98)).stroke_width(5),
+            )))?;
         }
+    }
+    if !control_points.is_empty() {
+        let mean_control =
+            control_points.iter().map(|(_, y)| *y).sum::<f32>() / control_points.len() as f32;
+        // White underlay improves visibility against dense scatter points.
+        chart.draw_series(std::iter::once(PathElement::new(
+            vec![(0.0f32, mean_control), (1.0f32, mean_control)],
+            ShapeStyle::from(&WHITE.mix(0.95)).stroke_width(11),
+        )))?;
+        chart.draw_series(std::iter::once(DashedPathElement::new(
+            vec![(0.0f32, mean_control), (1.0f32, mean_control)],
+            10,
+            8,
+            ShapeStyle::from(&PAL_E5_CONTROL.mix(0.98)).stroke_width(7),
+        )))?;
     }
 
     chart
         .configure_series_labels()
-        .background_style(WHITE.mix(0.8))
+        .position(SeriesLabelPosition::Coordinate(170, 110))
+        .background_style(WHITE.mix(0.88))
         .border_style(BLACK)
-        .label_font(("sans-serif", 48).into_font())
+        .label_font(("sans-serif", 56).into_font())
         .draw()?;
 
     Ok(())

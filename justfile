@@ -33,8 +33,10 @@ svg2pdf dir="experiments/plots":
 		echo "error: install inkscape or rsvg-convert for vector SVG->PDF conversion"; \
 		exit 1; \
 	fi
+	# Enforce paper rebuild whenever figures are regenerated.
+	just latex
 
-# Run experiments + convert SVGs to PDF
+# Run experiments + convert SVGs to PDF + rebuild paper PDF
 paper-pdf *args:
 	just paper {{args}}
 	just svg2pdf
@@ -46,7 +48,6 @@ latex:
 # Full pipeline: experiments → SVG→PDF → pdflatex
 all *args:
 	just paper-pdf {{args}}
-	just latex
 
 # Archive plots directory
 tar out="experiments/plots.tar" dir="experiments/plots":
