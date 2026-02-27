@@ -8,6 +8,10 @@ autoexamples = false
 name = "paper"
 path = "experiments/main.rs"
 
+[[bin]]
+name = "e6sweep"
+path = "experiments/e6_sweep_main.rs"
+
 [dependencies]
 conchordal = { path = "../conchordal" }
 plotters = "0.3"

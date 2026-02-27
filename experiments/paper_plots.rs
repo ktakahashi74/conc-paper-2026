@@ -245,9 +245,9 @@ const E5_SEEDS: [u64; 5] = [
 
 const E6_FIRST_K: usize = 20;
 const E6_POP_SIZE: usize = 32;
-const E6_MIN_DEATHS: usize = 500;
-const E6_STEPS_CAP: usize = 16_000;
-const E6_MUTATION_SIGMA: f32 = 0.03;
+const E6_MIN_DEATHS: usize = 2000;
+const E6_STEPS_CAP: usize = 200_000;
+const E6_MUTATION_SIGMA: f32 = 0.003;
 const E6_SNAPSHOT_INTERVAL: usize = 100;
 const E6_CONSONANT_WINDOW_ST: f32 = 0.25;
 const E6_INTERVAL_BIN_ST: f32 = 0.25;
@@ -3520,7 +3520,6 @@ fn plot_e6_hereditary_adaptation(
                 condition,
                 mutation_sigma: E6_MUTATION_SIGMA,
                 snapshot_interval: E6_SNAPSHOT_INTERVAL,
-                pitch_free: true,
             };
             let result = run_e6(&cfg);
             all_results.push((condition, seed, result));
