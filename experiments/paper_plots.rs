@@ -245,7 +245,7 @@ const E5_SEEDS: [u64; 5] = [
 
 const E6_FIRST_K: usize = 20;
 const E6_POP_SIZE: usize = 32;
-const E6_MIN_DEATHS: usize = 2000;
+const E6_MIN_DEATHS: usize = 4000;
 const E6_STEPS_CAP: usize = 200_000;
 const E6_MUTATION_SIGMA: f32 = 0.003;
 const E6_SNAPSHOT_INTERVAL: usize = 100;
@@ -3493,7 +3493,7 @@ fn plot_e5_rhythmic_entrainment(out_dir: &Path) -> Result<(), Box<dyn Error>> {
 
 #[derive(Clone, Copy, Debug)]
 struct E6SnapshotPoint {
-    mean_c_level01: f32,
+    mean_c_score: f32,
     consonant_occupation: f32,
     pairwise_entropy: f32,
     n_alive: usize,
@@ -3540,6 +3540,9 @@ fn plot_e6_hereditary_adaptation(
     let mut occ_by_cond_step: HashMap<&'static str, HashMap<usize, Vec<f32>>> = HashMap::new();
     let mut deaths_by_cond: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut heat_counts: HashMap<(usize, i32), f32> = HashMap::new();
+    // Track per-seed last snapshot bins for heatmap carry-forward
+    let mut hered_seed_last_step: HashMap<u64, usize> = HashMap::new();
+    let mut hered_seed_last_bins: HashMap<u64, Vec<i32>> = HashMap::new();
 
     for (condition, seed, result) in &all_results {
         let cond_label = condition.label();
@@ -3576,7 +3579,7 @@ fn plot_e6_hereditary_adaptation(
                 .or_default()
                 .entry(snap.step)
                 .or_default()
-                .push(point.mean_c_level01);
+                .push(point.mean_c_score);
             occ_by_cond_step
                 .entry(cond_label)
                 .or_default()
@@ -3607,12 +3610,20 @@ fn plot_e6_hereditary_adaptation(
                     let clamped = semitone.clamp(-12.0, 12.0 - f32::EPSILON);
                     let bin = ((clamped + 12.0) / E6_INTERVAL_BIN_ST).floor() as i32;
                     *heat_counts.entry((snap.step, bin)).or_insert(0.0) += 1.0;
+                    // Track bins per seed per snapshot step; overwrite each step
+                    // so only the latest snapshot's bins are retained
+                    let entry = hered_seed_last_bins.entry(*seed).or_default();
+                    if hered_seed_last_step.get(seed).copied() != Some(snap.step) {
+                        entry.clear();
+                        hered_seed_last_step.insert(*seed, snap.step);
+                    }
+                    entry.push(bin);
                 }
             }
         }
 
         let start = run_points.first().copied().unwrap_or(E6SnapshotPoint {
-            mean_c_level01: 0.0,
+            mean_c_score: 0.0,
             consonant_occupation: 0.0,
             pairwise_entropy: 0.0,
             n_alive: 0,
@@ -3629,9 +3640,9 @@ fn plot_e6_hereditary_adaptation(
             seed,
             result.total_deaths,
             result.snapshots.len(),
-            start.mean_c_level01,
-            end.mean_c_level01,
-            end.mean_c_level01 - start.mean_c_level01,
+            start.mean_c_score,
+            end.mean_c_score,
+            end.mean_c_score - start.mean_c_score,
             start.consonant_occupation,
             end.consonant_occupation,
             end.consonant_occupation - start.consonant_occupation,
@@ -3690,6 +3701,25 @@ fn plot_e6_hereditary_adaptation(
         }
     }
 
+    // Carry-forward for heatmap: extend each heredity seed's last bins to global_max_step
+    {
+        let global_max_step = heat_counts
+            .keys()
+            .map(|(s, _)| *s)
+            .max()
+            .unwrap_or(0);
+        for (seed, bins) in &hered_seed_last_bins {
+            let last_step = hered_seed_last_step[seed];
+            let mut step = last_step + E6_SNAPSHOT_INTERVAL;
+            while step <= global_max_step {
+                for &bin in bins {
+                    *heat_counts.entry((step, bin)).or_insert(0.0) += 1.0;
+                }
+                step += E6_SNAPSHOT_INTERVAL;
+            }
+        }
+    }
+
     let c_heredity = e6_series_stats(mean_c_by_cond_step.get(E6Condition::Heredity.label()));
     let c_random = e6_series_stats(mean_c_by_cond_step.get(E6Condition::Random.label()));
     let occ_heredity = e6_series_stats(occ_by_cond_step.get(E6Condition::Heredity.label()));
@@ -3737,17 +3767,17 @@ fn e6_snapshot_point(
         .collect();
     if valid_freqs.is_empty() {
         return E6SnapshotPoint {
-            mean_c_level01: 0.0,
+            mean_c_score: 0.0,
             consonant_occupation: 0.0,
             pairwise_entropy: 0.0,
             n_alive: 0,
         };
     }
 
-    let mean_c_level01 = valid_freqs
+    let mean_c_score = valid_freqs
         .iter()
         .copied()
-        .map(|f| landscape.evaluate_pitch_level(f))
+        .map(|f| landscape.evaluate_pitch_score(f))
         .sum::<f32>()
         / valid_freqs.len() as f32;
     let consonant_occupation = e6_consonant_occupation(&valid_freqs, anchor_hz, E6_CONSONANT_WINDOW_ST);
@@ -3761,7 +3791,7 @@ fn e6_snapshot_point(
     let pairwise_entropy = hist_structure_metrics_from_probs(&pairwise_probs).entropy;
 
     E6SnapshotPoint {
-        mean_c_level01,
+        mean_c_score,
         consonant_occupation,
         pairwise_entropy,
         n_alive: valid_freqs.len(),
@@ -3824,36 +3854,27 @@ fn render_e6_figure(
     out_path: &Path,
     c_heredity: &[(f32, f32, f32)],
     c_random: &[(f32, f32, f32)],
-    occ_heredity: &[(f32, f32, f32)],
-    occ_random: &[(f32, f32, f32)],
+    _occ_heredity: &[(f32, f32, f32)],
+    _occ_random: &[(f32, f32, f32)],
     heat_counts: &HashMap<(usize, i32), f32>,
     final_st_heredity: &[f32],
     final_st_random: &[f32],
 ) -> Result<(), Box<dyn Error>> {
-    let root = bitmap_root(out_path, (2200, 1600)).into_drawing_area();
+    let root = bitmap_root(out_path, (3600, 1100)).into_drawing_area();
     root.fill(&WHITE)?;
-    let panels = root.split_evenly((2, 2));
+    let panels = root.split_evenly((1, 3));
 
     draw_e6_series_panel(
         &panels[0],
-        "A. Mean consonance C_level01 over time",
-        "mean C_level01",
+        "A. Mean consonance",
+        "C_score",
         c_heredity,
         c_random,
         0.0,
-        1.0,
+        0.5,
     )?;
     draw_e6_heatmap_panel(&panels[1], heat_counts)?;
-    draw_e6_series_panel(
-        &panels[2],
-        "C. Consonant occupation over time",
-        "occupation fraction",
-        occ_heredity,
-        occ_random,
-        0.0,
-        1.0,
-    )?;
-    draw_e6_pitch_histogram_panel(&panels[3], final_st_heredity, final_st_random)?;
+    draw_e6_pitch_histogram_panel(&panels[2], final_st_heredity, final_st_random)?;
 
     root.present()?;
     Ok(())
@@ -3878,18 +3899,19 @@ where
         .fold(0.0f32, f32::max)
         .max(1.0);
     let mut chart = ChartBuilder::on(area)
-        .caption(caption, ("sans-serif", 30))
-        .margin(12)
-        .x_label_area_size(55)
-        .y_label_area_size(70)
+        .caption(caption, ("sans-serif", 72))
+        .margin(20)
+        .x_label_area_size(90)
+        .y_label_area_size(120)
         .build_cartesian_2d(0.0f32..x_max, y_lo..y_hi)?;
 
     chart
         .configure_mesh()
         .x_desc("step")
         .y_desc(y_desc)
-        .label_style(("sans-serif", 20).into_font())
-        .axis_desc_style(("sans-serif", 24).into_font())
+        .x_label_formatter(&|v| format!("{}", *v as i64))
+        .label_style(("sans-serif", 52).into_font())
+        .axis_desc_style(("sans-serif", 56).into_font())
         .draw()?;
 
     for (label, series, color) in [
@@ -3937,9 +3959,10 @@ where
 
     chart
         .configure_series_labels()
+        .position(SeriesLabelPosition::Coordinate(95, 135))
         .background_style(WHITE.mix(0.85))
         .border_style(BLACK)
-        .label_font(("sans-serif", 18).into_font())
+        .label_font(("sans-serif", 48).into_font())
         .draw()?;
 
     Ok(())
@@ -3958,21 +3981,19 @@ where
         .fold(0.0f32, f32::max)
         + E6_SNAPSHOT_INTERVAL as f32;
     let mut chart = ChartBuilder::on(area)
-        .caption(
-            "B. Heredity pitch distribution heatmap",
-            ("sans-serif", 30),
-        )
-        .margin(12)
-        .x_label_area_size(55)
-        .y_label_area_size(70)
+        .caption("B. Heredity pitch heatmap", ("sans-serif", 72))
+        .margin(20)
+        .x_label_area_size(90)
+        .y_label_area_size(120)
         .build_cartesian_2d(0.0f32..x_max.max(1.0), -12.0f32..12.0f32)?;
 
     chart
         .configure_mesh()
         .x_desc("step")
-        .y_desc("semitones from anchor")
-        .label_style(("sans-serif", 20).into_font())
-        .axis_desc_style(("sans-serif", 24).into_font())
+        .y_desc("semitones")
+        .x_label_formatter(&|v| format!("{}", *v as i64))
+        .label_style(("sans-serif", 52).into_font())
+        .axis_desc_style(("sans-serif", 56).into_font())
         .draw()?;
 
     let max_count = heat_counts.values().copied().fold(0.0f32, f32::max).max(1.0);
@@ -4043,18 +4064,26 @@ where
         * 1.15;
 
     let mut chart = ChartBuilder::on(area)
-        .caption("D. Final pitch distribution", ("sans-serif", 30))
-        .margin(12)
-        .x_label_area_size(55)
-        .y_label_area_size(70)
+        .caption("C. Final pitch distribution", ("sans-serif", 72))
+        .margin(20)
+        .x_label_area_size(90)
+        .y_label_area_size(120)
         .build_cartesian_2d(lo..hi, 0.0f32..y_max.max(0.01))?;
 
     chart
         .configure_mesh()
-        .x_desc("semitones from anchor")
+        .x_desc("semitones")
         .y_desc("density")
-        .label_style(("sans-serif", 20).into_font())
-        .axis_desc_style(("sans-serif", 24).into_font())
+        .y_label_formatter(&|v| {
+            let r = (*v * 10.0).round() as i32;
+            if ((*v - r as f32 / 10.0).abs() < 1e-4) && r % 1 == 0 && (*v * 100.0).round() as i32 % 10 == 0 {
+                format!("{:.1}", v)
+            } else {
+                String::new()
+            }
+        })
+        .label_style(("sans-serif", 52).into_font())
+        .axis_desc_style(("sans-serif", 56).into_font())
         .draw()?;
 
     // Draw consonant ratio reference lines
@@ -4101,9 +4130,10 @@ where
 
     chart
         .configure_series_labels()
+        .position(SeriesLabelPosition::Coordinate(130, 70))
         .background_style(WHITE.mix(0.85))
         .border_style(BLACK)
-        .label_font(("sans-serif", 18).into_font())
+        .label_font(("sans-serif", 48).into_font())
         .draw()?;
 
     Ok(())

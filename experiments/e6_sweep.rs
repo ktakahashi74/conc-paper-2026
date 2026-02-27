@@ -39,16 +39,26 @@ struct SweepParams {
 
 pub fn run_sweep() {
     let params = vec![
-        // Round 5: fine-tune around sig0.003_d2000_p32 (best from round 4, p=0.0085)
+        // Round 6: C_score metric (no sigmoid). Broad sweep.
+        // Vary sigma
+        SweepParams { label: "sig0.001_d2000_p32", mutation_sigma: 0.001, min_deaths: 2000, pop_size: 32 },
         SweepParams { label: "sig0.002_d2000_p32", mutation_sigma: 0.002, min_deaths: 2000, pop_size: 32 },
-        SweepParams { label: "sig0.0025_d2000_p32", mutation_sigma: 0.0025, min_deaths: 2000, pop_size: 32 },
         SweepParams { label: "sig0.003_d2000_p32", mutation_sigma: 0.003, min_deaths: 2000, pop_size: 32 },
-        SweepParams { label: "sig0.0035_d2000_p32", mutation_sigma: 0.0035, min_deaths: 2000, pop_size: 32 },
-        // Also try 0.003 with more deaths
-        SweepParams { label: "sig0.003_d2500_p32", mutation_sigma: 0.003, min_deaths: 2500, pop_size: 32 },
+        SweepParams { label: "sig0.005_d2000_p32", mutation_sigma: 0.005, min_deaths: 2000, pop_size: 32 },
+        SweepParams { label: "sig0.01_d2000_p32", mutation_sigma: 0.01, min_deaths: 2000, pop_size: 32 },
+        SweepParams { label: "sig0.02_d2000_p32", mutation_sigma: 0.02, min_deaths: 2000, pop_size: 32 },
+        // Vary deaths with sigma=0.003
         SweepParams { label: "sig0.003_d3000_p32", mutation_sigma: 0.003, min_deaths: 3000, pop_size: 32 },
-        // And with pop=24
+        SweepParams { label: "sig0.003_d4000_p32", mutation_sigma: 0.003, min_deaths: 4000, pop_size: 32 },
+        SweepParams { label: "sig0.003_d5000_p32", mutation_sigma: 0.003, min_deaths: 5000, pop_size: 32 },
+        // Vary pop_size with sigma=0.003, deaths=2000
+        SweepParams { label: "sig0.003_d2000_p16", mutation_sigma: 0.003, min_deaths: 2000, pop_size: 16 },
         SweepParams { label: "sig0.003_d2000_p24", mutation_sigma: 0.003, min_deaths: 2000, pop_size: 24 },
+        SweepParams { label: "sig0.003_d2000_p48", mutation_sigma: 0.003, min_deaths: 2000, pop_size: 48 },
+        // High-generation combos
+        SweepParams { label: "sig0.005_d3000_p32", mutation_sigma: 0.005, min_deaths: 3000, pop_size: 32 },
+        SweepParams { label: "sig0.002_d3000_p32", mutation_sigma: 0.002, min_deaths: 3000, pop_size: 32 },
+        SweepParams { label: "sig0.001_d3000_p32", mutation_sigma: 0.001, min_deaths: 3000, pop_size: 32 },
     ];
 
     println!("config,condition,seed,total_deaths,n_snapshots,mean_c_start,mean_c_end,delta_mean_c,entropy_end");
@@ -81,7 +91,7 @@ pub fn run_sweep() {
                     let mut count = 0;
                     for &freq in &snap.freqs_hz {
                         if freq <= 0.0 || !freq.is_finite() { continue; }
-                        total += landscape.evaluate_pitch_level(freq) as f64;
+                        total += landscape.evaluate_pitch_score(freq) as f64;
                         count += 1;
                     }
                     if count > 0 { total / count as f64 } else { 0.0 }

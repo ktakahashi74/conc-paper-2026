@@ -71,3 +71,5 @@ Pass extra args to experiment recipes, e.g.:
 ```bash
 just all --clean --exp e2
 ```
+
+**Important**: After regenerating any figure (SVG→PDF), always run `just latex` to rebuild the paper PDF. Never leave figures updated without rebuilding latex.
