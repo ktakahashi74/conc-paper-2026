@@ -15,6 +15,10 @@
     info@conchordal.org
 }
 
+\renewcommand{\thetable}{S\arabic{table}}
+\renewcommand{\thefigure}{S\arabic{figure}}
+\renewcommand{\theequation}{S\arabic{equation}}
+
 \begin{document}
 
 \maketitle
@@ -110,7 +114,7 @@ clamped to $[0,1]$. For $\rho < 1$ (below-reference roughness) the mapping is li
 
 \section{S2. Complete Parameter Table}
 
-Table~\ref{tab:params} lists all parameters used across experiments.
+Table~S1 lists all parameters used across experiments.
 
 \begin{table*}[t]
 \centering
@@ -133,7 +137,7 @@ Roughness saturation & $k$ & 1.0 & 1.0 & 1.0 & 1.0 \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{Consonance core}} \\
 $C_{\text{field}}$ coefficients & $(a,b,c,d)$ & $(1,-1.35,1,0)$ & $(1,-1.35,1,0)$ & $(1,-1.35,1,0)$ & $(1,-1.35,1,0)$ \\
-$C_{\text{density}}$ coefficients & $(a,b,c,d)$ & $(1,0,-1,0)$ & --- & --- & --- \\
+$C_{\text{density}}$ coefficients$^\ddagger$ & $(a,b,c,d)$ & $(1,0,-1,0)$ & --- & --- & --- \\
 Sigmoid $(\beta,\theta)$ & & --- & $(2,0)$ & --- & $(2,0)$ \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{Pitch adaptation}} \\
@@ -168,13 +172,14 @@ Proximity kernel & $\alpha$ & --- & --- & --- & $4.0\,\text{st}^{-2}$ \\
 Ratio limit & $p,q$ & --- & --- & --- & $\leq 8$ \\
 Ratio weight & & --- & --- & --- & $1/(pq)$ \\
 \bottomrule
-\multicolumn{6}{@{}l}{\footnotesize $^\dagger$ Experiment 3 uses a simplified continuous energy model (see S1.3).}
+\multicolumn{6}{@{}l}{\footnotesize $^\dagger$ Experiment 3 uses a simplified continuous energy model (see S1.3).}\\
+\multicolumn{6}{@{}l}{\footnotesize $^\ddagger$ Visualization only (Figure~1D); not used in experiment algorithms.}
 \end{tabular}
 \end{table*}
 
 \section{S3. Experiment 4: Full Sweep Results}
 
-Table~\ref{tab:sweep} reports the hereditary adaptation parameter sweep. Each of the 15 conditions was run with 20 seeds per arm (heredity vs.\ random control). The reported setting in the main text ($\sigma\!=\!0.003$, deaths $=\!4{,}000$, $N\!=\!32$) is marked with $\star$.
+Table~S2 reports the hereditary adaptation parameter sweep. Each of the 15 conditions was run with 20 seeds per arm (heredity vs.\ random control). The reported setting in the main text ($\sigma\!=\!0.003$, deaths $=\!4{,}000$, $N\!=\!32$) is marked with $\star$.
 
 \begin{table*}[t]
 \centering
@@ -223,7 +228,7 @@ When $H_{01}$ is high (strong harmonicity), the $H_{01}\,R_{01}$ term partially 
 \begin{equation}
 C_{\text{density}} = H_{01}(1 - R_{01}).
 \end{equation}
-This product is nonnegative and peaks where harmonicity is high and roughness is low, making it suitable as a probability mass for proposal sampling.
+This product is nonnegative and peaks where harmonicity is high and roughness is low. In Conchordal's interactive mode it serves as a spawn-position weight; it is not used in the experiments reported in this paper but is shown in Figure~1D for comparison.
 
 \noindent\textbf{$C_{\text{level01}}$}: $C_{\text{field}}$ passed through a logistic sigmoid $\sigma(\beta(x - \theta))$ with $\beta=2$, $\theta=0$. This bounds the metabolic signal to $[0,1]$ while preserving the ranking.
 
@@ -261,9 +266,6 @@ Interval entropy & $3.93 \pm 0.16$ & $3.53 \pm 0.32$ & $-5.0$ \\
 \end{table}
 
 The consonance-only condition still produces structured polyphony (14.8 unique pitch bins, well above the collapse level of $\approx$13 observed without repulsion in the main text) and achieves \emph{higher} mean consonance ($C_{\text{score}} = 0.54$ vs.\ $0.47$), confirming that consonant structure emerges from the landscape--repulsion interaction alone. However, the curriculum significantly improves diversity: more unique pitch bins ($19.2$ vs.\ $14.8$), wider nearest-neighbour spacing ($0.57$ vs.\ $0.35$\,st), and higher interval entropy ($3.93$ vs.\ $3.53$\,nats). The dissonance-seeking phase thus serves as an initialisation strategy that broadens the starting distribution, but the self-organised polyphony reported in the main text is not an artefact of the curriculum schedule.
-
-\bigskip
-\noindent\textbf{Code availability:} Source code and experiment scripts will be released on GitHub upon acceptance.
 
 \bibliographystyle{apalike}
 \bibliography{conc}
