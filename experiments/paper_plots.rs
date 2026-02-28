@@ -4575,6 +4575,79 @@ fn plot_e6_hereditary_adaptation(
             0.0
         };
 
+        // Welch t-test for JI_score: heredity vs random
+        let nh = ji_heredity.len() as f64;
+        let nr = ji_random.len() as f64;
+        let mh = ji_h_mean as f64;
+        let mr = ji_r_mean as f64;
+        let sh = ji_h_sd as f64;
+        let sr = ji_r_sd as f64;
+        let va = sh * sh / nh;
+        let vb = sr * sr / nr;
+        let se = (va + vb).sqrt();
+        let ji_t = if se > 1e-15 { (mh - mr) / se } else { 0.0 };
+        let ji_df = if se > 1e-15 {
+            (va + vb).powi(2) / (va * va / (nh - 1.0) + vb * vb / (nr - 1.0))
+        } else {
+            1.0
+        };
+        // Cohen's d (pooled SD)
+        let sd_pooled = (((nh - 1.0) * sh * sh + (nr - 1.0) * sr * sr)
+            / (nh + nr - 2.0))
+            .sqrt();
+        let ji_d = if sd_pooled > 1e-15 {
+            (mh - mr) / sd_pooled
+        } else {
+            0.0
+        };
+        // p-value via regularized incomplete beta (same as E2 implementation)
+        let t_abs = ji_t.abs();
+        let x = ji_df / (ji_df + t_abs * t_abs);
+        fn ln_gamma_ji(x: f64) -> f64 {
+            let coeffs = [
+                76.18009172947146, -86.50532032941677, 24.01409824083091,
+                -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5,
+            ];
+            let mut y = x;
+            let tmp = x + 5.5 - (x + 0.5) * (x + 5.5).ln();
+            let mut ser = 1.000000000190015_f64;
+            for &c in &coeffs { y += 1.0; ser += c / y; }
+            -tmp + (2.5066282746310005 * ser / x).ln()
+        }
+        fn betacf_ji(a: f64, b: f64, x: f64) -> f64 {
+            let (fpmin, eps) = (1e-30, 3e-12);
+            let (qab, qap, qam) = (a + b, a + 1.0, a - 1.0);
+            let mut c = 1.0_f64;
+            let mut d = (1.0 - qab * x / qap).recip();
+            if d.abs() < fpmin { d = fpmin; }
+            let mut h = d;
+            for m in 1..=200 {
+                let mf = m as f64;
+                let aa = mf * (b - mf) * x / ((qam + 2.0 * mf) * (a + 2.0 * mf));
+                d = 1.0 + aa * d; if d.abs() < fpmin { d = fpmin; }
+                c = 1.0 + aa / c; if c.abs() < fpmin { c = fpmin; }
+                d = d.recip(); h *= d * c;
+                let aa2 = -(a + mf) * (qab + mf) * x / ((a + 2.0 * mf) * (qap + 2.0 * mf));
+                d = 1.0 + aa2 * d; if d.abs() < fpmin { d = fpmin; }
+                c = 1.0 + aa2 / c; if c.abs() < fpmin { c = fpmin; }
+                d = d.recip(); let delta = d * c; h *= delta;
+                if (delta - 1.0).abs() < eps { break; }
+            }
+            h
+        }
+        fn rib_ji(a: f64, b: f64, x: f64) -> f64 {
+            if x <= 0.0 { return 0.0; }
+            if x >= 1.0 { return 1.0; }
+            let bt = (ln_gamma_ji(a + b) - ln_gamma_ji(a) - ln_gamma_ji(b)
+                + a * x.ln() + b * (1.0 - x).ln()).exp();
+            if x < (a + 1.0) / (a + b + 2.0) {
+                bt * betacf_ji(a, b, x) / a
+            } else {
+                1.0 - bt * betacf_ji(b, a, 1.0 - x) / b
+            }
+        }
+        let ji_p = rib_ji(ji_df / 2.0, 0.5, x);
+
         let eval_text = format!(
             "E6 Independent Consonance Evaluation (JI ratio-complexity metric)\n\
              ================================================================\n\
@@ -4583,7 +4656,8 @@ fn plot_e6_hereditary_adaptation(
              \n\
              JI score by condition:\n\
              heredity: mean={:.4} sd={:.4} (n={})\n\
-             random:   mean={:.4} sd={:.4} (n={})\n",
+             random:   mean={:.4} sd={:.4} (n={})\n\
+             Welch t={:.2}, df={:.1}, p={:.6}, Cohen's d={:.2}\n",
             rho,
             format_p_value(p),
             ji_h_mean,
@@ -4592,6 +4666,10 @@ fn plot_e6_hereditary_adaptation(
             ji_r_mean,
             ji_r_sd,
             ji_random.len(),
+            ji_t,
+            ji_df,
+            ji_p,
+            ji_d,
         );
         write_with_log(out_dir.join("paper_e6_independent_eval.txt"), eval_text)?;
     }

@@ -104,7 +104,8 @@ This paper introduces \textit{Conchordal}, a bio-acoustic instrument for generat
 
 % Choose one of: Full Paper, Summaries, or Late Breaking Abstracts
 Submission type: \textbf{Full Paper}\\
-Data/Code available at: \url{https://github.com/conchordal/conchordal}
+
+Data/Code/Supplementary: \url{https://github.com/conchordal/conchordal}
 \blfootnote{\textcopyright\ 2026 Koichi Takahashi. Published under a Creative Commons Attribution 4.0 International (CC BY 4.0) license.}
 
 \section{Introduction}
@@ -204,12 +205,7 @@ The evaluation field for local pitch adaptation uses $(a,b,c,d)=(1,-1.35,1,0)$:
 C_{\text{field}} = H_{01} - 1.35\,R_{01} + H_{01}\,R_{01}.
 \end{equation}
 
-For density-based proposal weighting, we set $(a,b,c,d)=(1,0,-1,0)$, yielding a dedicated nonnegative mass:
-\begin{equation}
-C_{\text{density}} = H_{01}(1 - R_{01}).
-\end{equation}
-
-This separation avoids conflating acceptance utility ($C_{\text{field}}$) with proposal density ($C_{\text{density}}$). Figure~\ref{fig:e1-landscape}C,D illustrates the resulting landscape for a single-anchor scan; both views exhibit attractor structure near simple integer ratios (2:1, 3:2, 4:3, 5:4), consistent with classical observations on consonance \citep{helmholtz1877,sethares1993}. No discrete scale was imposed; the attractors emerge solely from psychoacoustic structure.
+A second parameterisation, $C_{\text{density}} = H_{01}(1 - R_{01})$ (setting $b\!=\!0,\,c\!=\!-1$), provides a nonnegative mass used in Conchordal's interactive mode for spawn-position weighting; it is not used in the experiments reported here but is shown in Figure~\ref{fig:e1-landscape}D for comparison. Figure~\ref{fig:e1-landscape}C,D illustrates the resulting landscape for a single-anchor scan; both views exhibit attractor structure near simple integer ratios (2:1, 3:2, 4:3, 5:4), consistent with classical observations on consonance \citep{helmholtz1877,sethares1993}. No discrete scale was imposed; the attractors emerge solely from psychoacoustic structure.
 
 For bounded metabolic control, $C_{\text{field}}$ is passed through a sigmoid: $C_{\text{level01}} = \sigma\!\bigl(\beta(C_{\text{field}}-\theta)\bigr)\in[0,1]$, with $(\beta,\theta)=(2,0)$.
 
@@ -314,7 +310,7 @@ Figure~\ref{fig:e5-entrainment}A shows the group mean PLV over time. Both vitali
 
 Experiments 1--3 establish selection but not heredity. To test whether lineage-based inheritance can consolidate ecological advantage, we compare two respawn conditions: \emph{heredity}, where a dead agent's replacement pitch is drawn $\mathcal{N}(\text{random surviving parent},\,\sigma\!=\!0.003\,\text{log}_2)$, versus \emph{random} uniform respawn within $\pm 1$ octave. Both conditions retain repulsion but disable hill-climbing, isolating hereditary selection as the sole consonance-improvement pathway (remaining parameters in Table~\ref{tab:conditions}). Twenty seeds per condition were run until 4{,}000 deaths ($\approx 125$ turnover cycles).
 
-Figure~\ref{fig:e6-hereditary} shows that heredity runs produce a statistically significant increase in $C_{\text{score}}$ relative to random controls. Welch's $t$-test confirmed higher consonance change in the heredity condition ($\Delta C_{\text{score}} = +0.121 \pm 0.177$ vs.\ $-0.003 \pm 0.027$; $t=3.10$, $p=0.001$, Cohen's $d=0.98$). Final consonance was likewise higher (heredity $0.185 \pm 0.178$ vs.\ random $0.061 \pm 0.018$; $t=3.13$, $p<0.001$). Pitch entropy dropped sharply under heredity ($1.67 \pm 0.46$ vs.\ $3.78 \pm 0.03$), indicating convergence toward specific pitch regions. The large inter-seed variance ($\pm 0.177$) reflects drift-dominated early dynamics: 8 of 20 heredity seeds showed $\Delta C > 0.1$ while 7 remained near baseline, consistent with stochastic founder effects \citep{kimura1983}. The final pitch histogram (Figure~\ref{fig:e6-hereditary}C) shows that heredity runs concentrate near consonant ratios rather than remaining uniformly dispersed. This convergence arises purely from differential survival and inheritance: without hill-climbing, only the metabolic selection pressure identified in Experiment~2 drives the effect. Parameters were selected from a sweep over 15 conditions (Supplementary Table~S2): the heredity--random separation was positive in all 15 and significant ($p<0.05$) in 11; the reported setting ($\sigma\!=\!0.003$, 4{,}000 deaths, $N\!=\!32$) is representative rather than the single best arm. To verify generalisation, we re-scored final configurations with $\mathrm{JI}_{\text{score}}$ (Gaussian proximity to just-intonation ratios $p\!:\!q$, $p,q \leq 8$; see Supplementary S2): heredity scored substantially higher ($0.55 \pm 0.13$ vs.\ $0.11 \pm 0.01$; Spearman $\rho = 0.45$, $p = 0.004$).
+Figure~\ref{fig:e6-hereditary} shows that heredity runs produce a statistically significant increase in $C_{\text{score}}$ relative to random controls. Welch's $t$-test confirmed higher consonance change in the heredity condition ($\Delta C_{\text{score}} = +0.121 \pm 0.177$ vs.\ $-0.003 \pm 0.027$; $t=3.10$, $p=0.001$, Cohen's $d=0.98$). Final consonance was likewise higher (heredity $0.185 \pm 0.178$ vs.\ random $0.061 \pm 0.018$; $t=3.13$, $p<0.001$). Pitch entropy dropped sharply under heredity ($1.67 \pm 0.46$ vs.\ $3.78 \pm 0.03$), indicating convergence toward specific pitch regions. The large inter-seed variance ($\pm 0.177$) reflects drift-dominated early dynamics: 8 of 20 heredity seeds showed $\Delta C > 0.1$ while 7 remained near baseline, consistent with stochastic founder effects \citep{kimura1983}. The final pitch histogram (Figure~\ref{fig:e6-hereditary}C) shows that heredity runs concentrate near consonant ratios rather than remaining uniformly dispersed. This convergence arises purely from differential survival and inheritance: without hill-climbing, only the metabolic selection pressure identified in Experiment~2 drives the effect. Parameters were selected from a sweep over 15 conditions (Supplementary Table~S2): the heredity--random separation was positive in all 15 and significant ($p<0.05$) in 11; the reported setting ($\sigma\!=\!0.003$, 4{,}000 deaths, $N\!=\!32$) is representative rather than the single best arm. To verify generalisation, we re-scored final configurations with an independent metric $\mathrm{JI}_{\text{score}} = \binom{N}{2}^{-1}\!\sum_{i<j} \max_{p:q}\!\bigl[\tfrac{1}{pq}\,e^{-\alpha\,(\Delta_{ij}-r_{pq})^2}\bigr]$, the mean pairwise Gaussian proximity ($\alpha\!=\!4.0$\,st$^{-2}$) to just-intonation ratios $p\!:\!q$ ($p,q \leq 8$), weighted by complexity $1/(pq)$: heredity scored substantially higher ($0.55 \pm 0.13$ vs.\ $0.11 \pm 0.01$; Welch $t=15.3$, $p<10^{-12}$, $d=4.8$).
 
 \section{Discussion}
 
@@ -348,12 +344,7 @@ The consonance landscape currently assumes harmonic spectra; extending to inharm
 
 Conchordal presents a psychoacoustic artificial life environment whose design is grounded in Direct Cognitive Coupling. Harmonicity and roughness define a continuous landscape that supports self-organization, selection, consonance-gated entrainment, and hereditary adaptation---core ingredients of artificial ecology instantiated in an auditory medium structured by perceptual law, complementing the spatial and chemical substrates traditionally studied in ALife. As an instrument, Conchordal offers composers a generative substrate in which ecological dynamics produce musically coherent material without symbolic specification, though formal perceptual evaluation is deferred to future work. More broadly, DCC is not inherently auditory: any creative medium whose perceptual basis admits quantitative modelling could host an analogous ecology.
 
-\bigskip
-
-\noindent\textbf{Keywords:} Artificial Life, Psychoacoustics, Consonance, Self-Organization, Entrainment, Direct Cognitive Coupling
-
-\medskip
-\noindent\textbf{Supplementary material:} Algorithm pseudocode, complete parameter table, and full parameter-sweep results are provided in the supplementary PDF.
+% Keywords: Artificial Life, Psychoacoustics, Consonance, Self-Organization, Entrainment, Direct Cognitive Coupling
 
 \footnotesize
 \bibliographystyle{apalike}
