@@ -4718,6 +4718,8 @@ fn plot_e6_integration_figure(
     // Run all 4 conditions × 20 seeds
     let mut all_series: Vec<(&str, Vec<(f32, f32, f32)>, RGBColor)> = Vec::new();
     let mut csv_data = String::from("condition,step,mean_c_score,ci95\n");
+    // Collect seed-level final C_scores for each condition (for interaction test)
+    let mut cond_seed_finals: Vec<Vec<f32>> = Vec::new();
 
     for cond in &conditions {
         let mut by_seed: HashMap<u64, Vec<(usize, f32)>> = HashMap::new();
@@ -4744,6 +4746,18 @@ fn plot_e6_integration_figure(
             }
         }
 
+        // Extract final C_score per seed (last snapshot value)
+        let mut seed_finals: Vec<f32> = Vec::with_capacity(E6_SEEDS.len());
+        for &seed in &E6_SEEDS {
+            if let Some(points) = by_seed.get(&seed) {
+                let last_val = points.iter().map(|(_, v)| *v).last().unwrap_or(0.0);
+                seed_finals.push(last_val);
+            } else {
+                seed_finals.push(0.0);
+            }
+        }
+        cond_seed_finals.push(seed_finals);
+
         let stats = e6_series_stats(Some(&by_seed), E6_SNAPSHOT_INTERVAL);
         for &(step, mean, ci95) in &stats {
             csv_data.push_str(&format!(
@@ -4752,6 +4766,55 @@ fn plot_e6_integration_figure(
             ));
         }
         all_series.push((cond.label, stats, cond.color));
+    }
+
+    // ── Interaction test ──────────────────────────────────────────────
+    // Conditions: 0=heredity(H), 1=heredity+hill(HH), 2=random(R), 3=random+hill(RH)
+    // Interaction contrast per seed: HH_i - H_i - RH_i + R_i
+    {
+        let n_seeds = E6_SEEDS.len();
+        let mut contrasts = Vec::with_capacity(n_seeds);
+        for i in 0..n_seeds {
+            let hh = cond_seed_finals[1][i];
+            let h = cond_seed_finals[0][i];
+            let rh = cond_seed_finals[3][i];
+            let r = cond_seed_finals[2][i];
+            contrasts.push(hh - h - rh + r);
+        }
+        let mean_contrast = contrasts.iter().copied().sum::<f32>() / n_seeds as f32;
+        let ci = ci95_half_width(&contrasts);
+        let (p_val, method) = permutation_pvalue_one_sample(&contrasts, 100_000, 0xBEEF);
+
+        // Condition means
+        let mean_h = cond_seed_finals[0].iter().sum::<f32>() / n_seeds as f32;
+        let mean_hh = cond_seed_finals[1].iter().sum::<f32>() / n_seeds as f32;
+        let mean_r = cond_seed_finals[2].iter().sum::<f32>() / n_seeds as f32;
+        let mean_rh = cond_seed_finals[3].iter().sum::<f32>() / n_seeds as f32;
+
+        let report = format!(
+            "Interaction test (sign-flip permutation, {})\n\
+             ================================================\n\
+             Condition means (final C_score):\n\
+             heredity (H):      {:.4}\n\
+             heredity+hill (HH): {:.4}\n\
+             random (R):         {:.4}\n\
+             random+hill (RH):   {:.4}\n\
+             \n\
+             Interaction contrast: HH - H - RH + R\n\
+             mean = {:.4}, 95% CI = [{:.4}, {:.4}]\n\
+             p = {:.6} ({})\n\
+             n_seeds = {}\n",
+            method,
+            mean_h, mean_hh, mean_r, mean_rh,
+            mean_contrast, mean_contrast - ci, mean_contrast + ci,
+            p_val, method,
+            n_seeds,
+        );
+        eprintln!("{}", report);
+        write_with_log(
+            out_dir.join("paper_e6_interaction_test.txt"),
+            report,
+        )?;
     }
 
     write_with_log(
@@ -18169,6 +18232,60 @@ fn permutation_pvalue_mean_diff(
     (p, "mc", iters)
 }
 
+/// Sign-flip permutation test for H0: mean(x) = 0 (one-sample).
+/// For n ≤ 20, uses exact enumeration (2^n sign patterns).
+/// For n > 20, falls back to Monte Carlo with `mc_iters` iterations.
+/// Returns (p_value, method_label).
+fn permutation_pvalue_one_sample(x: &[f32], mc_iters: usize, seed: u64) -> (f32, &'static str) {
+    if x.is_empty() {
+        return (1.0, "exact");
+    }
+    let n = x.len();
+    let obs_mean = x.iter().copied().sum::<f32>() / n as f32;
+    let obs_abs = obs_mean.abs();
+
+    if n <= 20 {
+        // Exact enumeration: iterate over all 2^n sign patterns
+        let total = 1u64 << n;
+        let mut extreme = 0u64;
+        for mask in 0..total {
+            let mut sum = 0.0f32;
+            for (i, &xi) in x.iter().enumerate() {
+                if mask & (1u64 << i) != 0 {
+                    sum += xi;
+                } else {
+                    sum -= xi;
+                }
+            }
+            if (sum / n as f32).abs() + 1e-8 >= obs_abs {
+                extreme += 1;
+            }
+        }
+        let p = extreme as f32 / total as f32;
+        (p, "exact")
+    } else {
+        // Monte Carlo sign-flip
+        let iters = mc_iters.max(1) as u64;
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut extreme = 0u64;
+        for _ in 0..iters {
+            let mut sum = 0.0f32;
+            for &xi in x {
+                if rng.random_bool(0.5) {
+                    sum += xi;
+                } else {
+                    sum -= xi;
+                }
+            }
+            if (sum / n as f32).abs() + 1e-8 >= obs_abs {
+                extreme += 1;
+            }
+        }
+        let p = (extreme as f32 + 1.0) / (iters as f32 + 1.0);
+        (p, "mc")
+    }
+}
+
 fn cliffs_delta(a: &[f32], b: &[f32]) -> f32 {
     if a.is_empty() || b.is_empty() {
         return 0.0;
@@ -24032,5 +24149,36 @@ mod ji_tests {
         let freqs = vec![220.0, 220.0, 220.0, 220.0];
         let score = ji_population_score(&freqs, 220.0);
         assert!(score > 0.9, "all-unison population should score > 0.9, got {}", score);
+    }
+}
+
+#[cfg(test)]
+mod sign_flip_tests {
+    use super::*;
+
+    #[test]
+    fn permutation_pvalue_one_sample_basic() {
+        // All positive values: only 1 of 16 sign patterns yields mean ≥ observed
+        let x = [1.0f32, 1.0, 1.0, 1.0];
+        let (p, method) = permutation_pvalue_one_sample(&x, 10_000, 42);
+        assert_eq!(method, "exact");
+        // exact: 2^4 = 16 patterns; only all-positive gives mean = 1.0,
+        // and all-negative gives |mean| = 1.0, so p = 2/16 = 0.125
+        assert!((p - 2.0 / 16.0).abs() < 1e-6, "expected p=0.125, got {}", p);
+    }
+
+    #[test]
+    fn permutation_pvalue_one_sample_symmetric() {
+        // Symmetric around zero: mean ≈ 0, p should be high
+        let x = [1.0f32, -1.0, 1.0, -1.0];
+        let (p, method) = permutation_pvalue_one_sample(&x, 10_000, 42);
+        assert_eq!(method, "exact");
+        assert!(p > 0.5, "symmetric data should give large p, got {}", p);
+    }
+
+    #[test]
+    fn permutation_pvalue_one_sample_empty() {
+        let (p, _) = permutation_pvalue_one_sample(&[], 10_000, 42);
+        assert!((p - 1.0).abs() < 1e-6);
     }
 }
