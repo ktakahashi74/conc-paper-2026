@@ -22108,6 +22108,94 @@ fn render_survival_on_area_large(
     Ok(())
 }
 
+fn render_survival_on_area_compact(
+    area: &DrawingArea<SVGBackend, Shift>,
+    caption: &str,
+    data: &SurvivalData,
+) -> Result<(), Box<dyn Error>> {
+    let mut chart = ChartBuilder::on(area)
+        .caption(caption, ("sans-serif", 42))
+        .margin(10)
+        .margin_left(6)
+        .margin_right(6)
+        .x_label_area_size(65)
+        .y_label_area_size(80)
+        .build_cartesian_2d(0.0f32..data.x_max, 0.0f32..1.05f32)?;
+
+    chart
+        .configure_mesh()
+        .x_desc("time (steps)")
+        .y_desc("survival")
+        .x_label_formatter(&|v| format!("{}", *v as i32))
+        .x_labels(5)
+        .y_labels(6)
+        .label_style(("sans-serif", 28).into_font())
+        .axis_desc_style(("sans-serif", 32).into_font())
+        .draw()?;
+
+    chart
+        .draw_series(LineSeries::new(data.series_high.clone(), &PAL_H))?
+        .label("high")
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_H));
+    chart
+        .draw_series(LineSeries::new(data.series_low.clone(), &PAL_R))?
+        .label("low")
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_R));
+
+    chart
+        .configure_series_labels()
+        .background_style(WHITE.mix(0.8))
+        .border_style(BLACK)
+        .label_font(("sans-serif", 30).into_font())
+        .draw()?;
+
+    Ok(())
+}
+
+fn render_scatter_on_area_compact(
+    area: &DrawingArea<SVGBackend, Shift>,
+    caption: &str,
+    x_desc: &str,
+    data: &ScatterData,
+) -> Result<(), Box<dyn Error>> {
+    let mut chart = ChartBuilder::on(area)
+        .caption(caption, ("sans-serif", 42))
+        .margin(10)
+        .margin_left(6)
+        .margin_right(6)
+        .x_label_area_size(65)
+        .y_label_area_size(80)
+        .build_cartesian_2d(data.x_min..data.x_max, 0.0f32..(data.y_max * 1.05))?;
+
+    chart
+        .configure_mesh()
+        .x_desc(x_desc)
+        .y_desc("lifetime (steps)")
+        .x_labels(5)
+        .y_label_formatter(&|v| format!("{}", *v as i32))
+        .y_labels(5)
+        .label_style(("sans-serif", 28).into_font())
+        .axis_desc_style(("sans-serif", 32).into_font())
+        .draw()?;
+
+    if !data.points.is_empty() {
+        chart.draw_series(
+            data.points
+                .iter()
+                .map(|(x, y)| Circle::new((*x, *y), 3, PAL_H.mix(0.5).filled())),
+        )?;
+    }
+    if data.x_min <= 0.5 && data.x_max >= 0.5 {
+        let y_top = data.y_max * 1.05;
+        chart.draw_series(std::iter::once(PathElement::new(
+            vec![(0.5, 0.0), (0.5, y_top)],
+            BLACK.mix(0.3),
+        )))?;
+    }
+
+    Ok(())
+}
+
 fn render_survival_split_plot(
     out_path: &Path,
     caption: &str,
@@ -22192,27 +22280,25 @@ fn render_e3_figure4(
     left_scatter: &ScatterData,
     right_scatter: &ScatterData,
 ) -> Result<(), Box<dyn Error>> {
-    // 2×2 layout: rows = conditions, cols = metrics (KM | scatter)
-    let root = bitmap_root(out_path, (1600, 700)).into_drawing_area();
+    // 1×4 horizontal layout: A B C D
+    let root = bitmap_root(out_path, (2160, 600)).into_drawing_area();
     root.fill(&WHITE)?;
-    let panels = root.split_evenly((2, 2));
-    // panels[0]=top-left, [1]=top-right, [2]=bottom-left, [3]=bottom-right
-    let (panel_a, panel_c, panel_b, panel_d) =
-        (&panels[0], &panels[1], &panels[2], &panels[3]);
+    let panels = root.split_evenly((1, 4));
 
-    let x_max = left_surv.x_max.max(right_surv.x_max);
-    let left_surv_common = survival_with_x_max(left_surv, x_max);
-    let right_surv_common = survival_with_x_max(right_surv, x_max);
-    render_survival_on_area_large(panel_a, "A. Baseline", &left_surv_common)?;
-    render_survival_on_area_large(panel_b, "B. No recharge", &right_surv_common)?;
+    // Cap survival x-axis at 1000 steps
+    let x_max_surv = 1000.0f32;
+    let left_surv_common = survival_with_x_max(left_surv, x_max_surv);
+    let right_surv_common = survival_with_x_max(right_surv, x_max_surv);
+    render_survival_on_area_compact(&panels[0], "A. Baseline", &left_surv_common)?;
+    render_survival_on_area_compact(&panels[1], "B. No recharge", &right_surv_common)?;
 
     let x_min = 0.0f32;
     let x_max_s = 1.0f32;
     let y_max_s = left_scatter.y_max.max(right_scatter.y_max);
     let left_sc = scatter_with_ranges(left_scatter, x_min, x_max_s, y_max_s);
     let right_sc = scatter_with_ranges(right_scatter, x_min, x_max_s, y_max_s);
-    render_scatter_on_area_large(panel_c, "C. Baseline", "early consonance", &left_sc)?;
-    render_scatter_on_area_large(panel_d, "D. No recharge", "early consonance", &right_sc)?;
+    render_scatter_on_area_compact(&panels[2], "C. Baseline", "early consonance", &left_sc)?;
+    render_scatter_on_area_compact(&panels[3], "D. No recharge", "early consonance", &right_sc)?;
 
     root.present()?;
     Ok(())
