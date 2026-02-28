@@ -102,10 +102,17 @@
 \maketitle
 
 \begin{abstract}
-This paper introduces \textit{Conchordal}, a bio-acoustic instrument for generative composition whose sonic agents are governed by artificial life dynamics within a psychoacoustic fitness landscape defined in log-frequency space. The system is built on the principle of \emph{Direct Cognitive Coupling} (DCC): the generative process operates directly upon structures isomorphic to those in human perceptual cognition, bypassing symbolic intermediaries. The environment integrates roughness and harmonicity into a continuous consonance field without presupposing musical scales or harmonic rules. Agents adjust pitch through local proposal-and-accept dynamics under density-based repulsion, regulate survival via a consonance-dependent metabolic policy, and entrain temporally through Kuramoto-style phase coupling grounded in neural oscillatory models. Four experiments are reported. (1) Populations self-organize into structured, non-collapsed polyphony with enriched consonant interval distributions. (2) When consonance modulates metabolic recharge, early consonance strongly predicts lifetime, whereas the effect vanishes without recharge. (3) In a controlled entrainment assay, consonance-dependent vitality biases synchronization: agents at consonant positions synchronize more readily. (4) Hereditary pitch inheritance drives polyphonic convergence to multiple consonant ratios through differential survival alone. These findings demonstrate that consonance can serve as the organising resource for life-like dynamics in a non-traditional computational medium, yielding self-organization, selection, synchronization, and hereditary adaptation. Because DCC grounds the fitness landscape in perceptual structure, an ecological--aesthetic duality obtains: adaptive success and musical coherence become structurally aligned.
+This paper introduces \textit{Conchordal}, a bio-acoustic instrument for generative composition whose sonic agents are governed by artificial life dynamics within a psychoacoustic fitness landscape defined in log-frequency space. The system is built on the principle of \emph{Direct Cognitive Coupling} (DCC): the generative process operates directly upon structures isomorphic to those in human perceptual cognition, bypassing symbolic intermediaries. The environment integrates roughness and harmonicity into a continuous consonance field without presupposing musical scales or harmonic rules. Agents adjust pitch through local proposal-and-accept dynamics under density-based repulsion, regulate survival via a consonance-dependent metabolic policy, and entrain temporally through Kuramoto-style phase coupling grounded in neural oscillatory models. Four experiments are reported. (1) Populations self-organize into structured, non-collapsed polyphony with enriched consonant interval distributions. (2) When consonance modulates metabolic recharge, early consonance strongly predicts lifetime, whereas the effect vanishes without recharge. (3) In a controlled entrainment assay, consonance-dependent vitality biases synchronization: agents at consonant positions synchronize more readily. (4) Hereditary pitch inheritance drives polyphonic convergence to multiple consonant ratios through differential survival alone. A preliminary integration test shows that combining heredity with hill-climbing yields a superadditive consonance gain exceeding either mechanism in isolation. These findings demonstrate that consonance can serve as the organising resource for life-like dynamics in a non-traditional computational medium, yielding self-organization, selection, synchronization, and hereditary adaptation. Because DCC grounds the fitness landscape in perceptual structure, an ecological--aesthetic duality obtains: adaptive success and musical coherence become structurally aligned.
 \end{abstract}
 
 \section{Introduction}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{experiments/plots/e1/paper_e1_landscape_scan_anchor220.pdf}
+\caption{Psychoacoustic landscape around 220\,Hz. (A)~Harmonicity $H_{01}$; (B)~roughness $R_{01}$; (C)~consonance field $C_{\text{field}}$; (D)~consonance density $C_{\text{density}}$. Grey lines: 0.5-oct grid; blue dashed: integer-ratio references. Peaks at simple ratios in $H$ and troughs in $R$ produce attractor structure in both consonance views. Reduced density outside $\pm 1$\,oct is a finite-order property ($N\!=\!16$).}
+\label{fig:e1-landscape}
+\end{figure*}
 
 Artificial life has traditionally unfolded in spatial, chemical, or symbolic domains \citep{langton1989,bedau2000}. Yet sound---despite its rich physical structure and deep entanglement with biological perception---remains underexplored as a primary computational medium for life-like dynamics. Conchordal is a bio-acoustic instrument for generative composition that treats consonance as an ecological resource within a continuous psychoacoustic field inhabited by autonomous agents.
 
@@ -123,13 +130,6 @@ Beyond the classical Plomp--Levelt roughness model \citep{plomp1965} and Terhard
 DCC resonates with embodied music cognition \citep{leman2007} and predictive processing \citep{clark2013}, both of which ground perception in shared generative structures. DCC operationalises a similar principle: agents and listeners inhabit the same perceptual geometry.
 
 The present study evaluates whether such a system exhibits core artificial life properties. The psychoacoustic landscape and its attractor structure are established in \S2. Four experiments then test self-organization under environmental constraints (Experiment~1), selection mediated by resource dynamics (Experiment~2), synchronization through external forcing (Experiment~3), and hereditary adaptation through lineage-based pitch inheritance (Experiment~4).
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\textwidth]{experiments/plots/e1/paper_e1_landscape_scan_anchor220.pdf}
-\caption{Psychoacoustic landscape around 220\,Hz. (A)~Harmonicity $H_{01}$; (B)~roughness $R_{01}$; (C)~consonance field $C_{\text{field}}$; (D)~consonance density $C_{\text{density}}$. Grey lines: 0.5-oct grid; blue dashed: integer-ratio references. Peaks at simple ratios in $H$ and troughs in $R$ produce attractor structure in both consonance views. Reduced density outside $\pm 1$\,oct is a finite-order property ($N\!=\!16$).}
-\label{fig:e1-landscape}
-\end{figure*}
 
 \begin{figure*}[t]
 \centering
@@ -209,10 +209,7 @@ C_{\text{density}} = H_{01}(1 - R_{01}).
 
 This separation avoids conflating acceptance utility ($C_{\text{field}}$) with proposal density ($C_{\text{density}}$). Figure~\ref{fig:e1-landscape}C,D illustrates the resulting landscape for a single-anchor scan; both views exhibit attractor structure near simple integer ratios (2:1, 3:2, 4:3, 5:4), consistent with classical observations on consonance \citep{helmholtz1877,sethares1993}. No discrete scale was imposed; the attractors emerge solely from psychoacoustic structure.
 
-For bounded metabolic control, $C_{\text{field}}$ is passed through a sigmoid:
-\begin{equation}
-C_{\text{level01}} = \sigma\!\bigl(\beta(C_{\text{field}}-\theta)\bigr)\in[0,1], \quad (\beta,\theta)=(2,0).
-\end{equation}
+For bounded metabolic control, $C_{\text{field}}$ is passed through a sigmoid: $C_{\text{level01}} = \sigma\!\bigl(\beta(C_{\text{field}}-\theta)\bigr)\in[0,1]$, with $(\beta,\theta)=(2,0)$.
 
 \section{Agents and Dynamics}
 
@@ -235,19 +232,13 @@ where $c_b$ is basal cost, $c_a$ attack cost, $r_E$ recharge coefficient, and $I
 
 \subsection{Temporal Oscillation}
 
-Each agent contains a phase oscillator:
-
-\begin{equation}
-\dot{\phi_i} = \omega_i + \frac{K}{N}\sum_j \sin(\phi_j - \phi_i) + F(t).
-\end{equation}
-
-Here $K$ is coupling strength and $F(t)$ is an optional external forcing term (``kick''). Phase locking is quantified via the Kuramoto order parameter $R(t)$ \citep{kuramoto1984,strogatz2000} and phase-locking value (PLV) \citep{lachaux1999}.
+Each agent contains a phase oscillator $\dot{\phi_i} = \omega_i + (K/N)\sum_j \sin(\phi_j - \phi_i) + F(t)$, where $K$ is coupling strength and $F(t)$ is an optional external forcing term (``kick''). Phase locking is quantified via the Kuramoto order parameter $R(t)$ \citep{kuramoto1984,strogatz2000} and phase-locking value (PLV) \citep{lachaux1999}.
 
 The Kuramoto model realises the temporal axis of DCC: cortical oscillations entrain to periodic auditory stimuli \citep{lakatos2008,doelling2015}, and neural phase-locking predicts perceived rhythmic salience \citep{nozaradan2011}. Agent timing thus shares the coupling law hypothesised for cortical beat tracking \citep{large1999}.
 
 \section{Results}
 
-Table~\ref{tab:conditions} summarises the experimental conditions; each experiment activates a different subset of mechanisms so that its target property can be tested in isolation.
+Four experiments each isolate a different mechanism subset (Table~\ref{tab:conditions}).
 
 \begin{table}[t]
 \centering
@@ -272,7 +263,7 @@ Duration    & 100 rnds & 200 deaths & 40\,s & 4k deaths \\
 
 \subsection{Self-Organized Polyphony}
 
-Populations of 24 agents were simulated for 100 pitch-proposal rounds across 20 seeds per condition. Each run begins with a dissonance-seeking phase (score sign $= -1$, rounds 1--50) followed by a consonance-seeking phase (score sign $= +1$, rounds 51--100); the first 10 post-switch rounds are discarded as burn-in. Three conditions were compared: baseline, no hill-climb, and no repulsion.
+Each run begins with a dissonance-seeking phase (rounds 1--50) followed by a consonance-seeking phase (rounds 51--100); the first 10 post-switch rounds are discarded as burn-in. Three conditions were compared: baseline, no hill-climb, and no repulsion.
 
 \textbf{Diversity.} Unique pitch bins averaged $19.2 \pm 1.4$ (baseline) versus $13.1 \pm 1.3$ (no repulsion; Welch $t=14.5$, $p<10^{-13}$, Cohen's $d=4.6$). Mean nearest-neighbor distance was $0.57 \pm 0.05$\,st (baseline), dropping to $0.29 \pm 0.11$\,st under no-repulsion ($t=11.0$, $p<10^{-11}$, $d=3.5$), confirming pitch collapse.
 
@@ -282,7 +273,7 @@ These results show that hill-climbing enriches consonant interval structure, whi
 
 \subsection{Consonance as Selection Pressure}
 
-Experiments 2--4 increase population size to $N\!=\!32$. Each run maintained 32 agents within $\pm 1$ octave of a 220\,Hz anchor; dead agents were immediately respawned at new random positions. Runs continued until 200 deaths accumulated (1000 pooled lifetimes per condition across five seeds). Early consonance $C_{\mathrm{firstK}}$ (mean $C_{\text{level01}}$ over the first $K\!=\!20$ ticks) strongly predicted lifetime under baseline recharge. Seed-level analysis ($n\!=\!5$) yielded mean Pearson $r = 0.70 \pm 0.06$ (one-sample $t(4) = 24.5$, $p < 0.001$; range $0.63$--$0.80$). Pooled ($n\!=\!1000$): $r = 0.71$, Spearman $\rho_s = 0.45$, log-rank $p < 0.001$; median survival 372 vs.\ 339.
+Each run maintained agents within $\pm 1$ octave of the 220\,Hz anchor; dead agents were immediately respawned at random positions until 200 deaths accumulated (1000 pooled lifetimes per condition across five seeds). Early consonance $C_{\mathrm{firstK}}$ (mean $C_{\text{level01}}$ over the first $K\!=\!20$ ticks) strongly predicted lifetime under baseline recharge. Seed-level analysis ($n\!=\!5$) yielded mean Pearson $r = 0.70 \pm 0.06$ (one-sample $t(4) = 24.5$, $p < 0.001$; range $0.63$--$0.80$). Pooled ($n\!=\!1000$): $r = 0.71$, Spearman $\rho_s = 0.45$, log-rank $p < 0.001$; median survival 372 vs.\ 339.
 
 When recharge was disabled, seed-level mean $r = 0.03 \pm 0.07$, not significantly different from zero; the condition contrast was significant (Welch $t(7.1) = 17.6$, $p < 0.001$). Because agents do not move, early consonance is determined by initial pitch position; the recharge ablation confirms that the survival differential requires consonance-dependent energy replenishment, not merely positional coincidence. The survival advantage is an expected consequence of the consonance-dependent metabolic design; this experiment validates that the mechanism operates quantitatively as intended and that its removal cleanly eliminates the effect. Consonance thus functions as an ecological resource, generating selection pressure through the metabolic pathway.
 
@@ -297,7 +288,7 @@ When recharge was disabled, seed-level mean $r = 0.03 \pm 0.07$, not significant
 
 In Conchordal, consonance modulates metabolic energy, which determines vitality, which can scale the strength of Kuramoto phase coupling. This chain predicts---by design---that agents at consonant pitch positions should synchronize more readily to an external rhythm than those at dissonant positions. The following controlled assay validates that this consonance$\to$vitality$\to$coupling pathway operates as intended and isolates it from confounding dynamics.
 
-We test this with 32 agents whose pitches are assigned by stratified consonance sampling within $\pm 1$ octave of a 220\,Hz anchor (one pitch per equal-width consonance stratum). To isolate the consonance$\to$vitality$\to$coupling pathway, we use a simplified continuous energy model (omitting the attack-gated dynamics of \S3.2): $dE/dt = -c_b + r_E \cdot C_i$ ($c_b\!=\!0.05$/s, $r_E\!=\!0.1$/s---note the continuous-time units, distinct from the per-attack $r_E$ in \S3.2---, $E_{\mathrm{cap}}\!=\!1.0$). Vitality $v = \sqrt{E / E_{\mathrm{cap}}}$ scales coupling to a 2\,Hz external kick ($K_{\mathrm{base}}\!=\!3.0$; intrinsic frequency $1.8\!\cdot\!2\pi$\,rad/s, $\pm 2\%$ jitter). Three conditions: \emph{vitality} ($k_{\mathrm{eff},i} = K \cdot v_i$), \emph{uniform} ($k_{\mathrm{eff},i} = K \cdot \bar{v}$), and \emph{control} ($k_{\mathrm{eff}} = 0$); 40\,s runs, 20 seeds each.
+Agent pitches are assigned by stratified consonance sampling within $\pm 1$ octave of the anchor (one pitch per equal-width consonance stratum). To isolate the consonance$\to$vitality$\to$coupling pathway, we use a simplified continuous energy model (omitting the attack-gated dynamics of \S3.2): $dE/dt = -c_b + r_E \cdot C_i$ ($c_b\!=\!0.05$/s, $r_E\!=\!0.1$/s---note the continuous-time units, distinct from the per-attack $r_E$ in \S3.2---, $E_{\mathrm{cap}}\!=\!1.0$). Vitality $v = \sqrt{E / E_{\mathrm{cap}}}$ scales coupling to a 2\,Hz external kick ($K_{\mathrm{base}}\!=\!3.0$; intrinsic frequency $1.8\!\cdot\!2\pi$\,rad/s, $\pm 2\%$ jitter). Three conditions: \emph{vitality} ($k_{\mathrm{eff},i} = K \cdot v_i$), \emph{uniform} ($k_{\mathrm{eff},i} = K \cdot \bar{v}$), and \emph{control} ($k_{\mathrm{eff}} = 0$); 40\,s runs, 20 seeds each.
 
 Figure~\ref{fig:e5-entrainment}A shows the group mean PLV over time. Both vitality and uniform conditions synchronize above the control baseline. Figure~\ref{fig:e5-entrainment}B plots per-agent final PLV against consonance (using stratified pitch assignment to span the full consonance range): in the vitality condition, consonant agents achieve near-unity PLV while dissonant agents remain desynchronized, whereas the control condition shows no such gradient. Figure~\ref{fig:e5-entrainment}C summarizes the Pearson $r$(consonance, PLV) across all seeds. The vitality condition yields a strong positive correlation ($r = 0.75 \pm 0.09$), confirming that consonance position selectively modulates synchronization strength. The uniform condition, despite identical total coupling, shows near-zero correlation ($r \approx 0.0$), isolating the effect to per-agent vitality modulation rather than aggregate coupling magnitude. This experiment is a pathway-isolation assay: it validates one designed spectral-to-temporal bridge, not that rhythmic organization in the full runtime is determined by consonance alone.
 
@@ -308,7 +299,7 @@ Figure~\ref{fig:e5-entrainment}A shows the group mean PLV over time. Both vitali
 \label{fig:e5-entrainment}
 \end{figure*}
 
-\begin{figure*}[t]
+\begin{figure*}[!t]
 \centering
 \includegraphics[width=\textwidth]{experiments/plots/e6/paper_e6_figure.pdf}
 \caption{Hereditary adaptation (20 seeds $\times$ 2 conditions, 4{,}000 deaths each). (A)~Mean consonance $C_{\text{score}}$ over time (shaded: 95\% CI across seeds). (B)~Pitch distribution heatmap for heredity runs; grey lines mark consonant ratios. (C)~Final pitch distribution (semitones from anchor); heredity runs concentrate near consonant ratios while random runs remain dispersed.}
@@ -346,7 +337,7 @@ A potential objection is that maximal consonance (unison) is ecologically optima
 \section{Limitations and Future Work}
 \label{sec:limits}
 
-All in-simulation metrics ($C_{\text{score}}$, $C_{\mathrm{firstK}}$, PLV) are derived from the same psychoacoustic model that defines the fitness landscape. The independent ratio-complexity check reported in \S\ref{sec:e6} partially mitigates this circularity, but behavioural listening tests remain necessary for perceptual validation: (a)~emergent pitch configurations should receive higher consonance ratings than ablated controls; (b)~cortical entrainment (frequency-tagged EEG) to agent-generated rhythms should exceed non-DCC baselines. Until such validation is performed, the ecological--aesthetic duality remains a structural prediction.
+All in-simulation metrics ($C_{\text{score}}$, $C_{\mathrm{firstK}}$, PLV) are derived from the same psychoacoustic model that defines the fitness landscape. The independent ratio-complexity check reported in the Hereditary Adaptation subsection partially mitigates this circularity, but behavioural listening tests remain necessary for perceptual validation: (a)~emergent pitch configurations should receive higher consonance ratings than ablated controls; (b)~cortical entrainment (frequency-tagged EEG) to agent-generated rhythms should exceed non-DCC baselines. Until such validation is performed, the ecological--aesthetic duality remains a structural prediction.
 
 The landscape topology is anchor-invariant: repeating the Experiment~1 scan at 110 and 440\,Hz shifts peak positions by $<2$ cents. However, the bilinear consonance core (\ref{eq:consonance-core}) coefficients $(a,b,c,d)$ have not been subjected to systematic sensitivity analysis. Because the weighting of harmonicity versus roughness varies across listeners and cultures \citep{mcdermott2016}, the present coefficients implicitly encode a Western-leaning profile; a parametric sweep would clarify robustness and enable non-Western perceptual weightings.
 

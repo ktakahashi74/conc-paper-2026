@@ -4759,9 +4759,9 @@ fn plot_e6_integration_figure(
         csv_data,
     )?;
 
-    // Render 4-line plot — single-column, landscape aspect ratio
+    // Render 4-line plot — single-column, wide landscape aspect ratio
     let fig_path = out_dir.join("paper_e6_integration_figure.svg");
-    let root = bitmap_root(&fig_path, (1400, 600)).into_drawing_area();
+    let root = bitmap_root(&fig_path, (1400, 700)).into_drawing_area();
     root.fill(&WHITE)?;
 
     let x_max = all_series
@@ -4773,9 +4773,10 @@ fn plot_e6_integration_figure(
     let y_hi = 0.65f32;
 
     let mut chart = ChartBuilder::on(&root)
-        .margin(12)
-        .x_label_area_size(40)
-        .y_label_area_size(55)
+        .margin(10)
+        .margin_bottom(5)
+        .x_label_area_size(65)
+        .y_label_area_size(80)
         .build_cartesian_2d(0.0f32..x_max, y_lo..y_hi)?;
 
     chart
@@ -4786,11 +4787,14 @@ fn plot_e6_integration_figure(
             let k = (*v / 1000.0).round() as i64;
             format!("{}k", k)
         })
-        .label_style(("sans-serif", 26).into_font())
-        .axis_desc_style(("sans-serif", 28).into_font())
+        .label_style(("sans-serif", 36).into_font())
+        .axis_desc_style(("sans-serif", 38).into_font())
         .draw()?;
 
-    for (label, series, color) in &all_series {
+    // Draw in top-to-bottom order so legend matches visual stacking
+    let draw_order: Vec<usize> = vec![1, 0, 3, 2]; // heredity+hill, heredity, random+hill, random
+    for &idx in &draw_order {
+        let (label, series, color) = &all_series[idx];
         if series.is_empty() {
             continue;
         }
@@ -4819,10 +4823,10 @@ fn plot_e6_integration_figure(
 
     chart
         .configure_series_labels()
-        .position(SeriesLabelPosition::UpperLeft)
+        .position(SeriesLabelPosition::LowerRight)
         .background_style(WHITE.mix(0.85))
         .border_style(BLACK)
-        .label_font(("sans-serif", 22).into_font())
+        .label_font(("sans-serif", 32).into_font())
         .draw()?;
 
     root.present()?;
@@ -5496,7 +5500,7 @@ fn render_e1_plot(
 
     let y01_max = 1.05f32;
 
-    let root = bitmap_root(out_path, (2200, 1500)).into_drawing_area();
+    let root = bitmap_root(out_path, (2200, 1200)).into_drawing_area();
     root.fill(&WHITE)?;
     let panels = root.split_evenly((4, 1));
 
