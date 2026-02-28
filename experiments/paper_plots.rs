@@ -215,12 +215,27 @@ const E3_FIRST_K: usize = 20;
 const E3_POP_SIZE: usize = 32;
 const E3_MIN_DEATHS: usize = 200;
 const E3_STEPS_CAP: usize = 6000;
-const E3_SEEDS: [u64; 5] = [
+const E3_SEEDS: [u64; 20] = [
     0xC0FFEE_u64 + 30,
     0xC0FFEE_u64 + 31,
     0xC0FFEE_u64 + 32,
     0xC0FFEE_u64 + 33,
     0xC0FFEE_u64 + 34,
+    0xC0FFEE_u64 + 35,
+    0xC0FFEE_u64 + 36,
+    0xC0FFEE_u64 + 37,
+    0xC0FFEE_u64 + 38,
+    0xC0FFEE_u64 + 39,
+    0xC0FFEE_u64 + 40,
+    0xC0FFEE_u64 + 41,
+    0xC0FFEE_u64 + 42,
+    0xC0FFEE_u64 + 43,
+    0xC0FFEE_u64 + 44,
+    0xC0FFEE_u64 + 45,
+    0xC0FFEE_u64 + 46,
+    0xC0FFEE_u64 + 47,
+    0xC0FFEE_u64 + 48,
+    0xC0FFEE_u64 + 49,
 ];
 
 // ── E5: Vitality-Coupled Entrainment ─────────────────────────────
@@ -3639,21 +3654,58 @@ fn plot_e3_metabolic_selection(
             (t, df, p)
         }
 
-        let (base_mean, base_sd) = mean_sd(&baseline_rs);
-        let (nore_mean, nore_sd) = mean_sd(&norecharge_rs);
-        let (t_one, df_one, p_one) = one_sample_t(&baseline_rs, 0.0);
-        let (t_welch, df_welch, p_welch) = welch_t(&baseline_rs, &norecharge_rs);
+        // Fisher z transform for averaging correlation coefficients
+        fn fisher_z(r: f64) -> f64 {
+            // arctanh, clamped to avoid ±inf
+            let r_clamped = r.clamp(-0.9999, 0.9999);
+            0.5 * ((1.0 + r_clamped) / (1.0 - r_clamped)).ln()
+        }
+        fn fisher_z_inv(z: f64) -> f64 {
+            z.tanh()
+        }
+
+        let baseline_zs: Vec<f64> = baseline_rs.iter().map(|&r| fisher_z(r)).collect();
+        let norecharge_zs: Vec<f64> = norecharge_rs.iter().map(|&r| fisher_z(r)).collect();
+
+        let (base_z_mean, base_z_sd) = mean_sd(&baseline_zs);
+        let (nore_z_mean, nore_z_sd) = mean_sd(&norecharge_zs);
+        let base_r_mean = fisher_z_inv(base_z_mean);
+        let nore_r_mean = fisher_z_inv(nore_z_mean);
+
+        // Raw r stats for reference
+        let (base_raw_mean, base_raw_sd) = mean_sd(&baseline_rs);
+        let (nore_raw_mean, nore_raw_sd) = mean_sd(&norecharge_rs);
+
+        // One-sample t on Fisher z (H0: z = 0, i.e., r = 0)
+        let (t_one, df_one, p_one) = one_sample_t(&baseline_zs, 0.0);
+        // Welch t on Fisher z (baseline vs norecharge)
+        let (t_welch, df_welch, p_welch) = welch_t(&baseline_zs, &norecharge_zs);
+
+        // Range of raw r
+        let base_r_min = baseline_rs.iter().cloned().fold(f64::INFINITY, f64::min);
+        let base_r_max = baseline_rs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+        // CI95 for Fisher z mean, back-transformed
+        let base_z_ci95 = 1.96 * base_z_sd / (baseline_zs.len() as f64).sqrt();
+        let base_r_ci_lo = fisher_z_inv(base_z_mean - base_z_ci95);
+        let base_r_ci_hi = fisher_z_inv(base_z_mean + base_z_ci95);
 
         let mut stats_text = String::new();
-        stats_text.push_str("=== E3 Seed-Level Statistics ===\n\n");
+        stats_text.push_str("=== E3 Seed-Level Statistics (Fisher z) ===\n\n");
         stats_text.push_str(&format!(
-            "Baseline (n={}): mean Pearson r = {:.3} ± {:.3}\n",
-            baseline_rs.len(),
-            base_mean,
-            base_sd
+            "Baseline (n={}): mean r = {:.3} (Fisher z mean={:.4}, SD={:.4})\n",
+            baseline_rs.len(), base_r_mean, base_z_mean, base_z_sd
         ));
         stats_text.push_str(&format!(
-            "  per-seed values: {}\n",
+            "  raw r: mean={:.3} ± {:.3}, range [{:.2}, {:.2}]\n",
+            base_raw_mean, base_raw_sd, base_r_min, base_r_max
+        ));
+        stats_text.push_str(&format!(
+            "  Fisher z 95% CI for r: [{:.2}, {:.2}]\n",
+            base_r_ci_lo, base_r_ci_hi
+        ));
+        stats_text.push_str(&format!(
+            "  per-seed r: {}\n",
             baseline_rs
                 .iter()
                 .map(|r| format!("{:.3}", r))
@@ -3661,17 +3713,19 @@ fn plot_e3_metabolic_selection(
                 .join(", ")
         ));
         stats_text.push_str(&format!(
-            "  one-sample t({}) = {:.3}, p = {:.6} (H0: r = 0)\n\n",
+            "  one-sample t({}) = {:.3}, p = {:.6} (H0: z = 0)\n\n",
             df_one, t_one, p_one
         ));
         stats_text.push_str(&format!(
-            "NoRecharge (n={}): mean Pearson r = {:.3} ± {:.3}\n",
-            norecharge_rs.len(),
-            nore_mean,
-            nore_sd
+            "NoRecharge (n={}): mean r = {:.3} (Fisher z mean={:.4}, SD={:.4})\n",
+            norecharge_rs.len(), nore_r_mean, nore_z_mean, nore_z_sd
         ));
         stats_text.push_str(&format!(
-            "  per-seed values: {}\n\n",
+            "  raw r: mean={:.3} ± {:.3}\n",
+            nore_raw_mean, nore_raw_sd
+        ));
+        stats_text.push_str(&format!(
+            "  per-seed r: {}\n\n",
             norecharge_rs
                 .iter()
                 .map(|r| format!("{:.3}", r))
@@ -3682,7 +3736,7 @@ fn plot_e3_metabolic_selection(
             "Welch two-sample t({:.1}) = {:.3}, p = {:.6}\n",
             df_welch, t_welch, p_welch
         ));
-        stats_text.push_str("  (Baseline vs NoRecharge seed-level Pearson r)\n");
+        stats_text.push_str("  (Baseline vs NoRecharge, Fisher z)\n");
 
         write_with_log(
             out_dir.join("paper_e3_seed_level_stats.txt"),

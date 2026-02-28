@@ -216,7 +216,7 @@ For bounded metabolic control, $C_{\text{field}}$ is passed through a sigmoid: $
 \subsection{Pitch Adaptation}
 \label{sec:pitch-adapt}
 
-Each agent proposes local pitch perturbations of magnitude $\lambda=0.15$\,st sampled within a bounded neighborhood in log-frequency space. A hill-climbing acceptance rule evaluates candidate positions via $C_{\text{field}}$ and a density-based repulsion term. Repulsion is computed through a Gaussian kernel ($\sigma=0.06$\,st) over pitch distances, discouraging collapse to identical frequencies. Proposals are accepted stochastically with a temperature that decays exponentially ($T_0=0.05$, $\tau=30$\,steps), annealing toward greedy hill-climbing.
+Each agent proposes local pitch perturbations of magnitude $\lambda=0.15$\,st sampled within a bounded neighborhood in log-frequency space. A hill-climbing acceptance rule evaluates candidate positions via $C_{\text{field}}$ and a density-based repulsion term. Repulsion is computed through a Gaussian kernel ($\sigma=0.06$\,st) over pitch distances, discouraging collapse to identical frequencies. Proposals are accepted with probability $\min\!\bigl(1,\,\exp\bigl((\Delta S)/T\bigr)\bigr)$ where $\Delta S = S_{\text{new}} - S_{\text{old}}$ is the change in the combined score ($C_{\text{field}}$ minus repulsion) and $T$ decays exponentially ($T_0=0.05$, $\tau=30$\,steps), annealing toward greedy hill-climbing.
 
 Ablation conditions remove either the hill-climbing mechanism or the repulsion term.
 
@@ -228,7 +228,7 @@ Agents possess energy $E$. Dynamics follow:
 E' = E - c_b \Delta t - c_a I_{\text{attack}} + r_E \cdot C_{\text{level01}} \cdot I_{\text{attack}},
 \end{equation}
 
-where $c_b$ is basal cost, $c_a$ attack cost, $r_E$ recharge coefficient, and $I_{\text{attack}}\in\{0,1\}$ indicates a sound-onset event (triggered by phase-gated articulation). Agents start with $E=1.0$ and perish when $E\leq 0$. We set $c_b=0.5$/s, $c_a=0.02$ per event, and $r_E=0.5$ per attack; time advances in hops of $512$ samples at $48\,$kHz ($\Delta t\approx 10.7\,$ms). In the baseline condition, recharge scales with consonance ($r_E=0.5$); in the ablation condition, $r_E=0$.
+where $c_b$ is basal cost, $c_a$ attack cost, $r_E$ recharge coefficient, and $I_{\text{attack}}\in\{0,1\}$ indicates a sound-onset event ($I_{\text{attack}}=1$ when the agent's phase oscillator crosses zero with $E>0$). Agents start with $E=1.0$ and perish when $E\leq 0$. We set $c_b=0.5$/s, $c_a=0.02$ per event, and $r_E=0.5$ per attack; time advances in hops of $512$ samples at $48\,$kHz ($\Delta t\approx 10.7\,$ms). In the baseline condition, recharge scales with consonance ($r_E=0.5$); in the ablation condition, $r_E=0$.
 
 \subsection{Temporal Oscillation}
 
@@ -250,7 +250,7 @@ Four experiments each isolate a different mechanism subset (Table~\ref{tab:condi
  & \textbf{Exp.\,1} & \textbf{Exp.\,2} & \textbf{Exp.\,3} & \textbf{Exp.\,4} \\
 \midrule
 $N$ agents  & 24  & 32  & 32  & 32 \\
-Seeds       & 20  & 5   & 20  & 20 \\
+Seeds       & 20  & 20  & 20  & 20 \\
 Hill-climb  & abl.\ & \texttimes & \texttimes & \texttimes \\
 Repulsion   & abl.\ & \texttimes & \texttimes & \checkmark \\
 Metabolism  & \texttimes & abl.\ & simpl.\ & \checkmark \\
@@ -273,14 +273,14 @@ These results show that hill-climbing enriches consonant interval structure, whi
 
 \subsection{Consonance as Selection Pressure}
 
-Each run maintained agents within $\pm 1$ octave of the 220\,Hz anchor; dead agents were immediately respawned at random positions until 200 deaths accumulated (1000 pooled lifetimes per condition across five seeds). Early consonance $C_{\mathrm{firstK}}$ (mean $C_{\text{level01}}$ over the first $K\!=\!20$ ticks) strongly predicted lifetime under baseline recharge (Figure~\ref{fig:e3-selection}). Seed-level analysis ($n\!=\!5$) yielded mean Pearson $r = 0.70 \pm 0.06$ (one-sample $t(4) = 24.5$, $p < 0.001$; range $0.63$--$0.80$). Pooled ($n\!=\!1000$): $r = 0.71$, Spearman $\rho_s = 0.45$, log-rank $p < 0.001$; median survival 372 vs.\ 339.
+Each run maintained agents within $\pm 1$ octave of the 220\,Hz anchor; dead agents were immediately respawned at random positions until 200 deaths accumulated ($\approx$4{,}000 pooled lifetimes per condition across 20 seeds). Early consonance $C_{\mathrm{firstK}}$ (mean $C_{\text{level01}}$ over the first $K\!=\!20$ ticks) strongly predicted lifetime under baseline recharge (Figure~\ref{fig:e3-selection}). Seed-level analysis ($n\!=\!20$, Fisher $z$) yielded mean Pearson $r = 0.73$ (95\% CI $[0.69, 0.76]$; one-sample $t(19) = 24.6$, $p < 0.001$; range $0.56$--$0.86$). Pooled ($n\!\approx\!4{,}000$): $r = 0.73$, Spearman $\rho_s = 0.45$, log-rank $p < 0.001$; median survival 371 vs.\ 339.
 
-When recharge was disabled, seed-level mean $r = 0.03 \pm 0.07$, not significantly different from zero; the condition contrast was significant (Welch $t(7.1) = 17.6$, $p < 0.001$). Because pitch adaptation is disabled in this experiment (Table~\ref{tab:conditions}), agents do not move, so early consonance is determined by initial pitch position; the recharge ablation confirms that the survival differential requires consonance-dependent energy replenishment, not merely positional coincidence. The survival advantage is an expected consequence of the consonance-dependent metabolic design; this experiment validates that the mechanism operates quantitatively as intended and that its removal cleanly eliminates the effect. Consonance thus functions as an ecological resource, generating selection pressure through the metabolic pathway.
+When recharge was disabled, seed-level mean $r = 0.003 \pm 0.08$, not significantly different from zero; the condition contrast was significant (Welch $t(27.0) = 22.2$, $p < 0.001$, Fisher $z$). Because pitch adaptation is disabled in this experiment (Table~\ref{tab:conditions}), agents do not move, so early consonance is determined by initial pitch position; the recharge ablation confirms that the survival differential requires consonance-dependent energy replenishment, not merely positional coincidence. The survival advantage is an expected consequence of the consonance-dependent metabolic design; this experiment validates that the mechanism operates quantitatively as intended and that its removal cleanly eliminates the effect. Consonance thus functions as an ecological resource, generating selection pressure through the metabolic pathway.
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{experiments/plots/e3/paper_e3_figure4.pdf}
-\caption{Consonance as selection pressure (pooled, $n=1000$ agents per condition). (A,\,B) Kaplan--Meier survival curves split by early consonance $C_{\mathrm{firstK}}$ (median split). (A) Baseline recharge yields a pronounced survival advantage for high-consonance agents (median 372 vs.\ 339 steps; log-rank $p<0.001$). (B) Removing recharge eliminates the effect (median 199 vs.\ 197; $p=0.330$). (C,\,D) Scatter of $C_{\mathrm{firstK}}$ vs.\ lifetime. (C) Baseline: Pearson $r=0.71$, Spearman $\rho_s=0.45$. (D) No recharge: $r\approx0.03$, no association.}
+\caption{Consonance as selection pressure (pooled, $n\!\approx\!4{,}000$ agents per condition). (A,\,B) Kaplan--Meier survival curves split by early consonance $C_{\mathrm{firstK}}$ (median split). (A) Baseline recharge yields a pronounced survival advantage for high-consonance agents (median 371 vs.\ 339 steps; log-rank $p<0.001$). (B) Removing recharge eliminates the effect. (C,\,D) Scatter of $C_{\mathrm{firstK}}$ vs.\ lifetime. (C) Baseline: Pearson $r=0.73$, Spearman $\rho_s=0.45$. (D) No recharge: $r\approx0.01$, no association.}
 \label{fig:e3-selection}
 \end{figure*}
 
@@ -317,7 +317,7 @@ Figure~\ref{fig:e6-hereditary} shows that heredity runs produce a statistically 
 
 \subsection{Integrated Interpretation}
 
-The four experiments form a cumulative argument. Self-organized polyphony (Exp.~1) shows that the landscape admits structured configurations beyond trivial collapse; metabolic selection (Exp.~2) validates that consonance-dependent recharge produces quantifiable survival differentials; entrainment gating (Exp.~3) validates the consonance$\to$vitality$\to$coupling pathway linking the spectral and temporal axes; and hereditary adaptation (Exp.~4) shows that selection pressure, once established, can accumulate across generations via inheritance alone. Each experiment isolates one mechanism; together they show that a psychoacoustic landscape can sustain the core ingredients of an artificial ecology without symbolic encoding. As a preliminary integration test, we ran the Experiment~4 protocol under four conditions crossing heredity/random respawn with hill-climbing on/off (20 seeds each). Figure~\ref{fig:e6-integration} shows that combining heredity with hill-climbing yields $C_{\text{score}} = 0.53$, exceeding heredity-only ($0.19$), hill-only ($0.11$), and random ($0.06$). A seed-level interaction contrast (HH $-$ H $-$ RH $+$ R; $n\!=\!20$; mean $0.30$, 95\% CI $[0.20, 0.39]$; $p < 0.001$, sign-flip permutation) confirmed that the combination exceeds the sum of individual effects. A systematic factorial study is left to future work.
+The four experiments form a cumulative argument. Self-organized polyphony (Exp.~1) shows that the landscape admits structured configurations beyond trivial collapse; metabolic selection (Exp.~2) validates that consonance-dependent recharge produces quantifiable survival differentials; entrainment gating (Exp.~3) validates the consonance$\to$vitality$\to$coupling pathway linking the spectral and temporal axes; and hereditary adaptation (Exp.~4) shows that selection pressure, once established, can accumulate across generations via inheritance alone. Each experiment isolates one mechanism; together they show that a psychoacoustic landscape can sustain the core ingredients of an artificial ecology without symbolic encoding. As a preliminary integration test, we ran the Experiment~4 protocol under four conditions crossing heredity/random respawn with hill-climbing on/off (20 seeds each). Figure~\ref{fig:e6-integration} shows that combining heredity with hill-climbing yields $C_{\text{score}} = 0.53$, exceeding heredity-only ($0.19$), hill-only ($0.11$), and random ($0.06$). A seed-level interaction contrast (HH $-$ H $-$ RH $+$ R; $n\!=\!20$; mean $0.30$, 95\% CI $[0.20, 0.39]$; $p < 0.001$, sign-flip permutation) confirmed that the combination exceeds the sum of individual effects. All conditions terminate at 4{,}000 deaths; step count provides finer temporal resolution for the trajectory. A systematic factorial study is left to future work.
 
 \begin{figure}[t]
 \centering
