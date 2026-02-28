@@ -26,10 +26,10 @@ justfile                  Build recipes
 ## Dependencies
 
 - **Rust** (edition 2024)
-- **Conchordal** source: <https://github.com/conchordal/conchordal>
+- **Conchordal** source: <https://github.com/ktakahashi74/conchordal>
   Clone to a sibling directory so that `../conchordal/` is accessible:
   ```bash
-  git clone https://github.com/conchordal/conchordal.git ../conchordal
+  git clone https://github.com/ktakahashi74/conchordal.git ../conchordal
   ```
 - **pdflatex** with standard packages (natbib, hyperref, booktabs, amsmath, cleveref)
 - **rsvg-convert** or **inkscape** for SVG-to-PDF conversion

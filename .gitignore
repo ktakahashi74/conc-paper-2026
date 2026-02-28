@@ -12,10 +12,6 @@
 *.synctex.gz
 *.synctex(busy)
 
-# PDF output
-*.pdf
-!supplementary.pdf
-
 # Rust build
 target/
 
@@ -29,14 +25,13 @@ perf.data.old
 .#*
 
 # Local symlinks
-plots
+/plots
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Paper generator outputs
-experiments/plots/
+# Paper generator lock/archives
 experiments/.paper_plots.lock
 experiments/*.tar
 experiments/*.tar.gz

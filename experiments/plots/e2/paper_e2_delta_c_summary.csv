@@ -1,0 +1,5 @@
+# pre_step=9 pre_label=burnin_end shift_enabled=false
+cond,mean_init,std_init,mean_burnin_end,std_burnin_end,mean_post,std_post,mean_delta_burnin_end,std_delta_burnin_end,mean_delta_post,std_delta_post
+baseline,0.619826,0.062538,0.573516,0.069244,0.640316,0.060308,-0.046310,0.097432,0.020490,0.088915
+nohill,0.619826,0.062538,0.628086,0.073403,0.623111,0.053699,0.008260,0.070776,0.003285,0.075775
+norep,0.619826,0.062538,0.551170,0.089711,0.654694,0.057356,-0.068655,0.085921,0.034869,0.079127

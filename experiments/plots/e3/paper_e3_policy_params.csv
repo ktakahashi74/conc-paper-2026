@@ -1,0 +1,3 @@
+condition,dt_sec,basal_cost_per_sec,action_cost_per_attack,recharge_per_attack
+baseline,0.010667,0.500000,0.020000,0.500000
+norecharge,0.010667,0.500000,0.020000,0.000000
