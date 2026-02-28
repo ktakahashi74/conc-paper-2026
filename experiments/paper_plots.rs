@@ -404,23 +404,35 @@ enum Experiment {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum E2PhaseMode {
     DissonanceThenConsonance,
+    ConsonanceOnly,
 }
 
 impl E2PhaseMode {
     fn label(self) -> &'static str {
-        "dissonance_then_consonance"
+        match self {
+            Self::DissonanceThenConsonance => "dissonance_then_consonance",
+            Self::ConsonanceOnly => "consonance_only",
+        }
     }
 
     fn score_sign(self, step: usize) -> f32 {
-        if step < E2_PHASE_SWITCH_STEP {
-            -1.0
-        } else {
-            1.0
+        match self {
+            Self::DissonanceThenConsonance => {
+                if step < E2_PHASE_SWITCH_STEP {
+                    -1.0
+                } else {
+                    1.0
+                }
+            }
+            Self::ConsonanceOnly => 1.0,
         }
     }
 
     fn switch_step(self) -> Option<usize> {
-        Some(E2_PHASE_SWITCH_STEP)
+        match self {
+            Self::DissonanceThenConsonance => Some(E2_PHASE_SWITCH_STEP),
+            Self::ConsonanceOnly => None,
+        }
     }
 }
 
@@ -2417,6 +2429,199 @@ fn plot_e2_emergent_harmony(
             ));
         }
         write_with_log(out_dir.join("paper_e2_independent_eval.txt"), eval_text)?;
+    }
+
+    // ── Consonance-only control (supplementary) ──
+    if phase_mode == E2PhaseMode::DissonanceThenConsonance {
+        eprintln!("  Running consonance-only control (baseline × {} seeds)...", E2_SEEDS.len());
+        let (co_runs, co_stats) = e2_seed_sweep(
+            space,
+            anchor_hz,
+            E2Condition::Baseline,
+            E2_STEP_SEMITONES,
+            E2PhaseMode::ConsonanceOnly,
+        );
+
+        // Diversity metrics
+        let co_diversity: Vec<DiversityRow> = diversity_rows("consonance_only", &co_runs);
+        let cur_diversity: Vec<DiversityRow> = diversity_rows("curriculum", &baseline_runs);
+
+        fn div_summary(rows: &[DiversityRow]) -> (f32, f32, f32, f32) {
+            let bins: Vec<f32> = rows.iter().map(|r| r.metrics.unique_bins as f32).collect();
+            let nns: Vec<f32> = rows.iter().map(|r| r.metrics.nn_mean).collect();
+            let (mb, sb) = mean_std_scalar(&bins);
+            let (mn, sn) = mean_std_scalar(&nns);
+            (mb, sb, mn, sn)
+        }
+
+        let (co_bins_m, co_bins_s, co_nn_m, co_nn_s) = div_summary(&co_diversity);
+        let (cur_bins_m, cur_bins_s, cur_nn_m, cur_nn_s) = div_summary(&cur_diversity);
+
+        // C_score (post burn-in mean for consonance-only; since no phase switch,
+        // use last half of rounds as the "post" region to parallel curriculum analysis)
+        let half = E2_SWEEPS / 2;
+        let burn = E2_BURN_IN;
+        fn post_mean_c(runs: &[E2Run], start: usize, burn: usize) -> Vec<f32> {
+            runs.iter()
+                .map(|r| {
+                    let from = start + burn;
+                    let slice = &r.mean_c_score_chosen_loo_series[from..];
+                    if slice.is_empty() {
+                        0.0
+                    } else {
+                        slice.iter().sum::<f32>() / slice.len() as f32
+                    }
+                })
+                .collect()
+        }
+        let co_c_scores = post_mean_c(&co_runs, 0, burn);
+        let cur_c_scores = post_mean_c(&baseline_runs, half, burn);
+        let (co_c_m, co_c_s) = mean_std_scalar(&co_c_scores);
+        let (cur_c_m, cur_c_s) = mean_std_scalar(&cur_c_scores);
+
+        // Interval entropy (from final positions)
+        fn entropy_from_runs(runs: &[E2Run]) -> Vec<f32> {
+            runs.iter()
+                .map(|r| {
+                    let bin_st = 0.05f32;
+                    let n_bins = (12.0 / bin_st).round() as usize;
+                    let mut hist = vec![0u32; n_bins];
+                    for &st in &r.final_semitones {
+                        for &st2 in &r.final_semitones {
+                            let d = (st - st2).abs();
+                            if d < 1e-6 { continue; }
+                            let d_mod = d % 12.0;
+                            let idx = (d_mod / bin_st).round() as usize;
+                            if idx < n_bins {
+                                hist[idx] += 1;
+                            }
+                        }
+                    }
+                    let total: u32 = hist.iter().sum();
+                    if total == 0 { return 0.0; }
+                    let mut h = 0.0f32;
+                    for &c in &hist {
+                        if c > 0 {
+                            let p = c as f32 / total as f32;
+                            h -= p * p.ln();
+                        }
+                    }
+                    h
+                })
+                .collect()
+        }
+        let co_ent = entropy_from_runs(&co_runs);
+        let cur_ent = entropy_from_runs(&baseline_runs);
+        let (co_ent_m, co_ent_s) = mean_std_scalar(&co_ent);
+        let (cur_ent_m, cur_ent_s) = mean_std_scalar(&cur_ent);
+
+        // Welch t-tests
+        fn welch_t(a: &[f32], b: &[f32]) -> (f32, f32) {
+            let na = a.len() as f32;
+            let nb = b.len() as f32;
+            let (ma, sa) = mean_std_scalar(a);
+            let (mb, sb) = mean_std_scalar(b);
+            let va = sa * sa / na;
+            let vb = sb * sb / nb;
+            let denom = (va + vb).sqrt();
+            if denom < 1e-15 { return (0.0, 1.0); }
+            let t = (ma - mb) / denom;
+            // df via Welch-Satterthwaite
+            let df = (va + vb).powi(2) / (va * va / (na - 1.0) + vb * vb / (nb - 1.0));
+            // Approximate two-tailed p (conservative: use df as f64 for betacf)
+            let t_abs = t.abs() as f64;
+            let df64 = df as f64;
+            let x = df64 / (df64 + t_abs * t_abs);
+            // Regularized incomplete beta via continued fraction
+            fn ln_gamma(x: f64) -> f64 {
+                let coeffs = [76.18009172947146, -86.50532032941677, 24.01409824083091,
+                    -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+                let mut y = x;
+                let tmp = x + 5.5 - (x + 0.5) * (x + 5.5).ln();
+                let mut ser = 1.000000000190015_f64;
+                for &c in &coeffs { y += 1.0; ser += c / y; }
+                -tmp + (2.5066282746310005 * ser / x).ln()
+            }
+            fn betacf(a: f64, b: f64, x: f64) -> f64 {
+                let (fpmin, eps) = (1e-30, 3e-12);
+                let (qab, qap, qam) = (a + b, a + 1.0, a - 1.0);
+                let mut c = 1.0_f64;
+                let mut d = (1.0 - qab * x / qap).recip();
+                if d.abs() < fpmin { d = fpmin; }
+                let mut h = d;
+                for m in 1..=200 {
+                    let mf = m as f64;
+                    let aa = mf * (b - mf) * x / ((qam + 2.0 * mf) * (a + 2.0 * mf));
+                    d = 1.0 + aa * d; if d.abs() < fpmin { d = fpmin; }
+                    c = 1.0 + aa / c; if c.abs() < fpmin { c = fpmin; }
+                    d = d.recip(); h *= d * c;
+                    let aa = -(a + mf) * (qab + mf) * x / ((a + 2.0 * mf) * (qap + 2.0 * mf));
+                    d = 1.0 + aa * d; if d.abs() < fpmin { d = fpmin; }
+                    c = 1.0 + aa / c; if c.abs() < fpmin { c = fpmin; }
+                    d = d.recip(); let delta = d * c; h *= delta;
+                    if (delta - 1.0).abs() < eps { break; }
+                }
+                h
+            }
+            fn rib(a: f64, b: f64, x: f64) -> f64 {
+                if x <= 0.0 { return 0.0; }
+                if x >= 1.0 { return 1.0; }
+                let bt = (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b)
+                    + a * x.ln() + b * (1.0 - x).ln()).exp();
+                if x < (a + 1.0) / (a + b + 2.0) {
+                    bt * betacf(a, b, x) / a
+                } else {
+                    1.0 - bt * betacf(b, a, 1.0 - x) / b
+                }
+            }
+            let p = rib(df64 / 2.0, 0.5, x) as f32;
+            (t, p)
+        }
+
+        let bins_vec_co: Vec<f32> = co_diversity.iter().map(|r| r.metrics.unique_bins as f32).collect();
+        let bins_vec_cur: Vec<f32> = cur_diversity.iter().map(|r| r.metrics.unique_bins as f32).collect();
+        let nn_vec_co: Vec<f32> = co_diversity.iter().map(|r| r.metrics.nn_mean).collect();
+        let nn_vec_cur: Vec<f32> = cur_diversity.iter().map(|r| r.metrics.nn_mean).collect();
+        let (t_bins, p_bins) = welch_t(&bins_vec_co, &bins_vec_cur);
+        let (t_nn, p_nn) = welch_t(&nn_vec_co, &nn_vec_cur);
+        let (t_c, p_c) = welch_t(&co_c_scores, &cur_c_scores);
+        let (t_ent, p_ent) = welch_t(&co_ent, &cur_ent);
+
+        let report = format!(
+            "Consonance-Only vs Curriculum Control (Experiment 1, baseline condition)\n\
+             ======================================================================\n\
+             n_seeds = {}\n\n\
+             Metric                  Curriculum         Consonance-Only    Welch t     p\n\
+             ---------------------   ----------------   ----------------   --------   ------\n\
+             C_score (post)          {:.3} ± {:.3}      {:.3} ± {:.3}      {:.2}      {:.4}\n\
+             Unique pitch bins       {:.1} ± {:.1}      {:.1} ± {:.1}      {:.2}      {:.4}\n\
+             NN distance (st)        {:.3} ± {:.3}      {:.3} ± {:.3}      {:.2}      {:.4}\n\
+             Interval entropy        {:.3} ± {:.3}      {:.3} ± {:.3}      {:.2}      {:.4}\n",
+            E2_SEEDS.len(),
+            cur_c_m, cur_c_s, co_c_m, co_c_s, t_c, p_c,
+            cur_bins_m, cur_bins_s, co_bins_m, co_bins_s, t_bins, p_bins,
+            cur_nn_m, cur_nn_s, co_nn_m, co_nn_s, t_nn, p_nn,
+            cur_ent_m, cur_ent_s, co_ent_m, co_ent_s, t_ent, p_ent,
+        );
+
+        // Also output time series for consonance-only
+        let co_ci95_c = std_series_to_ci95(&co_stats.std_c_score_loo, co_stats.n);
+        let mut ts_csv = String::from("step,curriculum_mean,curriculum_ci95,consonly_mean,consonly_ci95\n");
+        let len = co_stats.mean_c_score_loo.len().min(baseline_stats.mean_c_score_loo.len());
+        for i in 0..len {
+            ts_csv.push_str(&format!(
+                "{},{:.6},{:.6},{:.6},{:.6}\n",
+                i,
+                baseline_stats.mean_c_score_loo[i],
+                baseline_ci95_c[i],
+                co_stats.mean_c_score_loo[i],
+                co_ci95_c[i],
+            ));
+        }
+
+        write_with_log(out_dir.join("paper_e2_consonance_only_comparison.txt"), report)?;
+        write_with_log(out_dir.join("paper_e2_consonance_only_timeseries.csv"), ts_csv)?;
+        eprintln!("  Consonance-only control written.");
     }
 
     Ok(())

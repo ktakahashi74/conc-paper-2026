@@ -238,7 +238,7 @@ The Kuramoto model realises the temporal axis of DCC: cortical oscillations entr
 
 \section{Results}
 
-Four experiments each isolate a different mechanism subset (Table~\ref{tab:conditions}). Throughout, population-mean consonance $C_{\text{score}}$ denotes the leave-one-out mean of $C_{\text{field}}$ evaluated at each agent's position after removing that agent from the environment.
+Four experiments each isolate a different mechanism subset (Table~\ref{tab:conditions}). Throughout, $C_{\text{score}}$ denotes the leave-one-out mean of $C_{\text{field}}$ evaluated at each agent's position after removing that agent from the environment.
 
 \begin{table}[t]
 \centering
@@ -248,6 +248,7 @@ Four experiments each isolate a different mechanism subset (Table~\ref{tab:condi
 \begin{tabular}{@{}lcccc@{}}
 \toprule
  & \textbf{Exp.\,1} & \textbf{Exp.\,2} & \textbf{Exp.\,3} & \textbf{Exp.\,4} \\
+ & \emph{Polyphony} & \emph{Selection} & \emph{Entrainment} & \emph{Heredity} \\
 \midrule
 $N$ agents  & 24  & 32  & 32  & 32 \\
 Seeds       & 20  & 20  & 20  & 20 \\
@@ -263,7 +264,7 @@ Duration    & 100 rnds & 200 deaths & 40\,s & 4k deaths \\
 
 \subsection{Self-Organized Polyphony}
 
-Each run begins with a dissonance-seeking phase (rounds 1--50) followed by a consonance-seeking phase (rounds 51--100); the first 10 post-switch rounds are discarded as burn-in. Three conditions were compared: baseline, no hill-climb, and no repulsion (Figures~\ref{fig:e2-dynamics}--\ref{fig:e2-intervals}).
+Each run begins with a dissonance-seeking phase (rounds 1--50) followed by a consonance-seeking phase (rounds 51--100); the first 10 post-switch rounds are discarded as burn-in. The initial phase disperses agents, improving diversity; a consonance-only control (Supplementary S6) confirms that polyphony also emerges without this curriculum, though with fewer unique pitch positions. Three conditions were compared: baseline, no hill-climb, and no repulsion (Figures~\ref{fig:e2-dynamics}--\ref{fig:e2-intervals}).
 
 \textbf{Diversity.} Unique pitch bins averaged $19.2 \pm 1.4$ (baseline) versus $13.1 \pm 1.3$ (no repulsion; Welch $t=14.5$, $p<10^{-13}$, Cohen's $d=4.6$). Mean nearest-neighbor distance was $0.57 \pm 0.05$\,st (baseline), dropping to $0.29 \pm 0.11$\,st under no-repulsion ($t=11.0$, $p<10^{-11}$, $d=3.5$), confirming pitch collapse.
 
@@ -311,13 +312,13 @@ Figure~\ref{fig:e5-entrainment}A shows the group mean PLV over time. Both vitali
 
 Experiments 1--3 establish selection but not heredity. To test whether lineage-based inheritance can consolidate ecological advantage, we compare two respawn conditions: \emph{heredity}, where a dead agent's replacement pitch is drawn $\mathcal{N}(\text{random surviving parent},\,\sigma\!=\!0.003\,\text{log}_2)$, versus \emph{random} uniform respawn within $\pm 1$ octave. Both conditions retain repulsion but disable hill-climbing, isolating hereditary selection as the sole consonance-improvement pathway (remaining parameters in Table~\ref{tab:conditions}). Twenty seeds per condition were run until 4{,}000 deaths ($\approx 125$ turnover cycles).
 
-Figure~\ref{fig:e6-hereditary} shows that heredity runs produce a statistically significant increase in $C_{\text{score}}$ relative to random controls. Welch's $t$-test confirmed higher consonance change in the heredity condition ($\Delta C_{\text{score}} = +0.121 \pm 0.177$ vs.\ $-0.003 \pm 0.027$; $t=3.10$, $p=0.001$, Cohen's $d=0.98$). Final consonance was likewise higher (heredity $0.185 \pm 0.178$ vs.\ random $0.061 \pm 0.018$; $t=3.13$, $p<0.001$). Pitch entropy dropped sharply under heredity ($1.67 \pm 0.46$ vs.\ $3.78 \pm 0.03$), indicating convergence toward specific pitch regions. The large inter-seed variance ($\pm 0.177$) reflects drift-dominated early dynamics: 8 of 20 heredity seeds showed $\Delta C > 0.1$ while 7 remained near baseline, consistent with stochastic founder effects \citep{kimura1983}. The final pitch histogram (Figure~\ref{fig:e6-hereditary}C) shows that heredity runs concentrate near consonant ratios rather than remaining uniformly dispersed. This convergence arises purely from differential survival and inheritance: without hill-climbing, only the metabolic selection pressure identified in Experiment~2 drives the effect. Parameters were selected from a sweep (15 conditions: $\sigma \in \{0.001\text{--}0.02\}$, deaths $\in \{2000, 4000\}$, $N \in \{16, 32, 48\}$; 20 seeds per arm). The heredity--random $\Delta C_{\text{score}}$ separation was positive in 13/15 and significant ($p<0.05$) in 8; the two non-significant conditions used the smallest $\sigma$ ($0.001$). The reported setting ($\sigma\!=\!0.003$, 4{,}000 deaths, $N\!=\!32$) is representative rather than the single best arm. To verify that the gain is not an artefact of optimising the training metric, we re-scored final configurations with $\mathrm{JI}_{\text{score}}$, the mean pairwise Gaussian proximity ($\alpha\!=\!4.0$\,st$^{-2}$) to just-intonation ratios $p\!:\!q$ ($p,q \leq 8$, weighted $1/(pq)$), which is unrelated to the bilinear H-R model. Heredity scored substantially higher ($0.55 \pm 0.13$ vs.\ $0.11 \pm 0.01$), and Spearman correlation between $\mathrm{JI}_{\text{score}}$ and $C_{\text{score}}$ was significant ($\rho = 0.45$, $p = 0.004$, permutation test), confirming generalisation beyond the fitness function.
+Figure~\ref{fig:e6-hereditary} shows that heredity runs produce a statistically significant increase in $C_{\text{score}}$ relative to random controls. Welch's $t$-test confirmed higher consonance change in the heredity condition ($\Delta C_{\text{score}} = +0.121 \pm 0.177$ vs.\ $-0.003 \pm 0.027$; $t=3.10$, $p=0.001$, Cohen's $d=0.98$). Final consonance was likewise higher (heredity $0.185 \pm 0.178$ vs.\ random $0.061 \pm 0.018$; $t=3.13$, $p<0.001$). Pitch entropy dropped sharply under heredity ($1.67 \pm 0.46$ vs.\ $3.78 \pm 0.03$), indicating convergence toward specific pitch regions. The large inter-seed variance ($\pm 0.177$) reflects drift-dominated early dynamics: 8 of 20 heredity seeds showed $\Delta C > 0.1$ while 7 remained near baseline, consistent with stochastic founder effects \citep{kimura1983}. The final pitch histogram (Figure~\ref{fig:e6-hereditary}C) shows that heredity runs concentrate near consonant ratios rather than remaining uniformly dispersed. This convergence arises purely from differential survival and inheritance: without hill-climbing, only the metabolic selection pressure identified in Experiment~2 drives the effect. Parameters were selected from a sweep over 15 conditions (Supplementary Table~S2): the heredity--random separation was positive in all 15 and significant ($p<0.05$) in 11; the reported setting ($\sigma\!=\!0.003$, 4{,}000 deaths, $N\!=\!32$) is representative rather than the single best arm. To verify generalisation, we re-scored final configurations with $\mathrm{JI}_{\text{score}}$ (Gaussian proximity to just-intonation ratios $p\!:\!q$, $p,q \leq 8$; see Supplementary S2): heredity scored substantially higher ($0.55 \pm 0.13$ vs.\ $0.11 \pm 0.01$; Spearman $\rho = 0.45$, $p = 0.004$).
 
 \section{Discussion}
 
 \subsection{Integrated Interpretation}
 
-The four experiments form a cumulative argument. Self-organized polyphony (Exp.~1) shows that the landscape admits structured configurations beyond trivial collapse; metabolic selection (Exp.~2) validates that consonance-dependent recharge produces quantifiable survival differentials; entrainment gating (Exp.~3) validates the consonance$\to$vitality$\to$coupling pathway linking the spectral and temporal axes; and hereditary adaptation (Exp.~4) shows that selection pressure, once established, can accumulate across generations via inheritance alone. Each experiment isolates one mechanism; together they show that a psychoacoustic landscape can sustain the core ingredients of an artificial ecology without symbolic encoding. As a preliminary integration test, we ran the Experiment~4 protocol under four conditions crossing heredity/random respawn with hill-climbing on/off (20 seeds each). Figure~\ref{fig:e6-integration} shows that combining heredity with hill-climbing yields $C_{\text{score}} = 0.53$, exceeding heredity-only ($0.19$), hill-only ($0.11$), and random ($0.06$). A seed-level interaction contrast (HH $-$ H $-$ RH $+$ R; $n\!=\!20$; mean $0.30$, 95\% CI $[0.20, 0.39]$; $p < 0.001$, sign-flip permutation) confirmed that the combination exceeds the sum of individual effects. All conditions terminate at 4{,}000 deaths; step count provides finer temporal resolution for the trajectory. A systematic factorial study is left to future work.
+The four experiments form a cumulative argument. Self-organized polyphony (Experiment~1) shows that the landscape admits structured configurations beyond trivial collapse; metabolic selection (Experiment~2) validates that consonance-dependent recharge produces quantifiable survival differentials; entrainment gating (Experiment~3) validates the consonance$\to$vitality$\to$coupling pathway linking the spectral and temporal axes; and hereditary adaptation (Experiment~4) shows that selection pressure, once established, can accumulate across generations via inheritance alone. Each experiment isolates one mechanism; together they show that a psychoacoustic landscape can sustain the core ingredients of an artificial ecology without symbolic encoding. As a preliminary integration test, we ran the Experiment~4 protocol under four conditions crossing heredity/random respawn with hill-climbing on/off (20 seeds each). Figure~\ref{fig:e6-integration} shows that combining heredity with hill-climbing yields $C_{\text{score}} = 0.53$, exceeding heredity-only ($0.19$), hill-only ($0.11$), and random ($0.06$). Because all four conditions share the same 20 random seeds, the interaction contrast is computed per-seed (HH$_i$ $-$ H$_i$ $-$ RH$_i$ $+$ R$_i$; mean $0.30$, 95\% CI $[0.20, 0.39]$; $p < 0.001$, sign-flip permutation), confirming that the combination exceeds the sum of individual effects. All conditions terminate at 4{,}000 deaths; step count provides finer temporal resolution for the trajectory. A systematic factorial study is left to future work.
 
 \begin{figure}[t]
 \centering
@@ -339,9 +340,7 @@ The landscape topology is anchor-invariant: repeating the Experiment~1 scan at 1
 
 Experiment~4's hereditary adaptation converges to fixed-landscape attractors and does not constitute open-ended evolution \citep{bedau2000}; whether evolvable timbres or coupling topologies could support open-ended dynamics remains open.
 
-The consonance landscape currently assumes harmonic spectra. Extending the roughness and harmonicity kernels to inharmonic or noise-bearing timbres would broaden the ecology to percussion, bells, and other non-pitched sound sources, testing whether DCC generalises beyond tonal contexts.
-
-The present system realises the first stage of DCC: mapping from cognitive model to acoustic environment. A natural next stage is closing the loop via real-time listener biosignals (EEG, heart rate), turning perception and generation into a coupled dynamical system.
+The consonance landscape currently assumes harmonic spectra; extending to inharmonic or noise-bearing timbres would test whether DCC generalises beyond tonal contexts. More broadly, the system realises the first stage of DCC (cognitive model $\to$ acoustic environment); closing the loop via real-time listener biosignals would turn perception and generation into a coupled dynamical system.
 
 \section{Conclusion}
 
@@ -353,6 +352,9 @@ Conchordal presents a psychoacoustic artificial life environment whose design is
 
 \medskip
 \noindent\textbf{Code availability:} Source code and experiment scripts will be released on GitHub upon acceptance.
+
+\medskip
+\noindent\textbf{Supplementary material:} Algorithm pseudocode, complete parameter table, and full parameter-sweep results are provided in the supplementary PDF.
 
 \bibliographystyle{apalike}
 \bibliography{conc}
