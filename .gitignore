@@ -12,8 +12,9 @@
 *.synctex.gz
 *.synctex(busy)
 
-# PDF output (keep experiment plot PDFs tracked)
+# PDF output
 *.pdf
+!supplementary.pdf
 
 # Rust build
 target/

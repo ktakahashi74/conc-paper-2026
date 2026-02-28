@@ -2,6 +2,8 @@
 
 Paper and experiment code for the ALIFE 2026 submission.
 
+**[Supplementary Material (PDF)](supplementary.pdf)** — terrain controls, ablation details, and additional tables (S1–S7).
+
 ## Abstract
 
 Conchordal is a bio-acoustic instrument for generative composition whose sonic agents are governed by artificial life dynamics within a psychoacoustic fitness landscape defined in log-frequency space. Four experiments demonstrate self-organised polyphony, consonance-driven selection, consonance-gated entrainment, and hereditary pitch adaptation.
