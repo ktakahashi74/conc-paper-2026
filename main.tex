@@ -1,10 +1,17 @@
 \documentclass[letterpaper]{article}
 
 \usepackage{natbib,alifeconf}  %% The order is important
-\usepackage{url,amsmath}
+\usepackage{url,amsmath,amssymb,textcomp}
 \usepackage[colorlinks,allcolors=black]{hyperref}
 \usepackage{cleveref}
 \usepackage{booktabs}
+
+\newcommand\blfootnote[1]{%
+  \begingroup
+  \renewcommand\thefootnote{}\footnote{#1}%
+  \addtocounter{footnote}{-1}%
+  \endgroup
+}
 
 % *****************
 %  Requirements:
@@ -55,7 +62,7 @@
 \title{Conchordal: Emergent Harmony via Direct Cognitive Coupling in a Psychoacoustic Landscape}
 
 
-% Each submission will undergo a double-blind review process. To this end, submissions should NOT contain any element that could reveal the identity of the authors (author names, affiliations, funding details and acknowledgments), and should use the third person to refer to previous work by the authors.
+% Each submission will undergo a SINGLE-blind review process.  The author details (author names, affiliations, funding details and acknowledgments) should be indicated in the submission.
 \author{
     Koichi Takahashi$^{1}$$^{2}$
     \mbox{}\\
@@ -86,16 +93,6 @@
 
 
 
-% Choose one of: Full Paper, Summaries, or Late Breaking Abstracts 
-% Submission type: \textbf{Full Paper}\\
-
-% If sharing code / data, anonymize your repository and paste the link here.
-% Example of anonymizing sevice for github: https://anonymous.4open.science/
-% delete this line if not needed
-% Data/Code available at: \url{http://your.repo.here.com}
-
-
-
 
 \begin{document}
 
@@ -104,6 +101,11 @@
 \begin{abstract}
 This paper introduces \textit{Conchordal}, a bio-acoustic instrument for generative composition whose sonic agents are governed by artificial life dynamics within a psychoacoustic fitness landscape defined in log-frequency space. The system is built on \emph{Direct Cognitive Coupling} (DCC), a design principle requiring that the generative process operate directly upon structures isomorphic to those in human perceptual cognition, bypassing symbolic intermediaries. The environment integrates roughness and harmonicity into a continuous consonance field without presupposing musical scales or harmonic rules. Agents adjust pitch through local proposal-and-accept dynamics under density-based repulsion, regulate survival via a consonance-dependent metabolic policy, and entrain temporally through Kuramoto-style phase coupling grounded in neural oscillatory models. Four experiments are reported. (1) Populations self-organize into structured, non-collapsed polyphony with enriched consonant interval distributions. (2) When consonance modulates metabolic recharge, early consonance strongly predicts lifetime, whereas the effect vanishes without recharge. (3) In a controlled entrainment assay, consonance-dependent vitality biases synchronization: agents at consonant positions synchronize more readily. (4) Hereditary pitch inheritance drives polyphonic convergence to multiple consonant ratios through differential survival alone. A preliminary integration test shows that combining heredity with hill-climbing yields a consonance gain significantly exceeding either mechanism alone (interaction contrast $p < 0.001$, sign-flip permutation). These findings show that consonance can serve as the organising resource for life-like dynamics in a non-traditional computational medium, yielding self-organization, selection, synchronization, and hereditary adaptation. Because DCC grounds the fitness landscape in perceptual structure, an ecological--aesthetic duality obtains: adaptive success and musical coherence become structurally aligned.
 \end{abstract}
+
+% Choose one of: Full Paper, Summaries, or Late Breaking Abstracts
+Submission type: \textbf{Full Paper}\\
+Data/Code available at: \url{https://github.com/conchordal/conchordal}
+\blfootnote{\textcopyright\ 2026 Koichi Takahashi. Published under a Creative Commons Attribution 4.0 International (CC BY 4.0) license.}
 
 \section{Introduction}
 
@@ -351,11 +353,9 @@ Conchordal presents a psychoacoustic artificial life environment whose design is
 \noindent\textbf{Keywords:} Artificial Life, Psychoacoustics, Consonance, Self-Organization, Entrainment, Direct Cognitive Coupling
 
 \medskip
-\noindent\textbf{Code availability:} Source code and experiment scripts will be released on GitHub upon acceptance.
-
-\medskip
 \noindent\textbf{Supplementary material:} Algorithm pseudocode, complete parameter table, and full parameter-sweep results are provided in the supplementary PDF.
 
+\footnotesize
 \bibliographystyle{apalike}
 \bibliography{conc}
 
