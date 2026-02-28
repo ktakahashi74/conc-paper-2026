@@ -1,6 +1,6 @@
 # Conchordal: Emergent Harmony via Direct Cognitive Coupling in a Psychoacoustic Landscape
 
-Paper and experiment code for the ALIFE 2026 submission.
+Paper and experiment code.
 
 **[Supplementary Material (PDF)](supplementary.pdf)** — terrain controls, ablation details, and additional tables (S1–S7).
 
@@ -14,7 +14,7 @@ Conchordal is a bio-acoustic instrument for generative composition whose sonic a
 main.tex                  Main paper
 supplementary.tex         Supplementary material
 conc.bib                  Bibliography
-alifeconf.sty             ALIFE conference style
+alifeconf.sty             Conference style
 experiments/
   main.rs                 CLI entry point
   paper_plots.rs          All experiment and plot logic
