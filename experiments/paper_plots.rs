@@ -4818,6 +4818,7 @@ fn plot_e6_hereditary_adaptation(
                 mutation_sigma: E6_MUTATION_SIGMA,
                 snapshot_interval: E6_SNAPSHOT_INTERVAL,
                 landscape_weight: 0.0,
+                shuffle_landscape: false,
             };
             let result = run_e6(&cfg);
             all_results.push((condition, seed, result));
@@ -5519,7 +5520,9 @@ fn plot_e6_integration_figure(
         label: &'static str,
         condition: E6Condition,
         landscape_weight: f32,
+        shuffle_landscape: bool,
         color: RGBColor,
+        dashed: bool,
     }
 
     let conditions = [
@@ -5527,32 +5530,56 @@ fn plot_e6_integration_figure(
             label: "heredity",
             condition: E6Condition::Heredity,
             landscape_weight: 0.0,
+            shuffle_landscape: false,
             color: RGBColor(58, 106, 120), // PAL_H: deep steel teal
+            dashed: false,
         },
         IntegrationCondition {
             label: "heredity+hill",
             condition: E6Condition::Heredity,
             landscape_weight: 0.5,
+            shuffle_landscape: false,
             color: RGBColor(76, 153, 76), // green
+            dashed: false,
         },
         IntegrationCondition {
             label: "random",
             condition: E6Condition::Random,
             landscape_weight: 0.0,
+            shuffle_landscape: false,
             color: RGBColor(204, 121, 50), // orange
+            dashed: false,
         },
         IntegrationCondition {
             label: "random+hill",
             condition: E6Condition::Random,
             landscape_weight: 0.5,
+            shuffle_landscape: false,
             color: RGBColor(139, 34, 82), // PAL_R: dark rose
+            dashed: false,
+        },
+        IntegrationCondition {
+            label: "heredity+hill (shuffled)",
+            condition: E6Condition::Heredity,
+            landscape_weight: 0.5,
+            shuffle_landscape: true,
+            color: RGBColor(76, 153, 76), // green (same as HH)
+            dashed: true,
+        },
+        IntegrationCondition {
+            label: "random+hill (shuffled)",
+            condition: E6Condition::Random,
+            landscape_weight: 0.5,
+            shuffle_landscape: true,
+            color: RGBColor(139, 34, 82), // PAL_R: dark rose (same as RH)
+            dashed: true,
         },
     ];
 
     let landscape = e3_reference_landscape(anchor_hz);
 
     // Run all 4 conditions × 20 seeds
-    let mut all_series: Vec<(&str, Vec<(f32, f32, f32)>, RGBColor)> = Vec::new();
+    let mut all_series: Vec<(&str, Vec<(f32, f32, f32)>, RGBColor, bool)> = Vec::new();
     let mut csv_data = String::from("condition,step,mean_c_score,ci95\n");
     // Collect seed-level final C_scores for each condition (for interaction test)
     let mut cond_seed_finals: Vec<Vec<f32>> = Vec::new();
@@ -5571,6 +5598,7 @@ fn plot_e6_integration_figure(
                 mutation_sigma: E6_MUTATION_SIGMA,
                 snapshot_interval: E6_SNAPSHOT_INTERVAL,
                 landscape_weight: cond.landscape_weight,
+                shuffle_landscape: cond.shuffle_landscape,
             };
             let result = run_e6(&cfg);
             for snap in &result.snapshots {
@@ -5601,7 +5629,7 @@ fn plot_e6_integration_figure(
                 cond.label, step as i64, mean, ci95
             ));
         }
-        all_series.push((cond.label, stats, cond.color));
+        all_series.push((cond.label, stats, cond.color, cond.dashed));
     }
 
     // ── Interaction test ──────────────────────────────────────────────
@@ -5627,6 +5655,23 @@ fn plot_e6_integration_figure(
         let mean_r = cond_seed_finals[2].iter().sum::<f32>() / n_seeds as f32;
         let mean_rh = cond_seed_finals[3].iter().sum::<f32>() / n_seeds as f32;
 
+        // Shuffled interaction contrast: HH_s - H - RH_s + R
+        // Conditions: 4=HH_shuffled, 5=RH_shuffled; H=0, R=2 (unchanged)
+        let mut contrasts_shuf = Vec::with_capacity(n_seeds);
+        for i in 0..n_seeds {
+            let hh_s = cond_seed_finals[4][i];
+            let h = cond_seed_finals[0][i];
+            let rh_s = cond_seed_finals[5][i];
+            let r = cond_seed_finals[2][i];
+            contrasts_shuf.push(hh_s - h - rh_s + r);
+        }
+        let mean_contrast_shuf = contrasts_shuf.iter().copied().sum::<f32>() / n_seeds as f32;
+        let ci_shuf = ci95_half_width(&contrasts_shuf);
+        let (p_val_shuf, method_shuf) = permutation_pvalue_one_sample(&contrasts_shuf, 100_000, 0xBEEF ^ 0x5E6F);
+
+        let mean_hh_s = cond_seed_finals[4].iter().sum::<f32>() / n_seeds as f32;
+        let mean_rh_s = cond_seed_finals[5].iter().sum::<f32>() / n_seeds as f32;
+
         let report = format!(
             "Interaction test (sign-flip permutation, {})\n\
              ================================================\n\
@@ -5651,6 +5696,33 @@ fn plot_e6_integration_figure(
             out_dir.join("paper_e6_interaction_test.txt"),
             report,
         )?;
+
+        // Terrain control report
+        let terrain_report = format!(
+            "Integration Terrain Control (Experiment 4)\n\
+             ==========================================\n\
+             Condition                   Mean C_score (final)\n\
+             HH (real terrain)           {:.4} ± {:.4}\n\
+             HH (shuffled)               {:.4} ± {:.4}\n\
+             RH (real terrain)           {:.4} ± {:.4}\n\
+             RH (shuffled)               {:.4} ± {:.4}\n\
+             \n\
+             Interaction contrast (real):     {:.4} [{:.4}, {:.4}], p = {:.6}\n\
+             Interaction contrast (shuffled): {:.4} [{:.4}, {:.4}], p = {:.6} ({})\n\
+             n_seeds = {}\n",
+            mean_hh, ci95_half_width(&cond_seed_finals[1]),
+            mean_hh_s, ci95_half_width(&cond_seed_finals[4]),
+            mean_rh, ci95_half_width(&cond_seed_finals[3]),
+            mean_rh_s, ci95_half_width(&cond_seed_finals[5]),
+            mean_contrast, mean_contrast - ci, mean_contrast + ci, p_val,
+            mean_contrast_shuf, mean_contrast_shuf - ci_shuf, mean_contrast_shuf + ci_shuf, p_val_shuf, method_shuf,
+            n_seeds,
+        );
+        eprintln!("{}", terrain_report);
+        write_with_log(
+            out_dir.join("paper_e6_integration_terrain_test.txt"),
+            terrain_report,
+        )?;
     }
 
     write_with_log(
@@ -5665,7 +5737,7 @@ fn plot_e6_integration_figure(
 
     let x_max = all_series
         .iter()
-        .flat_map(|(_, s, _)| s.iter().map(|(x, _, _)| *x))
+        .flat_map(|(_, s, _, _)| s.iter().map(|(x, _, _)| *x))
         .fold(0.0f32, f32::max)
         .max(1.0);
     let y_lo = 0.0f32;
@@ -5691,33 +5763,53 @@ fn plot_e6_integration_figure(
         .draw()?;
 
     // Draw in top-to-bottom order so legend matches visual stacking
-    let draw_order: Vec<usize> = vec![1, 0, 3, 2]; // heredity+hill, heredity, random+hill, random
+    // Solid lines first, then dashed shuffled lines
+    let draw_order: Vec<usize> = vec![1, 0, 3, 2, 4, 5];
     for &idx in &draw_order {
-        let (label, series, color) = &all_series[idx];
+        let (label, series, color, dashed) = &all_series[idx];
         if series.is_empty() {
             continue;
         }
-        // CI95 band
-        let mut band: Vec<(f32, f32)> = Vec::with_capacity(series.len() * 2);
-        for (x, mean, ci) in series.iter().copied() {
-            band.push((x, (mean + ci).clamp(y_lo, y_hi)));
+        // CI95 band (only for solid lines)
+        if !dashed {
+            let mut band: Vec<(f32, f32)> = Vec::with_capacity(series.len() * 2);
+            for (x, mean, ci) in series.iter().copied() {
+                band.push((x, (mean + ci).clamp(y_lo, y_hi)));
+            }
+            for (x, mean, ci) in series.iter().rev().copied() {
+                band.push((x, (mean - ci).clamp(y_lo, y_hi)));
+            }
+            chart.draw_series(std::iter::once(Polygon::new(
+                band,
+                color.mix(0.15).filled(),
+            )))?;
         }
-        for (x, mean, ci) in series.iter().rev().copied() {
-            band.push((x, (mean - ci).clamp(y_lo, y_hi)));
-        }
-        chart.draw_series(std::iter::once(Polygon::new(
-            band,
-            color.mix(0.15).filled(),
-        )))?;
 
         // Mean line
-        chart
-            .draw_series(LineSeries::new(
-                series.iter().map(|(x, mean, _)| (*x, *mean)),
-                color.stroke_width(2),
-            ))?
-            .label(*label)
-            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], *color));
+        if *dashed {
+            let style = ShapeStyle {
+                color: color.mix(0.7),
+                filled: false,
+                stroke_width: 2,
+            };
+            chart
+                .draw_series(DashedLineSeries::new(
+                    series.iter().map(|(x, mean, _)| (*x, *mean)),
+                    8,
+                    4,
+                    style,
+                ))?
+                .label(*label)
+                .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color.mix(0.7)));
+        } else {
+            chart
+                .draw_series(LineSeries::new(
+                    series.iter().map(|(x, mean, _)| (*x, *mean)),
+                    color.stroke_width(2),
+                ))?
+                .label(*label)
+                .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], *color));
+        }
     }
 
     chart

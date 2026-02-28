@@ -268,7 +268,7 @@ Interval entropy & $3.93 \pm 0.16$ & $3.53 \pm 0.32$ & $-5.0$ \\
 
 The consonance-only condition still produces structured polyphony (14.8 unique pitch bins, well above the collapse level of $\approx$13 observed without repulsion in the main text) and achieves \emph{higher} mean consonance ($C_{\text{score}} = 0.54$ vs.\ $0.47$), confirming that consonant structure emerges from the landscape--repulsion interaction alone. However, the curriculum significantly improves diversity: more unique pitch bins ($19.2$ vs.\ $14.8$), wider nearest-neighbour spacing ($0.57$ vs.\ $0.35$\,st), and higher interval entropy ($3.93$ vs.\ $3.53$\,nats). The dissonance-seeking phase thus serves as an initialisation strategy that broadens the starting distribution, but the self-organised polyphony reported in the main text is not an artefact of the curriculum schedule.
 
-\section{S7. Terrain Control and Robustness Analysis (Experiment~1)}
+\section{S7. Terrain Control and Robustness Analysis}
 
 Three supplementary analyses test whether the self-organised polyphony reported in Experiment~1 depends on the specific structure of the psychoacoustic landscape rather than on incidental parameter choices.
 
@@ -366,6 +366,32 @@ $0.00$  & $1.50$ & $19.2 \pm 1.4$ & $0.592 \pm 0.086$ & $3.82 \pm 0.20$ & $0.619
 
 Polyphonic diversity (unique bins $\geq 19$, entropy $\geq 3.82$\,nats) is stable across the entire $(b,c)$ grid.
 The only systematic trend is that $C_{\text{score}}$ itself increases when the roughness penalty $|b|$ decreases or the interaction weight $c$ increases, which is expected from the kernel definition; the emergent pitch structure, however, remains robust.
+
+\subsection{S7.4 Integration Test Terrain Control (Experiment~4)}
+
+To test whether the synergistic heredity$\times$hill-climbing interaction (main text, \S5.1) depends on the coherent structure of the psychoacoustic landscape, we repeated the $2 \times 2$ integration test with shuffled-landscape variants. Because the two landscape-off conditions (H, R) use \texttt{landscape\_weight}$\,{=}\,0$ and are therefore unaffected by landscape structure, only the two hill-climbing conditions were re-run on a shuffled landscape (HH$_{\text{s}}$, RH$_{\text{s}}$). The shuffled interaction contrast is thus HH$_{\text{s}}$ $-$ H $-$ RH$_{\text{s}}$ $+$ R.
+
+\begin{table}[h]
+\centering
+\caption{Integration terrain control: real vs.\ shuffled landscape (20 seeds each).}
+\label{tab:s7-integration-terrain}
+\footnotesize
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Condition & Mean $C_{\text{score}}$ (final) & 95\% CI half-width \\
+\midrule
+HH (real terrain) & $0.53$ & $\pm 0.07$ \\
+HH (shuffled) & $0.08$ & $\pm 0.05$ \\
+RH (real terrain) & $0.11$ & $\pm 0.01$ \\
+RH (shuffled) & $0.06$ & $\pm 0.01$ \\
+\midrule
+\multicolumn{3}{@{}l}{Interaction contrast (real): $0.30$ [$0.20$, $0.39$], $p < 0.001$} \\
+\multicolumn{3}{@{}l}{Interaction contrast (shuffled): $-0.10$ [$-0.20$, $0.00$], $p = 0.07$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The real-terrain interaction contrast ($0.30$) is large and significant, while the shuffled-terrain contrast ($-0.10$) is small and non-significant ($p = 0.07$). This confirms that the synergistic effect of combining heredity with hill-climbing requires the coherent gradient structure of the psychoacoustic landscape; a landscape with identical marginal statistics but destroyed spatial coherence does not support the interaction.
 
 \bibliographystyle{apalike}
 \bibliography{conc}

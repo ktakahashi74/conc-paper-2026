@@ -98,7 +98,7 @@ heredity,9500,0.137348,0.049274
 heredity,9600,0.133640,0.050359
 heredity,9700,0.143692,0.056546
 heredity,9800,0.142892,0.057264
-heredity,9900,0.147353,0.058207
+heredity,9900,0.147352,0.058207
 heredity,10000,0.152237,0.061665
 heredity,10100,0.166076,0.072877
 heredity,10200,0.156982,0.068698
@@ -123,7 +123,7 @@ heredity,12000,0.133678,0.060254
 heredity,12100,0.133982,0.056548
 heredity,12200,0.117839,0.045505
 heredity,12300,0.121069,0.050232
-heredity,12400,0.122293,0.048805
+heredity,12400,0.122292,0.048805
 heredity,12500,0.137631,0.054379
 heredity,12600,0.145854,0.062170
 heredity,12700,0.138515,0.066956
@@ -198,7 +198,7 @@ heredity,19500,0.183231,0.071873
 heredity,19600,0.177670,0.068598
 heredity,19700,0.169288,0.066502
 heredity,19800,0.164946,0.065337
-heredity,19900,0.144756,0.056160
+heredity,19900,0.144757,0.056160
 heredity,20000,0.140835,0.049080
 heredity,20100,0.151559,0.053615
 heredity,20200,0.162322,0.066977
@@ -322,7 +322,7 @@ heredity,31900,0.148420,0.055253
 heredity,32000,0.146786,0.051209
 heredity,32100,0.144718,0.049252
 heredity,32200,0.154581,0.060897
-heredity,32300,0.166396,0.067128
+heredity,32300,0.166396,0.067129
 heredity,32400,0.164264,0.066190
 heredity,32500,0.165331,0.069190
 heredity,32600,0.163567,0.071160
@@ -382,7 +382,7 @@ heredity,37900,0.209575,0.076925
 heredity,38000,0.199815,0.071258
 heredity,38100,0.197908,0.064983
 heredity,38200,0.208948,0.068750
-heredity,38300,0.220472,0.074878
+heredity,38300,0.220473,0.074878
 heredity,38400,0.212587,0.070834
 heredity,38500,0.217034,0.072866
 heredity,38600,0.215213,0.072183
@@ -397,7 +397,7 @@ heredity,39400,0.160594,0.063224
 heredity,39500,0.154680,0.053820
 heredity,39600,0.162971,0.061815
 heredity,39700,0.162656,0.064677
-heredity,39800,0.161798,0.064327
+heredity,39800,0.161797,0.064327
 heredity,39900,0.167053,0.064468
 heredity,40000,0.164478,0.065216
 heredity,40100,0.174472,0.071320
@@ -502,7 +502,7 @@ heredity,49900,0.172433,0.067365
 heredity,50000,0.176253,0.074430
 heredity,50100,0.160584,0.064161
 heredity,50200,0.167584,0.065286
-heredity,50300,0.177416,0.071731
+heredity,50300,0.177417,0.071731
 heredity,50400,0.170468,0.072975
 heredity,50500,0.171936,0.069977
 heredity,50600,0.175698,0.072032
@@ -549,7 +549,7 @@ heredity,54600,0.193452,0.081036
 heredity,54700,0.197278,0.084475
 heredity,54800,0.188321,0.076463
 heredity,54900,0.199227,0.083605
-heredity,55000,0.191724,0.079750
+heredity,55000,0.191725,0.079750
 heredity,55100,0.193059,0.080291
 heredity,55200,0.193097,0.081078
 heredity,55300,0.189913,0.077559
@@ -639,7 +639,7 @@ heredity+hill,3300,0.430336,0.069858
 heredity+hill,3400,0.431815,0.065319
 heredity+hill,3500,0.448892,0.065734
 heredity+hill,3600,0.469166,0.069652
-heredity+hill,3700,0.477531,0.073216
+heredity+hill,3700,0.477530,0.073216
 heredity+hill,3800,0.494628,0.079888
 heredity+hill,3900,0.491079,0.075830
 heredity+hill,4000,0.505894,0.076331
@@ -647,7 +647,7 @@ heredity+hill,4100,0.496916,0.072634
 heredity+hill,4200,0.498306,0.078891
 heredity+hill,4300,0.492638,0.074669
 heredity+hill,4400,0.470490,0.078509
-heredity+hill,4500,0.466637,0.075657
+heredity+hill,4500,0.466638,0.075657
 heredity+hill,4600,0.486277,0.081346
 heredity+hill,4700,0.457102,0.057425
 heredity+hill,4800,0.472519,0.062288
@@ -663,7 +663,7 @@ heredity+hill,5700,0.535287,0.076739
 heredity+hill,5800,0.550178,0.085790
 heredity+hill,5900,0.554183,0.079407
 heredity+hill,6000,0.532928,0.079833
-heredity+hill,6100,0.513213,0.078831
+heredity+hill,6100,0.513212,0.078831
 heredity+hill,6200,0.466737,0.073611
 heredity+hill,6300,0.465753,0.076163
 heredity+hill,6400,0.454381,0.066122
@@ -689,7 +689,7 @@ heredity+hill,8300,0.473940,0.062873
 heredity+hill,8400,0.495485,0.068711
 heredity+hill,8500,0.507980,0.062741
 heredity+hill,8600,0.511355,0.064582
-heredity+hill,8700,0.519388,0.066351
+heredity+hill,8700,0.519389,0.066351
 heredity+hill,8800,0.529288,0.065870
 heredity+hill,8900,0.518999,0.072518
 heredity+hill,9000,0.512577,0.072770
@@ -701,7 +701,7 @@ heredity+hill,9500,0.496664,0.062703
 heredity+hill,9600,0.501003,0.056294
 heredity+hill,9700,0.491569,0.058488
 heredity+hill,9800,0.492383,0.057786
-heredity+hill,9900,0.505054,0.064072
+heredity+hill,9900,0.505053,0.064072
 heredity+hill,10000,0.510702,0.065082
 heredity+hill,10100,0.497809,0.065132
 heredity+hill,10200,0.501009,0.065232
@@ -748,7 +748,7 @@ heredity+hill,14200,0.502303,0.058154
 heredity+hill,14300,0.508163,0.065940
 heredity+hill,14400,0.518098,0.070274
 heredity+hill,14500,0.512178,0.068913
-heredity+hill,14600,0.525707,0.070109
+heredity+hill,14600,0.525706,0.070109
 heredity+hill,14700,0.544669,0.075307
 heredity+hill,14800,0.522933,0.071460
 heredity+hill,14900,0.525180,0.068370
@@ -797,7 +797,7 @@ heredity+hill,19100,0.541521,0.064392
 heredity+hill,19200,0.539152,0.068560
 heredity+hill,19300,0.530353,0.065213
 heredity+hill,19400,0.533292,0.071890
-heredity+hill,19500,0.538290,0.070521
+heredity+hill,19500,0.538291,0.070521
 heredity+hill,19600,0.540513,0.069088
 heredity+hill,19700,0.496090,0.055582
 heredity+hill,19800,0.506114,0.053647
@@ -817,12 +817,12 @@ heredity+hill,21100,0.564944,0.062728
 heredity+hill,21200,0.513158,0.057130
 heredity+hill,21300,0.522838,0.057905
 heredity+hill,21400,0.510831,0.059843
-heredity+hill,21500,0.535254,0.055337
+heredity+hill,21500,0.535255,0.055337
 heredity+hill,21600,0.525642,0.062697
 heredity+hill,21700,0.516905,0.055191
 heredity+hill,21800,0.498596,0.054653
 heredity+hill,21900,0.504690,0.062159
-heredity+hill,22000,0.521098,0.053896
+heredity+hill,22000,0.521097,0.053896
 heredity+hill,22100,0.512374,0.058923
 heredity+hill,22200,0.522297,0.060226
 heredity+hill,22300,0.525598,0.062010
@@ -856,7 +856,7 @@ heredity+hill,25000,0.558654,0.052629
 heredity+hill,25100,0.543933,0.042469
 heredity+hill,25200,0.540861,0.047127
 heredity+hill,25300,0.531973,0.035515
-heredity+hill,25400,0.536126,0.038533
+heredity+hill,25400,0.536125,0.038533
 heredity+hill,25500,0.534328,0.041612
 heredity+hill,25600,0.542262,0.046188
 heredity+hill,25700,0.497158,0.048149
@@ -874,12 +874,12 @@ heredity+hill,26800,0.546079,0.034951
 heredity+hill,26900,0.548342,0.042295
 heredity+hill,27000,0.563552,0.046207
 heredity+hill,27100,0.551298,0.055234
-heredity+hill,27200,0.519127,0.049912
+heredity+hill,27200,0.519128,0.049912
 heredity+hill,27300,0.546607,0.051042
 heredity+hill,27400,0.556602,0.045226
 heredity+hill,27500,0.578661,0.055765
 heredity+hill,27600,0.549457,0.055228
-heredity+hill,27700,0.581342,0.052768
+heredity+hill,27700,0.581343,0.052768
 heredity+hill,27800,0.571071,0.053962
 heredity+hill,27900,0.559991,0.054105
 heredity+hill,28000,0.551784,0.052529
@@ -895,7 +895,7 @@ heredity+hill,28900,0.486098,0.047796
 heredity+hill,29000,0.512256,0.049556
 heredity+hill,29100,0.500835,0.045794
 heredity+hill,29200,0.507806,0.046413
-heredity+hill,29300,0.524068,0.050875
+heredity+hill,29300,0.524069,0.050875
 heredity+hill,29400,0.516749,0.047611
 heredity+hill,29500,0.510385,0.045972
 heredity+hill,29600,0.526064,0.047756
@@ -946,17 +946,17 @@ heredity+hill,34000,0.564048,0.038965
 heredity+hill,34100,0.546302,0.043507
 heredity+hill,34200,0.558648,0.047146
 heredity+hill,34300,0.569537,0.052846
-heredity+hill,34400,0.585284,0.052269
+heredity+hill,34400,0.585285,0.052269
 heredity+hill,34500,0.602110,0.057920
-heredity+hill,34600,0.592708,0.067922
+heredity+hill,34600,0.592709,0.067922
 heredity+hill,34700,0.545670,0.057434
-heredity+hill,34800,0.489317,0.043709
+heredity+hill,34800,0.489316,0.043709
 heredity+hill,34900,0.521391,0.050650
 heredity+hill,35000,0.520206,0.055811
 heredity+hill,35100,0.517479,0.059194
 heredity+hill,35200,0.542631,0.062277
 heredity+hill,35300,0.539484,0.063065
-heredity+hill,35400,0.542343,0.062924
+heredity+hill,35400,0.542344,0.062924
 heredity+hill,35500,0.537994,0.060431
 heredity+hill,35600,0.532841,0.062260
 heredity+hill,35700,0.546336,0.063593
@@ -1014,7 +1014,7 @@ heredity+hill,40800,0.523206,0.053034
 heredity+hill,40900,0.533465,0.059512
 heredity+hill,41000,0.516763,0.058381
 heredity+hill,41100,0.510576,0.055920
-heredity+hill,41200,0.534056,0.060104
+heredity+hill,41200,0.534055,0.060104
 heredity+hill,41300,0.571841,0.060343
 heredity+hill,41400,0.582729,0.060608
 heredity+hill,41500,0.586169,0.056505
@@ -1022,9 +1022,9 @@ heredity+hill,41600,0.587550,0.056085
 heredity+hill,41700,0.572186,0.058166
 heredity+hill,41800,0.565506,0.056835
 heredity+hill,41900,0.586660,0.053150
-heredity+hill,42000,0.584315,0.049219
+heredity+hill,42000,0.584316,0.049219
 heredity+hill,42100,0.566185,0.047215
-heredity+hill,42200,0.537910,0.047597
+heredity+hill,42200,0.537909,0.047597
 heredity+hill,42300,0.538018,0.054844
 heredity+hill,42400,0.494021,0.053583
 heredity+hill,42500,0.494888,0.052631
@@ -1071,7 +1071,7 @@ heredity+hill,46500,0.573864,0.063298
 heredity+hill,46600,0.581247,0.062861
 heredity+hill,46700,0.552649,0.058394
 heredity+hill,46800,0.565964,0.058906
-heredity+hill,46900,0.568925,0.053659
+heredity+hill,46900,0.568926,0.053659
 heredity+hill,47000,0.566749,0.050225
 heredity+hill,47100,0.548046,0.052132
 heredity+hill,47200,0.542354,0.044992
@@ -1098,7 +1098,7 @@ heredity+hill,49200,0.539984,0.066537
 heredity+hill,49300,0.532674,0.059059
 heredity+hill,49400,0.541853,0.065157
 heredity+hill,49500,0.549348,0.065999
-heredity+hill,49600,0.572160,0.068397
+heredity+hill,49600,0.572159,0.068397
 heredity+hill,49700,0.537680,0.061492
 heredity+hill,49800,0.538559,0.063649
 heredity+hill,49900,0.545783,0.056607
@@ -1107,7 +1107,7 @@ heredity+hill,50100,0.500213,0.047135
 heredity+hill,50200,0.510476,0.053678
 heredity+hill,50300,0.501216,0.048267
 heredity+hill,50400,0.529278,0.057579
-heredity+hill,50500,0.540372,0.057603
+heredity+hill,50500,0.540371,0.057603
 heredity+hill,50600,0.535959,0.062022
 heredity+hill,50700,0.544774,0.065200
 heredity+hill,50800,0.523782,0.058931
@@ -1142,7 +1142,7 @@ heredity+hill,53600,0.490600,0.060074
 heredity+hill,53700,0.507540,0.056914
 heredity+hill,53800,0.529249,0.054193
 heredity+hill,53900,0.539709,0.057688
-heredity+hill,54000,0.549054,0.053061
+heredity+hill,54000,0.549055,0.053061
 heredity+hill,54100,0.577661,0.061976
 heredity+hill,54200,0.528016,0.055026
 heredity+hill,54300,0.525159,0.056983
@@ -1169,7 +1169,7 @@ heredity+hill,56300,0.529953,0.057941
 heredity+hill,56400,0.525765,0.064629
 heredity+hill,56500,0.532395,0.066677
 heredity+hill,56600,0.547043,0.064003
-heredity+hill,56700,0.546023,0.066859
+heredity+hill,56700,0.546022,0.066859
 heredity+hill,56800,0.537717,0.062413
 heredity+hill,56900,0.538930,0.064520
 heredity+hill,57000,0.552084,0.068370
@@ -1205,7 +1205,7 @@ heredity+hill,59900,0.532765,0.053544
 heredity+hill,60000,0.534524,0.056922
 heredity+hill,60100,0.536723,0.056249
 heredity+hill,60200,0.502557,0.049279
-heredity+hill,60300,0.513787,0.054087
+heredity+hill,60300,0.513786,0.054087
 heredity+hill,60400,0.504700,0.054143
 heredity+hill,60500,0.506992,0.063505
 heredity+hill,60600,0.514515,0.063716
@@ -1223,10 +1223,10 @@ heredity+hill,61700,0.541400,0.064813
 heredity+hill,61800,0.538367,0.065575
 heredity+hill,61900,0.549142,0.067673
 heredity+hill,62000,0.531823,0.063597
-heredity+hill,62100,0.522309,0.064315
+heredity+hill,62100,0.522310,0.064315
 heredity+hill,62200,0.525665,0.064100
-heredity+hill,62300,0.527628,0.060994
-heredity+hill,62400,0.550671,0.056716
+heredity+hill,62300,0.527628,0.060993
+heredity+hill,62400,0.550672,0.056716
 heredity+hill,62500,0.558285,0.060320
 heredity+hill,62600,0.577637,0.062077
 heredity+hill,62700,0.570533,0.063987
@@ -1300,7 +1300,7 @@ heredity+hill,69400,0.522451,0.063016
 heredity+hill,69500,0.531752,0.068542
 heredity+hill,69600,0.527072,0.064328
 heredity+hill,69700,0.520750,0.062038
-heredity+hill,69800,0.518041,0.061438
+heredity+hill,69800,0.518040,0.061438
 heredity+hill,69900,0.520001,0.063085
 heredity+hill,70000,0.510843,0.059533
 heredity+hill,70100,0.518842,0.063549
@@ -1311,8 +1311,8 @@ heredity+hill,70500,0.518514,0.065392
 heredity+hill,70600,0.526517,0.066972
 heredity+hill,70700,0.511329,0.064656
 heredity+hill,70800,0.506316,0.059974
-heredity+hill,70900,0.506547,0.059797
-heredity+hill,71000,0.515428,0.061828
+heredity+hill,70900,0.506546,0.059797
+heredity+hill,71000,0.515427,0.061828
 heredity+hill,71100,0.519953,0.063647
 heredity+hill,71200,0.521577,0.063488
 heredity+hill,71300,0.522673,0.066417
@@ -1334,7 +1334,7 @@ heredity+hill,72800,0.524786,0.065845
 heredity+hill,72900,0.530450,0.068710
 heredity+hill,73000,0.529117,0.068088
 heredity+hill,73100,0.527710,0.067047
-heredity+hill,73200,0.525756,0.065471
+heredity+hill,73200,0.525755,0.065471
 heredity+hill,73300,0.527144,0.067525
 heredity+hill,73400,0.536831,0.072929
 heredity+hill,73500,0.536662,0.073013
@@ -1386,7 +1386,7 @@ heredity+hill,78000,0.520027,0.063075
 heredity+hill,78100,0.526514,0.066505
 heredity+hill,78200,0.509165,0.057734
 heredity+hill,78300,0.518884,0.064498
-heredity+hill,78400,0.515215,0.061360
+heredity+hill,78400,0.515214,0.061360
 heredity+hill,78500,0.522713,0.064098
 heredity+hill,78600,0.521454,0.065969
 heredity+hill,78700,0.532584,0.070895
@@ -1554,7 +1554,7 @@ random,11200,0.072701,0.012022
 random,11300,0.067944,0.010258
 random,11400,0.067232,0.011216
 random,11500,0.065894,0.011113
-random,11600,0.066309,0.009852
+random,11600,0.066308,0.009852
 random,11700,0.067569,0.010326
 random,11800,0.066768,0.007282
 random,11900,0.067360,0.006056
@@ -1589,7 +1589,7 @@ random,14700,0.066539,0.007385
 random,14800,0.066347,0.009452
 random,14900,0.062531,0.008854
 random,15000,0.067362,0.009532
-random,15100,0.063820,0.007638
+random,15100,0.063819,0.007638
 random,15200,0.065141,0.008839
 random,15300,0.067472,0.008629
 random,15400,0.070888,0.012781
@@ -1895,7 +1895,7 @@ random,45300,0.061006,0.007847
 random+hill,0,0.064344,0.008107
 random+hill,100,0.064344,0.008107
 random+hill,200,0.064344,0.008107
-random+hill,300,0.240127,0.019141
+random+hill,300,0.240128,0.019141
 random+hill,400,0.151967,0.013447
 random+hill,500,0.092930,0.009678
 random+hill,600,0.115949,0.015793
@@ -2079,7 +2079,7 @@ random+hill,18300,0.124022,0.016968
 random+hill,18400,0.118066,0.016497
 random+hill,18500,0.106800,0.014111
 random+hill,18600,0.105639,0.016625
-random+hill,18700,0.106663,0.013639
+random+hill,18700,0.106664,0.013639
 random+hill,18800,0.096185,0.013361
 random+hill,18900,0.103823,0.012034
 random+hill,19000,0.109324,0.014880
@@ -2092,7 +2092,7 @@ random+hill,19600,0.090977,0.013996
 random+hill,19700,0.127676,0.018602
 random+hill,19800,0.137810,0.020660
 random+hill,19900,0.129108,0.015716
-random+hill,20000,0.117107,0.014335
+random+hill,20000,0.117108,0.014335
 random+hill,20100,0.122657,0.019479
 random+hill,20200,0.119733,0.016241
 random+hill,20300,0.124218,0.018986
@@ -2124,7 +2124,7 @@ random+hill,22800,0.111474,0.013704
 random+hill,22900,0.111697,0.019292
 random+hill,23000,0.101531,0.013207
 random+hill,23100,0.120460,0.018519
-random+hill,23200,0.104819,0.015448
+random+hill,23200,0.104820,0.015448
 random+hill,23300,0.102491,0.013203
 random+hill,23400,0.117324,0.014289
 random+hill,23500,0.107427,0.016907
@@ -2295,7 +2295,7 @@ random+hill,39900,0.099481,0.012099
 random+hill,40000,0.093143,0.011719
 random+hill,40100,0.098361,0.014560
 random+hill,40200,0.105708,0.012687
-random+hill,40300,0.092864,0.012818
+random+hill,40300,0.092863,0.012818
 random+hill,40400,0.103348,0.016894
 random+hill,40500,0.093787,0.011372
 random+hill,40600,0.092420,0.010666
@@ -2355,3 +2355,1267 @@ random+hill,45900,0.106156,0.012610
 random+hill,46000,0.102867,0.014091
 random+hill,46100,0.105210,0.013214
 random+hill,46200,0.107026,0.012872
+heredity+hill (shuffled),0,0.064344,0.008107
+heredity+hill (shuffled),100,0.064344,0.008107
+heredity+hill (shuffled),200,0.064344,0.008107
+heredity+hill (shuffled),300,0.069756,0.010027
+heredity+hill (shuffled),400,0.090586,0.027098
+heredity+hill (shuffled),500,0.090366,0.027289
+heredity+hill (shuffled),600,0.081586,0.021332
+heredity+hill (shuffled),700,0.075541,0.015492
+heredity+hill (shuffled),800,0.073729,0.019716
+heredity+hill (shuffled),900,0.074307,0.023769
+heredity+hill (shuffled),1000,0.072681,0.020981
+heredity+hill (shuffled),1100,0.082971,0.026869
+heredity+hill (shuffled),1200,0.090200,0.036782
+heredity+hill (shuffled),1300,0.091413,0.040371
+heredity+hill (shuffled),1400,0.085050,0.039694
+heredity+hill (shuffled),1500,0.087574,0.039860
+heredity+hill (shuffled),1600,0.094668,0.054195
+heredity+hill (shuffled),1700,0.091639,0.053592
+heredity+hill (shuffled),1800,0.088368,0.043817
+heredity+hill (shuffled),1900,0.096856,0.049818
+heredity+hill (shuffled),2000,0.100783,0.056872
+heredity+hill (shuffled),2100,0.105127,0.058258
+heredity+hill (shuffled),2200,0.109868,0.062709
+heredity+hill (shuffled),2300,0.106065,0.061209
+heredity+hill (shuffled),2400,0.104548,0.059814
+heredity+hill (shuffled),2500,0.098757,0.060123
+heredity+hill (shuffled),2600,0.100771,0.058548
+heredity+hill (shuffled),2700,0.102198,0.065263
+heredity+hill (shuffled),2800,0.099952,0.060919
+heredity+hill (shuffled),2900,0.095074,0.055485
+heredity+hill (shuffled),3000,0.087396,0.048843
+heredity+hill (shuffled),3100,0.086514,0.051793
+heredity+hill (shuffled),3200,0.075558,0.044081
+heredity+hill (shuffled),3300,0.074973,0.045997
+heredity+hill (shuffled),3400,0.077616,0.045395
+heredity+hill (shuffled),3500,0.079320,0.048523
+heredity+hill (shuffled),3600,0.079855,0.048606
+heredity+hill (shuffled),3700,0.076648,0.045878
+heredity+hill (shuffled),3800,0.082674,0.043745
+heredity+hill (shuffled),3900,0.083638,0.045747
+heredity+hill (shuffled),4000,0.082201,0.047128
+heredity+hill (shuffled),4100,0.082573,0.047730
+heredity+hill (shuffled),4200,0.080686,0.045940
+heredity+hill (shuffled),4300,0.072341,0.040783
+heredity+hill (shuffled),4400,0.075381,0.047750
+heredity+hill (shuffled),4500,0.073820,0.045350
+heredity+hill (shuffled),4600,0.071812,0.046993
+heredity+hill (shuffled),4700,0.072834,0.050040
+heredity+hill (shuffled),4800,0.072596,0.045942
+heredity+hill (shuffled),4900,0.070943,0.045682
+heredity+hill (shuffled),5000,0.072504,0.045314
+heredity+hill (shuffled),5100,0.082714,0.051493
+heredity+hill (shuffled),5200,0.083635,0.047355
+heredity+hill (shuffled),5300,0.084739,0.049403
+heredity+hill (shuffled),5400,0.085752,0.055278
+heredity+hill (shuffled),5500,0.082678,0.048291
+heredity+hill (shuffled),5600,0.079349,0.048649
+heredity+hill (shuffled),5700,0.079104,0.044591
+heredity+hill (shuffled),5800,0.076058,0.040961
+heredity+hill (shuffled),5900,0.073073,0.038308
+heredity+hill (shuffled),6000,0.068904,0.034200
+heredity+hill (shuffled),6100,0.072642,0.038812
+heredity+hill (shuffled),6200,0.075876,0.038946
+heredity+hill (shuffled),6300,0.073110,0.034719
+heredity+hill (shuffled),6400,0.072610,0.035893
+heredity+hill (shuffled),6500,0.078674,0.043672
+heredity+hill (shuffled),6600,0.078673,0.046108
+heredity+hill (shuffled),6700,0.077571,0.046904
+heredity+hill (shuffled),6800,0.077689,0.048256
+heredity+hill (shuffled),6900,0.079589,0.050788
+heredity+hill (shuffled),7000,0.083766,0.052915
+heredity+hill (shuffled),7100,0.084264,0.050256
+heredity+hill (shuffled),7200,0.082721,0.048538
+heredity+hill (shuffled),7300,0.081700,0.051201
+heredity+hill (shuffled),7400,0.080344,0.050949
+heredity+hill (shuffled),7500,0.078814,0.050438
+heredity+hill (shuffled),7600,0.085540,0.057121
+heredity+hill (shuffled),7700,0.078193,0.049392
+heredity+hill (shuffled),7800,0.075864,0.047490
+heredity+hill (shuffled),7900,0.072047,0.042890
+heredity+hill (shuffled),8000,0.075017,0.044154
+heredity+hill (shuffled),8100,0.073365,0.041043
+heredity+hill (shuffled),8200,0.073741,0.040180
+heredity+hill (shuffled),8300,0.075112,0.047517
+heredity+hill (shuffled),8400,0.075407,0.041762
+heredity+hill (shuffled),8500,0.083400,0.047586
+heredity+hill (shuffled),8600,0.081246,0.047978
+heredity+hill (shuffled),8700,0.083963,0.049169
+heredity+hill (shuffled),8800,0.087995,0.050376
+heredity+hill (shuffled),8900,0.098642,0.056509
+heredity+hill (shuffled),9000,0.101889,0.059791
+heredity+hill (shuffled),9100,0.094754,0.052650
+heredity+hill (shuffled),9200,0.089728,0.049364
+heredity+hill (shuffled),9300,0.094426,0.054503
+heredity+hill (shuffled),9400,0.099989,0.050812
+heredity+hill (shuffled),9500,0.104548,0.053852
+heredity+hill (shuffled),9600,0.101028,0.050383
+heredity+hill (shuffled),9700,0.101877,0.054400
+heredity+hill (shuffled),9800,0.096682,0.052719
+heredity+hill (shuffled),9900,0.098390,0.054034
+heredity+hill (shuffled),10000,0.088343,0.051845
+heredity+hill (shuffled),10100,0.082739,0.044653
+heredity+hill (shuffled),10200,0.091857,0.050508
+heredity+hill (shuffled),10300,0.094717,0.051029
+heredity+hill (shuffled),10400,0.098002,0.051370
+heredity+hill (shuffled),10500,0.105700,0.061230
+heredity+hill (shuffled),10600,0.099055,0.056941
+heredity+hill (shuffled),10700,0.099787,0.060164
+heredity+hill (shuffled),10800,0.097331,0.059760
+heredity+hill (shuffled),10900,0.101025,0.066684
+heredity+hill (shuffled),11000,0.098552,0.062824
+heredity+hill (shuffled),11100,0.097290,0.059602
+heredity+hill (shuffled),11200,0.098018,0.057540
+heredity+hill (shuffled),11300,0.101678,0.059919
+heredity+hill (shuffled),11400,0.104445,0.063144
+heredity+hill (shuffled),11500,0.104951,0.064025
+heredity+hill (shuffled),11600,0.100659,0.057908
+heredity+hill (shuffled),11700,0.095649,0.052638
+heredity+hill (shuffled),11800,0.097610,0.056364
+heredity+hill (shuffled),11900,0.092075,0.054213
+heredity+hill (shuffled),12000,0.085219,0.048170
+heredity+hill (shuffled),12100,0.081658,0.042647
+heredity+hill (shuffled),12200,0.080868,0.044535
+heredity+hill (shuffled),12300,0.080509,0.043169
+heredity+hill (shuffled),12400,0.080953,0.044991
+heredity+hill (shuffled),12500,0.083639,0.046307
+heredity+hill (shuffled),12600,0.080424,0.044078
+heredity+hill (shuffled),12700,0.083896,0.046184
+heredity+hill (shuffled),12800,0.083029,0.045356
+heredity+hill (shuffled),12900,0.080769,0.043403
+heredity+hill (shuffled),13000,0.085631,0.051430
+heredity+hill (shuffled),13100,0.080858,0.048888
+heredity+hill (shuffled),13200,0.078511,0.049036
+heredity+hill (shuffled),13300,0.080364,0.048127
+heredity+hill (shuffled),13400,0.083116,0.048584
+heredity+hill (shuffled),13500,0.079096,0.044476
+heredity+hill (shuffled),13600,0.075362,0.041694
+heredity+hill (shuffled),13700,0.067647,0.032929
+heredity+hill (shuffled),13800,0.067131,0.039641
+heredity+hill (shuffled),13900,0.073153,0.042080
+heredity+hill (shuffled),14000,0.071485,0.037731
+heredity+hill (shuffled),14100,0.069630,0.035702
+heredity+hill (shuffled),14200,0.068266,0.035832
+heredity+hill (shuffled),14300,0.073004,0.043273
+heredity+hill (shuffled),14400,0.071743,0.043030
+heredity+hill (shuffled),14500,0.073885,0.040983
+heredity+hill (shuffled),14600,0.076695,0.045985
+heredity+hill (shuffled),14700,0.077218,0.045917
+heredity+hill (shuffled),14800,0.078510,0.050431
+heredity+hill (shuffled),14900,0.084904,0.056038
+heredity+hill (shuffled),15000,0.082401,0.055977
+heredity+hill (shuffled),15100,0.083542,0.051640
+heredity+hill (shuffled),15200,0.076702,0.044397
+heredity+hill (shuffled),15300,0.078771,0.047271
+heredity+hill (shuffled),15400,0.075131,0.046093
+heredity+hill (shuffled),15500,0.084645,0.051398
+heredity+hill (shuffled),15600,0.088862,0.055949
+heredity+hill (shuffled),15700,0.089031,0.049882
+heredity+hill (shuffled),15800,0.085951,0.050213
+heredity+hill (shuffled),15900,0.088278,0.053577
+heredity+hill (shuffled),16000,0.091658,0.056902
+heredity+hill (shuffled),16100,0.087378,0.054324
+heredity+hill (shuffled),16200,0.085266,0.045664
+heredity+hill (shuffled),16300,0.081930,0.052015
+heredity+hill (shuffled),16400,0.079907,0.051874
+heredity+hill (shuffled),16500,0.081212,0.048309
+heredity+hill (shuffled),16600,0.074167,0.040593
+heredity+hill (shuffled),16700,0.065237,0.030678
+heredity+hill (shuffled),16800,0.067239,0.034308
+heredity+hill (shuffled),16900,0.068138,0.037816
+heredity+hill (shuffled),17000,0.070539,0.039775
+heredity+hill (shuffled),17100,0.074976,0.043221
+heredity+hill (shuffled),17200,0.072850,0.044507
+heredity+hill (shuffled),17300,0.071318,0.043919
+heredity+hill (shuffled),17400,0.070381,0.038913
+heredity+hill (shuffled),17500,0.072805,0.038762
+heredity+hill (shuffled),17600,0.076028,0.045176
+heredity+hill (shuffled),17700,0.077250,0.044114
+heredity+hill (shuffled),17800,0.075389,0.039096
+heredity+hill (shuffled),17900,0.077216,0.045973
+heredity+hill (shuffled),18000,0.077003,0.044954
+heredity+hill (shuffled),18100,0.073856,0.044712
+heredity+hill (shuffled),18200,0.078888,0.049970
+heredity+hill (shuffled),18300,0.076540,0.045598
+heredity+hill (shuffled),18400,0.073428,0.042097
+heredity+hill (shuffled),18500,0.072752,0.039123
+heredity+hill (shuffled),18600,0.075759,0.042740
+heredity+hill (shuffled),18700,0.076700,0.048639
+heredity+hill (shuffled),18800,0.079675,0.052415
+heredity+hill (shuffled),18900,0.087258,0.059762
+heredity+hill (shuffled),19000,0.089050,0.053183
+heredity+hill (shuffled),19100,0.098476,0.059421
+heredity+hill (shuffled),19200,0.095673,0.054241
+heredity+hill (shuffled),19300,0.105006,0.058699
+heredity+hill (shuffled),19400,0.095316,0.051595
+heredity+hill (shuffled),19500,0.093245,0.053220
+heredity+hill (shuffled),19600,0.091395,0.052751
+heredity+hill (shuffled),19700,0.084520,0.046959
+heredity+hill (shuffled),19800,0.085422,0.045967
+heredity+hill (shuffled),19900,0.080818,0.043482
+heredity+hill (shuffled),20000,0.080518,0.043282
+heredity+hill (shuffled),20100,0.076560,0.040640
+heredity+hill (shuffled),20200,0.082163,0.043037
+heredity+hill (shuffled),20300,0.090501,0.054187
+heredity+hill (shuffled),20400,0.086865,0.046474
+heredity+hill (shuffled),20500,0.083614,0.044851
+heredity+hill (shuffled),20600,0.082136,0.045384
+heredity+hill (shuffled),20700,0.080901,0.044241
+heredity+hill (shuffled),20800,0.087227,0.049085
+heredity+hill (shuffled),20900,0.089786,0.048419
+heredity+hill (shuffled),21000,0.090886,0.052337
+heredity+hill (shuffled),21100,0.088310,0.052524
+heredity+hill (shuffled),21200,0.079230,0.044384
+heredity+hill (shuffled),21300,0.079444,0.044431
+heredity+hill (shuffled),21400,0.072411,0.039824
+heredity+hill (shuffled),21500,0.077286,0.046972
+heredity+hill (shuffled),21600,0.082170,0.053747
+heredity+hill (shuffled),21700,0.085880,0.056287
+heredity+hill (shuffled),21800,0.085896,0.054012
+heredity+hill (shuffled),21900,0.084330,0.051597
+heredity+hill (shuffled),22000,0.088310,0.055893
+heredity+hill (shuffled),22100,0.086393,0.050320
+heredity+hill (shuffled),22200,0.087352,0.055542
+heredity+hill (shuffled),22300,0.091276,0.058734
+heredity+hill (shuffled),22400,0.090932,0.056529
+heredity+hill (shuffled),22500,0.092070,0.054751
+heredity+hill (shuffled),22600,0.092291,0.054487
+heredity+hill (shuffled),22700,0.088134,0.053486
+heredity+hill (shuffled),22800,0.086196,0.050580
+heredity+hill (shuffled),22900,0.090552,0.054905
+heredity+hill (shuffled),23000,0.091945,0.056937
+heredity+hill (shuffled),23100,0.091205,0.056943
+heredity+hill (shuffled),23200,0.086833,0.054174
+heredity+hill (shuffled),23300,0.089176,0.053865
+heredity+hill (shuffled),23400,0.087848,0.055487
+heredity+hill (shuffled),23500,0.091067,0.054315
+heredity+hill (shuffled),23600,0.083501,0.052017
+heredity+hill (shuffled),23700,0.079636,0.050695
+heredity+hill (shuffled),23800,0.083791,0.053346
+heredity+hill (shuffled),23900,0.083338,0.050539
+heredity+hill (shuffled),24000,0.082895,0.052350
+heredity+hill (shuffled),24100,0.078477,0.050711
+heredity+hill (shuffled),24200,0.071542,0.037803
+heredity+hill (shuffled),24300,0.073688,0.039552
+heredity+hill (shuffled),24400,0.070680,0.037899
+heredity+hill (shuffled),24500,0.075694,0.045200
+heredity+hill (shuffled),24600,0.070255,0.033858
+heredity+hill (shuffled),24700,0.071716,0.038710
+heredity+hill (shuffled),24800,0.076618,0.042185
+heredity+hill (shuffled),24900,0.081020,0.049336
+heredity+hill (shuffled),25000,0.080051,0.049565
+heredity+hill (shuffled),25100,0.080946,0.053686
+heredity+hill (shuffled),25200,0.078976,0.053077
+heredity+hill (shuffled),25300,0.080861,0.052188
+heredity+hill (shuffled),25400,0.084267,0.053360
+heredity+hill (shuffled),25500,0.084560,0.050389
+heredity+hill (shuffled),25600,0.089094,0.054632
+heredity+hill (shuffled),25700,0.092424,0.053853
+heredity+hill (shuffled),25800,0.088812,0.049970
+heredity+hill (shuffled),25900,0.084369,0.047866
+heredity+hill (shuffled),26000,0.076519,0.038930
+heredity+hill (shuffled),26100,0.080112,0.046661
+heredity+hill (shuffled),26200,0.078194,0.042564
+heredity+hill (shuffled),26300,0.087793,0.054940
+heredity+hill (shuffled),26400,0.086869,0.048564
+heredity+hill (shuffled),26500,0.088059,0.050344
+heredity+hill (shuffled),26600,0.091674,0.050400
+heredity+hill (shuffled),26700,0.085636,0.047516
+heredity+hill (shuffled),26800,0.084372,0.047040
+heredity+hill (shuffled),26900,0.085735,0.052254
+heredity+hill (shuffled),27000,0.084579,0.048771
+heredity+hill (shuffled),27100,0.089173,0.056913
+heredity+hill (shuffled),27200,0.089382,0.052151
+heredity+hill (shuffled),27300,0.090858,0.054073
+heredity+hill (shuffled),27400,0.080413,0.043471
+heredity+hill (shuffled),27500,0.084947,0.049270
+heredity+hill (shuffled),27600,0.087639,0.054177
+heredity+hill (shuffled),27700,0.084436,0.053163
+heredity+hill (shuffled),27800,0.084163,0.050385
+heredity+hill (shuffled),27900,0.080141,0.044061
+heredity+hill (shuffled),28000,0.084869,0.045772
+heredity+hill (shuffled),28100,0.082640,0.040352
+heredity+hill (shuffled),28200,0.076807,0.037825
+heredity+hill (shuffled),28300,0.083303,0.044226
+heredity+hill (shuffled),28400,0.081123,0.047569
+heredity+hill (shuffled),28500,0.077332,0.046793
+heredity+hill (shuffled),28600,0.086845,0.054687
+heredity+hill (shuffled),28700,0.078959,0.046848
+heredity+hill (shuffled),28800,0.075337,0.047989
+heredity+hill (shuffled),28900,0.068799,0.040670
+heredity+hill (shuffled),29000,0.076342,0.040182
+heredity+hill (shuffled),29100,0.075016,0.035497
+heredity+hill (shuffled),29200,0.075163,0.039788
+heredity+hill (shuffled),29300,0.072301,0.037376
+heredity+hill (shuffled),29400,0.069915,0.036424
+heredity+hill (shuffled),29500,0.070220,0.039446
+heredity+hill (shuffled),29600,0.071100,0.040742
+heredity+hill (shuffled),29700,0.072158,0.041514
+heredity+hill (shuffled),29800,0.072964,0.041845
+heredity+hill (shuffled),29900,0.075476,0.043682
+heredity+hill (shuffled),30000,0.076966,0.047320
+heredity+hill (shuffled),30100,0.075104,0.046123
+heredity+hill (shuffled),30200,0.071457,0.039409
+heredity+hill (shuffled),30300,0.072042,0.037654
+heredity+hill (shuffled),30400,0.078666,0.042245
+heredity+hill (shuffled),30500,0.077933,0.042487
+heredity+hill (shuffled),30600,0.077553,0.042866
+heredity+hill (shuffled),30700,0.071582,0.039285
+heredity+hill (shuffled),30800,0.073297,0.042546
+heredity+hill (shuffled),30900,0.077112,0.047652
+heredity+hill (shuffled),31000,0.075510,0.047810
+heredity+hill (shuffled),31100,0.075829,0.046570
+heredity+hill (shuffled),31200,0.077384,0.047351
+heredity+hill (shuffled),31300,0.080754,0.048810
+heredity+hill (shuffled),31400,0.078338,0.052246
+heredity+hill (shuffled),31500,0.079600,0.053056
+heredity+hill (shuffled),31600,0.078658,0.048960
+heredity+hill (shuffled),31700,0.075904,0.044484
+heredity+hill (shuffled),31800,0.079117,0.047626
+heredity+hill (shuffled),31900,0.078555,0.045250
+heredity+hill (shuffled),32000,0.078313,0.045718
+heredity+hill (shuffled),32100,0.077744,0.047184
+heredity+hill (shuffled),32200,0.071804,0.039856
+heredity+hill (shuffled),32300,0.072333,0.036726
+heredity+hill (shuffled),32400,0.077412,0.043185
+heredity+hill (shuffled),32500,0.075370,0.043936
+heredity+hill (shuffled),32600,0.077675,0.049159
+heredity+hill (shuffled),32700,0.079807,0.049763
+heredity+hill (shuffled),32800,0.081394,0.047947
+heredity+hill (shuffled),32900,0.089010,0.054361
+heredity+hill (shuffled),33000,0.089555,0.058801
+heredity+hill (shuffled),33100,0.089120,0.056763
+heredity+hill (shuffled),33200,0.085637,0.052385
+heredity+hill (shuffled),33300,0.082882,0.051919
+heredity+hill (shuffled),33400,0.076067,0.041498
+heredity+hill (shuffled),33500,0.072792,0.039766
+heredity+hill (shuffled),33600,0.072547,0.044532
+heredity+hill (shuffled),33700,0.076944,0.049573
+heredity+hill (shuffled),33800,0.074103,0.044297
+heredity+hill (shuffled),33900,0.071812,0.045243
+heredity+hill (shuffled),34000,0.073522,0.046838
+heredity+hill (shuffled),34100,0.074889,0.047633
+heredity+hill (shuffled),34200,0.081833,0.049031
+heredity+hill (shuffled),34300,0.082119,0.046244
+heredity+hill (shuffled),34400,0.079950,0.049077
+heredity+hill (shuffled),34500,0.081448,0.045821
+heredity+hill (shuffled),34600,0.081238,0.046132
+heredity+hill (shuffled),34700,0.075432,0.036407
+heredity+hill (shuffled),34800,0.079871,0.038379
+heredity+hill (shuffled),34900,0.075875,0.036494
+heredity+hill (shuffled),35000,0.080221,0.040779
+heredity+hill (shuffled),35100,0.084914,0.045754
+heredity+hill (shuffled),35200,0.082215,0.045010
+heredity+hill (shuffled),35300,0.073948,0.040157
+heredity+hill (shuffled),35400,0.076173,0.039834
+heredity+hill (shuffled),35500,0.082796,0.038640
+heredity+hill (shuffled),35600,0.086788,0.044289
+heredity+hill (shuffled),35700,0.090258,0.047207
+heredity+hill (shuffled),35800,0.091774,0.052124
+heredity+hill (shuffled),35900,0.093021,0.055181
+heredity+hill (shuffled),36000,0.096156,0.059784
+heredity+hill (shuffled),36100,0.100119,0.059646
+heredity+hill (shuffled),36200,0.097061,0.057617
+heredity+hill (shuffled),36300,0.099927,0.058861
+heredity+hill (shuffled),36400,0.092419,0.056678
+heredity+hill (shuffled),36500,0.096623,0.061508
+heredity+hill (shuffled),36600,0.099835,0.064125
+heredity+hill (shuffled),36700,0.101468,0.062804
+heredity+hill (shuffled),36800,0.096718,0.056557
+heredity+hill (shuffled),36900,0.102019,0.061618
+heredity+hill (shuffled),37000,0.099177,0.058983
+heredity+hill (shuffled),37100,0.107759,0.066587
+heredity+hill (shuffled),37200,0.103061,0.066132
+heredity+hill (shuffled),37300,0.105255,0.070413
+heredity+hill (shuffled),37400,0.105967,0.071649
+heredity+hill (shuffled),37500,0.104781,0.067771
+heredity+hill (shuffled),37600,0.110147,0.070790
+heredity+hill (shuffled),37700,0.107934,0.068950
+heredity+hill (shuffled),37800,0.098853,0.060093
+heredity+hill (shuffled),37900,0.099134,0.059491
+heredity+hill (shuffled),38000,0.098765,0.058908
+heredity+hill (shuffled),38100,0.094630,0.056791
+heredity+hill (shuffled),38200,0.088735,0.052673
+heredity+hill (shuffled),38300,0.091190,0.053282
+heredity+hill (shuffled),38400,0.091197,0.051270
+heredity+hill (shuffled),38500,0.096229,0.057037
+heredity+hill (shuffled),38600,0.098982,0.056053
+heredity+hill (shuffled),38700,0.104168,0.060523
+heredity+hill (shuffled),38800,0.103888,0.063452
+heredity+hill (shuffled),38900,0.108641,0.068363
+heredity+hill (shuffled),39000,0.103655,0.065611
+heredity+hill (shuffled),39100,0.108644,0.076035
+heredity+hill (shuffled),39200,0.102924,0.063694
+heredity+hill (shuffled),39300,0.101508,0.060929
+heredity+hill (shuffled),39400,0.104836,0.057751
+heredity+hill (shuffled),39500,0.105052,0.055478
+heredity+hill (shuffled),39600,0.104297,0.057130
+heredity+hill (shuffled),39700,0.100301,0.054512
+heredity+hill (shuffled),39800,0.095628,0.051274
+heredity+hill (shuffled),39900,0.096139,0.055260
+heredity+hill (shuffled),40000,0.097246,0.058931
+heredity+hill (shuffled),40100,0.100637,0.059100
+heredity+hill (shuffled),40200,0.096464,0.055168
+heredity+hill (shuffled),40300,0.099469,0.057110
+heredity+hill (shuffled),40400,0.098431,0.062687
+heredity+hill (shuffled),40500,0.097233,0.062532
+heredity+hill (shuffled),40600,0.099172,0.068606
+heredity+hill (shuffled),40700,0.091213,0.056144
+heredity+hill (shuffled),40800,0.096847,0.064823
+heredity+hill (shuffled),40900,0.109315,0.072798
+heredity+hill (shuffled),41000,0.106128,0.075245
+heredity+hill (shuffled),41100,0.100922,0.067696
+heredity+hill (shuffled),41200,0.098864,0.061114
+heredity+hill (shuffled),41300,0.107360,0.068102
+heredity+hill (shuffled),41400,0.109671,0.065772
+heredity+hill (shuffled),41500,0.107477,0.060756
+heredity+hill (shuffled),41600,0.098634,0.054139
+heredity+hill (shuffled),41700,0.100817,0.058798
+heredity+hill (shuffled),41800,0.103688,0.064810
+heredity+hill (shuffled),41900,0.097332,0.056981
+heredity+hill (shuffled),42000,0.101037,0.060877
+heredity+hill (shuffled),42100,0.100520,0.060892
+heredity+hill (shuffled),42200,0.101801,0.063103
+heredity+hill (shuffled),42300,0.099659,0.062698
+heredity+hill (shuffled),42400,0.104857,0.064481
+heredity+hill (shuffled),42500,0.105001,0.062511
+heredity+hill (shuffled),42600,0.113652,0.077458
+heredity+hill (shuffled),42700,0.108004,0.072975
+heredity+hill (shuffled),42800,0.098540,0.065727
+heredity+hill (shuffled),42900,0.098197,0.060390
+heredity+hill (shuffled),43000,0.106481,0.065787
+heredity+hill (shuffled),43100,0.099125,0.052959
+heredity+hill (shuffled),43200,0.106741,0.061430
+heredity+hill (shuffled),43300,0.099660,0.055878
+heredity+hill (shuffled),43400,0.095713,0.056153
+heredity+hill (shuffled),43500,0.093954,0.053546
+heredity+hill (shuffled),43600,0.086381,0.045135
+heredity+hill (shuffled),43700,0.082698,0.036293
+heredity+hill (shuffled),43800,0.085860,0.037926
+heredity+hill (shuffled),43900,0.092708,0.044023
+heredity+hill (shuffled),44000,0.098829,0.054166
+heredity+hill (shuffled),44100,0.087527,0.045770
+heredity+hill (shuffled),44200,0.079062,0.042891
+heredity+hill (shuffled),44300,0.083385,0.047665
+heredity+hill (shuffled),44400,0.090340,0.052292
+heredity+hill (shuffled),44500,0.090394,0.051276
+heredity+hill (shuffled),44600,0.091633,0.051985
+heredity+hill (shuffled),44700,0.085459,0.050372
+heredity+hill (shuffled),44800,0.093253,0.049829
+heredity+hill (shuffled),44900,0.094215,0.053926
+heredity+hill (shuffled),45000,0.098745,0.057811
+heredity+hill (shuffled),45100,0.090898,0.050421
+heredity+hill (shuffled),45200,0.094674,0.051869
+heredity+hill (shuffled),45300,0.100167,0.055982
+heredity+hill (shuffled),45400,0.093338,0.050781
+heredity+hill (shuffled),45500,0.086092,0.042537
+heredity+hill (shuffled),45600,0.087180,0.044213
+heredity+hill (shuffled),45700,0.091966,0.047294
+heredity+hill (shuffled),45800,0.093293,0.048125
+heredity+hill (shuffled),45900,0.084666,0.044120
+heredity+hill (shuffled),46000,0.085165,0.046884
+heredity+hill (shuffled),46100,0.075766,0.039103
+heredity+hill (shuffled),46200,0.079406,0.043150
+heredity+hill (shuffled),46300,0.088098,0.053092
+heredity+hill (shuffled),46400,0.094914,0.060604
+heredity+hill (shuffled),46500,0.090477,0.054224
+heredity+hill (shuffled),46600,0.090592,0.050620
+heredity+hill (shuffled),46700,0.092136,0.052104
+heredity+hill (shuffled),46800,0.082846,0.048374
+heredity+hill (shuffled),46900,0.080174,0.041839
+heredity+hill (shuffled),47000,0.083897,0.038959
+heredity+hill (shuffled),47100,0.089216,0.047670
+heredity+hill (shuffled),47200,0.086134,0.049121
+heredity+hill (shuffled),47300,0.082017,0.045339
+heredity+hill (shuffled),47400,0.082484,0.044272
+heredity+hill (shuffled),47500,0.083376,0.049265
+heredity+hill (shuffled),47600,0.086678,0.052089
+heredity+hill (shuffled),47700,0.075360,0.043219
+heredity+hill (shuffled),47800,0.076835,0.045318
+heredity+hill (shuffled),47900,0.078208,0.045972
+heredity+hill (shuffled),48000,0.080474,0.048723
+heredity+hill (shuffled),48100,0.086871,0.053348
+heredity+hill (shuffled),48200,0.082794,0.043614
+heredity+hill (shuffled),48300,0.082509,0.043020
+heredity+hill (shuffled),48400,0.084779,0.047984
+heredity+hill (shuffled),48500,0.082735,0.045062
+heredity+hill (shuffled),48600,0.079375,0.045768
+heredity+hill (shuffled),48700,0.083125,0.048131
+heredity+hill (shuffled),48800,0.085201,0.050062
+heredity+hill (shuffled),48900,0.085560,0.051855
+heredity+hill (shuffled),49000,0.086539,0.052806
+heredity+hill (shuffled),49100,0.087535,0.051634
+heredity+hill (shuffled),49200,0.085709,0.049411
+heredity+hill (shuffled),49300,0.082763,0.046256
+heredity+hill (shuffled),49400,0.085423,0.047465
+heredity+hill (shuffled),49500,0.083929,0.045704
+heredity+hill (shuffled),49600,0.087105,0.045401
+heredity+hill (shuffled),49700,0.088655,0.046669
+heredity+hill (shuffled),49800,0.087715,0.046341
+heredity+hill (shuffled),49900,0.091193,0.052553
+heredity+hill (shuffled),50000,0.087595,0.047215
+heredity+hill (shuffled),50100,0.080948,0.044050
+heredity+hill (shuffled),50200,0.087325,0.044967
+heredity+hill (shuffled),50300,0.084526,0.045824
+heredity+hill (shuffled),50400,0.082891,0.047660
+heredity+hill (shuffled),50500,0.080799,0.037778
+heredity+hill (shuffled),50600,0.082203,0.041794
+heredity+hill (shuffled),50700,0.085569,0.045218
+heredity+hill (shuffled),50800,0.087529,0.046770
+heredity+hill (shuffled),50900,0.086676,0.048539
+heredity+hill (shuffled),51000,0.084238,0.047471
+heredity+hill (shuffled),51100,0.079837,0.044068
+heredity+hill (shuffled),51200,0.076202,0.034231
+heredity+hill (shuffled),51300,0.076808,0.036062
+heredity+hill (shuffled),51400,0.077376,0.032573
+heredity+hill (shuffled),51500,0.090656,0.046634
+heredity+hill (shuffled),51600,0.086317,0.048292
+heredity+hill (shuffled),51700,0.081733,0.045403
+heredity+hill (shuffled),51800,0.083544,0.044540
+heredity+hill (shuffled),51900,0.085166,0.047657
+heredity+hill (shuffled),52000,0.083222,0.047679
+heredity+hill (shuffled),52100,0.076881,0.040018
+heredity+hill (shuffled),52200,0.076840,0.040414
+heredity+hill (shuffled),52300,0.077922,0.041432
+heredity+hill (shuffled),52400,0.078650,0.041632
+heredity+hill (shuffled),52500,0.082478,0.046306
+heredity+hill (shuffled),52600,0.083712,0.044233
+heredity+hill (shuffled),52700,0.084695,0.047872
+heredity+hill (shuffled),52800,0.085588,0.051171
+heredity+hill (shuffled),52900,0.089858,0.053046
+heredity+hill (shuffled),53000,0.090423,0.053250
+heredity+hill (shuffled),53100,0.089026,0.049329
+heredity+hill (shuffled),53200,0.087886,0.044134
+heredity+hill (shuffled),53300,0.091321,0.047946
+heredity+hill (shuffled),53400,0.089633,0.043862
+heredity+hill (shuffled),53500,0.088186,0.044003
+heredity+hill (shuffled),53600,0.091544,0.048323
+heredity+hill (shuffled),53700,0.088608,0.046394
+heredity+hill (shuffled),53800,0.082597,0.042269
+heredity+hill (shuffled),53900,0.078407,0.040122
+heredity+hill (shuffled),54000,0.080642,0.038568
+heredity+hill (shuffled),54100,0.084090,0.043580
+heredity+hill (shuffled),54200,0.077110,0.038848
+heredity+hill (shuffled),54300,0.078034,0.038825
+heredity+hill (shuffled),54400,0.086338,0.041780
+heredity+hill (shuffled),54500,0.091724,0.042715
+heredity+hill (shuffled),54600,0.085937,0.036918
+heredity+hill (shuffled),54700,0.085821,0.044330
+heredity+hill (shuffled),54800,0.087062,0.048866
+heredity+hill (shuffled),54900,0.088572,0.049313
+heredity+hill (shuffled),55000,0.096132,0.046663
+heredity+hill (shuffled),55100,0.092689,0.044752
+heredity+hill (shuffled),55200,0.092241,0.044922
+heredity+hill (shuffled),55300,0.089115,0.046125
+heredity+hill (shuffled),55400,0.091311,0.043903
+heredity+hill (shuffled),55500,0.091229,0.048863
+heredity+hill (shuffled),55600,0.088888,0.046029
+heredity+hill (shuffled),55700,0.090160,0.051229
+heredity+hill (shuffled),55800,0.090303,0.052462
+heredity+hill (shuffled),55900,0.087265,0.051696
+heredity+hill (shuffled),56000,0.083054,0.044779
+heredity+hill (shuffled),56100,0.083047,0.039209
+heredity+hill (shuffled),56200,0.079576,0.041553
+heredity+hill (shuffled),56300,0.079717,0.043199
+heredity+hill (shuffled),56400,0.079164,0.047783
+heredity+hill (shuffled),56500,0.075847,0.042323
+heredity+hill (shuffled),56600,0.074613,0.042636
+heredity+hill (shuffled),56700,0.077363,0.045798
+heredity+hill (shuffled),56800,0.079025,0.048876
+heredity+hill (shuffled),56900,0.075381,0.046863
+heredity+hill (shuffled),57000,0.073905,0.043046
+heredity+hill (shuffled),57100,0.080907,0.051490
+heredity+hill (shuffled),57200,0.079186,0.046982
+heredity+hill (shuffled),57300,0.079541,0.046198
+heredity+hill (shuffled),57400,0.082775,0.045693
+heredity+hill (shuffled),57500,0.082776,0.047562
+heredity+hill (shuffled),57600,0.083675,0.052778
+heredity+hill (shuffled),57700,0.079646,0.043130
+heredity+hill (shuffled),57800,0.082003,0.049508
+heredity+hill (shuffled),57900,0.084297,0.053043
+heredity+hill (shuffled),58000,0.084021,0.052797
+heredity+hill (shuffled),58100,0.080489,0.046180
+heredity+hill (shuffled),58200,0.079926,0.043664
+heredity+hill (shuffled),58300,0.082343,0.044401
+heredity+hill (shuffled),58400,0.083020,0.045789
+heredity+hill (shuffled),58500,0.082059,0.048820
+heredity+hill (shuffled),58600,0.086439,0.055412
+heredity+hill (shuffled),58700,0.076478,0.038491
+heredity+hill (shuffled),58800,0.074734,0.035186
+heredity+hill (shuffled),58900,0.076233,0.034189
+heredity+hill (shuffled),59000,0.082603,0.040666
+heredity+hill (shuffled),59100,0.078062,0.037479
+heredity+hill (shuffled),59200,0.077879,0.037402
+heredity+hill (shuffled),59300,0.080349,0.043608
+heredity+hill (shuffled),59400,0.075528,0.039335
+heredity+hill (shuffled),59500,0.080565,0.043286
+heredity+hill (shuffled),59600,0.082862,0.044028
+heredity+hill (shuffled),59700,0.086057,0.047487
+heredity+hill (shuffled),59800,0.086943,0.046533
+heredity+hill (shuffled),59900,0.085630,0.046730
+heredity+hill (shuffled),60000,0.085723,0.052711
+heredity+hill (shuffled),60100,0.085171,0.048688
+heredity+hill (shuffled),60200,0.087194,0.044742
+heredity+hill (shuffled),60300,0.083381,0.040675
+heredity+hill (shuffled),60400,0.083861,0.045256
+heredity+hill (shuffled),60500,0.078391,0.038706
+heredity+hill (shuffled),60600,0.082750,0.044931
+heredity+hill (shuffled),60700,0.083338,0.045451
+heredity+hill (shuffled),60800,0.083336,0.045821
+heredity+hill (shuffled),60900,0.085827,0.046378
+heredity+hill (shuffled),61000,0.082009,0.043852
+heredity+hill (shuffled),61100,0.083377,0.047587
+heredity+hill (shuffled),61200,0.083870,0.044568
+heredity+hill (shuffled),61300,0.082326,0.044253
+heredity+hill (shuffled),61400,0.090903,0.049603
+heredity+hill (shuffled),61500,0.091286,0.051076
+heredity+hill (shuffled),61600,0.093616,0.052424
+heredity+hill (shuffled),61700,0.089571,0.049653
+heredity+hill (shuffled),61800,0.090576,0.055409
+heredity+hill (shuffled),61900,0.089091,0.051875
+heredity+hill (shuffled),62000,0.088402,0.051677
+heredity+hill (shuffled),62100,0.084180,0.046863
+heredity+hill (shuffled),62200,0.087344,0.048517
+heredity+hill (shuffled),62300,0.094668,0.055310
+heredity+hill (shuffled),62400,0.092719,0.049840
+heredity+hill (shuffled),62500,0.093452,0.050612
+heredity+hill (shuffled),62600,0.094035,0.053468
+heredity+hill (shuffled),62700,0.096469,0.053051
+heredity+hill (shuffled),62800,0.091420,0.047523
+heredity+hill (shuffled),62900,0.094252,0.049319
+heredity+hill (shuffled),63000,0.092662,0.048564
+heredity+hill (shuffled),63100,0.086785,0.047055
+heredity+hill (shuffled),63200,0.086623,0.046742
+heredity+hill (shuffled),63300,0.084427,0.043425
+heredity+hill (shuffled),63400,0.086851,0.046209
+heredity+hill (shuffled),63500,0.082257,0.044531
+heredity+hill (shuffled),63600,0.081139,0.043607
+heredity+hill (shuffled),63700,0.082569,0.044995
+heredity+hill (shuffled),63800,0.083115,0.046942
+heredity+hill (shuffled),63900,0.078785,0.041978
+heredity+hill (shuffled),64000,0.078483,0.040657
+heredity+hill (shuffled),64100,0.077488,0.041505
+heredity+hill (shuffled),64200,0.079030,0.044157
+heredity+hill (shuffled),64300,0.084436,0.050054
+heredity+hill (shuffled),64400,0.084659,0.052047
+heredity+hill (shuffled),64500,0.080389,0.047210
+heredity+hill (shuffled),64600,0.081760,0.050957
+heredity+hill (shuffled),64700,0.079703,0.045929
+heredity+hill (shuffled),64800,0.076481,0.040579
+heredity+hill (shuffled),64900,0.078564,0.041663
+heredity+hill (shuffled),65000,0.081505,0.044735
+heredity+hill (shuffled),65100,0.080179,0.043040
+heredity+hill (shuffled),65200,0.082016,0.050414
+heredity+hill (shuffled),65300,0.082652,0.050185
+heredity+hill (shuffled),65400,0.081338,0.048404
+heredity+hill (shuffled),65500,0.080380,0.048932
+heredity+hill (shuffled),65600,0.080333,0.047828
+heredity+hill (shuffled),65700,0.083647,0.051664
+heredity+hill (shuffled),65800,0.082719,0.050339
+heredity+hill (shuffled),65900,0.081699,0.048627
+heredity+hill (shuffled),66000,0.083536,0.048721
+heredity+hill (shuffled),66100,0.079966,0.044294
+heredity+hill (shuffled),66200,0.080118,0.046957
+heredity+hill (shuffled),66300,0.078353,0.043157
+heredity+hill (shuffled),66400,0.078087,0.044580
+heredity+hill (shuffled),66500,0.077697,0.044533
+heredity+hill (shuffled),66600,0.081278,0.046021
+heredity+hill (shuffled),66700,0.082788,0.048536
+heredity+hill (shuffled),66800,0.084818,0.055054
+heredity+hill (shuffled),66900,0.082329,0.052726
+heredity+hill (shuffled),67000,0.083691,0.054890
+heredity+hill (shuffled),67100,0.076300,0.043776
+heredity+hill (shuffled),67200,0.079136,0.048874
+heredity+hill (shuffled),67300,0.078249,0.046545
+heredity+hill (shuffled),67400,0.079473,0.047142
+heredity+hill (shuffled),67500,0.079044,0.044276
+heredity+hill (shuffled),67600,0.077632,0.040478
+heredity+hill (shuffled),67700,0.072452,0.030861
+heredity+hill (shuffled),67800,0.071454,0.026981
+heredity+hill (shuffled),67900,0.073047,0.031030
+heredity+hill (shuffled),68000,0.071896,0.031924
+heredity+hill (shuffled),68100,0.073335,0.035631
+heredity+hill (shuffled),68200,0.074694,0.036782
+heredity+hill (shuffled),68300,0.077013,0.044391
+heredity+hill (shuffled),68400,0.080051,0.049208
+heredity+hill (shuffled),68500,0.082667,0.050644
+heredity+hill (shuffled),68600,0.081385,0.048125
+heredity+hill (shuffled),68700,0.082114,0.048723
+heredity+hill (shuffled),68800,0.081892,0.046986
+heredity+hill (shuffled),68900,0.086566,0.051358
+heredity+hill (shuffled),69000,0.087566,0.052894
+heredity+hill (shuffled),69100,0.083560,0.046317
+heredity+hill (shuffled),69200,0.084416,0.051880
+heredity+hill (shuffled),69300,0.089103,0.054589
+heredity+hill (shuffled),69400,0.086255,0.053246
+heredity+hill (shuffled),69500,0.085326,0.050542
+heredity+hill (shuffled),69600,0.083904,0.050667
+heredity+hill (shuffled),69700,0.083056,0.050294
+heredity+hill (shuffled),69800,0.077275,0.041180
+heredity+hill (shuffled),69900,0.082042,0.046322
+heredity+hill (shuffled),70000,0.080288,0.047391
+heredity+hill (shuffled),70100,0.077471,0.041777
+heredity+hill (shuffled),70200,0.077311,0.041161
+heredity+hill (shuffled),70300,0.080610,0.046818
+heredity+hill (shuffled),70400,0.079253,0.044539
+heredity+hill (shuffled),70500,0.081072,0.046342
+heredity+hill (shuffled),70600,0.080531,0.044670
+heredity+hill (shuffled),70700,0.082340,0.049413
+heredity+hill (shuffled),70800,0.081278,0.046275
+heredity+hill (shuffled),70900,0.081839,0.044974
+heredity+hill (shuffled),71000,0.080764,0.042956
+heredity+hill (shuffled),71100,0.084331,0.049710
+heredity+hill (shuffled),71200,0.082160,0.048706
+heredity+hill (shuffled),71300,0.083524,0.053069
+heredity+hill (shuffled),71400,0.082684,0.048287
+heredity+hill (shuffled),71500,0.076854,0.038820
+heredity+hill (shuffled),71600,0.074750,0.034144
+heredity+hill (shuffled),71700,0.069435,0.025319
+heredity+hill (shuffled),71800,0.070109,0.024427
+heredity+hill (shuffled),71900,0.068404,0.023184
+heredity+hill (shuffled),72000,0.072130,0.027180
+heredity+hill (shuffled),72100,0.075915,0.030480
+heredity+hill (shuffled),72200,0.076714,0.033665
+heredity+hill (shuffled),72300,0.078419,0.038213
+heredity+hill (shuffled),72400,0.080804,0.043143
+heredity+hill (shuffled),72500,0.080174,0.041827
+heredity+hill (shuffled),72600,0.079740,0.044429
+heredity+hill (shuffled),72700,0.074967,0.037402
+heredity+hill (shuffled),72800,0.078097,0.042087
+heredity+hill (shuffled),72900,0.081449,0.047727
+heredity+hill (shuffled),73000,0.083604,0.048925
+heredity+hill (shuffled),73100,0.080550,0.045375
+heredity+hill (shuffled),73200,0.082112,0.048427
+heredity+hill (shuffled),73300,0.078595,0.042838
+heredity+hill (shuffled),73400,0.080023,0.044620
+heredity+hill (shuffled),73500,0.074939,0.037888
+heredity+hill (shuffled),73600,0.077660,0.043786
+heredity+hill (shuffled),73700,0.077079,0.040729
+heredity+hill (shuffled),73800,0.076446,0.039893
+heredity+hill (shuffled),73900,0.077641,0.040958
+heredity+hill (shuffled),74000,0.078406,0.045209
+heredity+hill (shuffled),74100,0.078387,0.044896
+heredity+hill (shuffled),74200,0.077012,0.041191
+heredity+hill (shuffled),74300,0.082548,0.050019
+heredity+hill (shuffled),74400,0.078804,0.044165
+heredity+hill (shuffled),74500,0.079283,0.043838
+heredity+hill (shuffled),74600,0.081770,0.049072
+heredity+hill (shuffled),74700,0.083881,0.053090
+heredity+hill (shuffled),74800,0.083033,0.051761
+heredity+hill (shuffled),74900,0.077744,0.042977
+heredity+hill (shuffled),75000,0.076324,0.040382
+heredity+hill (shuffled),75100,0.076607,0.041289
+heredity+hill (shuffled),75200,0.077605,0.041649
+heredity+hill (shuffled),75300,0.082830,0.050359
+heredity+hill (shuffled),75400,0.082323,0.050066
+heredity+hill (shuffled),75500,0.081767,0.049920
+heredity+hill (shuffled),75600,0.078050,0.043053
+heredity+hill (shuffled),75700,0.083121,0.051892
+heredity+hill (shuffled),75800,0.082084,0.049956
+heredity+hill (shuffled),75900,0.083048,0.051516
+heredity+hill (shuffled),76000,0.081950,0.050223
+heredity+hill (shuffled),76100,0.081240,0.049141
+heredity+hill (shuffled),76200,0.083897,0.054045
+heredity+hill (shuffled),76300,0.081489,0.049697
+heredity+hill (shuffled),76400,0.083344,0.053268
+heredity+hill (shuffled),76500,0.080615,0.047906
+heredity+hill (shuffled),76600,0.079210,0.045643
+heredity+hill (shuffled),76700,0.078919,0.044881
+heredity+hill (shuffled),76800,0.078709,0.044228
+heredity+hill (shuffled),76900,0.081316,0.048757
+heredity+hill (shuffled),77000,0.078450,0.043924
+heredity+hill (shuffled),77100,0.079254,0.045044
+heredity+hill (shuffled),77200,0.079221,0.044765
+heredity+hill (shuffled),77300,0.084296,0.053741
+heredity+hill (shuffled),77400,0.083940,0.052899
+heredity+hill (shuffled),77500,0.080950,0.047130
+heredity+hill (shuffled),77600,0.082168,0.049065
+heredity+hill (shuffled),77700,0.081787,0.049121
+heredity+hill (shuffled),77800,0.081721,0.049132
+heredity+hill (shuffled),77900,0.081724,0.049132
+heredity+hill (shuffled),78000,0.081470,0.049176
+heredity+hill (shuffled),78100,0.081722,0.049132
+heredity+hill (shuffled),78200,0.081852,0.049111
+heredity+hill (shuffled),78300,0.081595,0.049153
+heredity+hill (shuffled),78400,0.081634,0.049147
+heredity+hill (shuffled),78500,0.081590,0.049154
+heredity+hill (shuffled),78600,0.081715,0.049133
+heredity+hill (shuffled),78700,0.081491,0.049172
+heredity+hill (shuffled),78800,0.081645,0.049145
+heredity+hill (shuffled),78900,0.081584,0.049155
+heredity+hill (shuffled),79000,0.081457,0.049178
+heredity+hill (shuffled),79100,0.081286,0.049211
+heredity+hill (shuffled),79200,0.081290,0.049210
+heredity+hill (shuffled),79300,0.081187,0.049231
+heredity+hill (shuffled),79400,0.081072,0.049255
+heredity+hill (shuffled),79500,0.081228,0.049223
+heredity+hill (shuffled),79600,0.081417,0.049186
+heredity+hill (shuffled),79700,0.081611,0.049151
+random+hill (shuffled),0,0.064344,0.008107
+random+hill (shuffled),100,0.064344,0.008107
+random+hill (shuffled),200,0.064344,0.008107
+random+hill (shuffled),300,0.070422,0.010108
+random+hill (shuffled),400,0.071525,0.009967
+random+hill (shuffled),500,0.071735,0.009235
+random+hill (shuffled),600,0.069067,0.009139
+random+hill (shuffled),700,0.061267,0.007911
+random+hill (shuffled),800,0.056823,0.007525
+random+hill (shuffled),900,0.056246,0.007670
+random+hill (shuffled),1000,0.060490,0.008568
+random+hill (shuffled),1100,0.058874,0.006487
+random+hill (shuffled),1200,0.057963,0.005915
+random+hill (shuffled),1300,0.055329,0.006741
+random+hill (shuffled),1400,0.059458,0.007584
+random+hill (shuffled),1500,0.061620,0.005945
+random+hill (shuffled),1600,0.061451,0.006118
+random+hill (shuffled),1700,0.055979,0.007164
+random+hill (shuffled),1800,0.055420,0.006598
+random+hill (shuffled),1900,0.056878,0.005360
+random+hill (shuffled),2000,0.053172,0.004940
+random+hill (shuffled),2100,0.054447,0.006075
+random+hill (shuffled),2200,0.056774,0.005754
+random+hill (shuffled),2300,0.056486,0.006003
+random+hill (shuffled),2400,0.063727,0.008971
+random+hill (shuffled),2500,0.065711,0.009967
+random+hill (shuffled),2600,0.066969,0.009446
+random+hill (shuffled),2700,0.067052,0.009648
+random+hill (shuffled),2800,0.069108,0.009090
+random+hill (shuffled),2900,0.062951,0.007633
+random+hill (shuffled),3000,0.061467,0.008341
+random+hill (shuffled),3100,0.062087,0.007675
+random+hill (shuffled),3200,0.066838,0.007011
+random+hill (shuffled),3300,0.068346,0.006648
+random+hill (shuffled),3400,0.068314,0.006436
+random+hill (shuffled),3500,0.060424,0.006473
+random+hill (shuffled),3600,0.058007,0.006258
+random+hill (shuffled),3700,0.059066,0.007536
+random+hill (shuffled),3800,0.064249,0.007025
+random+hill (shuffled),3900,0.064086,0.007627
+random+hill (shuffled),4000,0.068539,0.010296
+random+hill (shuffled),4100,0.072655,0.009729
+random+hill (shuffled),4200,0.066923,0.007561
+random+hill (shuffled),4300,0.061892,0.007861
+random+hill (shuffled),4400,0.060124,0.007603
+random+hill (shuffled),4500,0.061697,0.006686
+random+hill (shuffled),4600,0.060106,0.004880
+random+hill (shuffled),4700,0.059880,0.006315
+random+hill (shuffled),4800,0.056368,0.006484
+random+hill (shuffled),4900,0.053013,0.005569
+random+hill (shuffled),5000,0.058861,0.006006
+random+hill (shuffled),5100,0.059743,0.006826
+random+hill (shuffled),5200,0.059153,0.007398
+random+hill (shuffled),5300,0.061028,0.006406
+random+hill (shuffled),5400,0.057789,0.004620
+random+hill (shuffled),5500,0.062290,0.006884
+random+hill (shuffled),5600,0.062112,0.007272
+random+hill (shuffled),5700,0.062091,0.009001
+random+hill (shuffled),5800,0.060992,0.006678
+random+hill (shuffled),5900,0.061153,0.007754
+random+hill (shuffled),6000,0.057079,0.006222
+random+hill (shuffled),6100,0.062521,0.007136
+random+hill (shuffled),6200,0.059010,0.006733
+random+hill (shuffled),6300,0.061215,0.009158
+random+hill (shuffled),6400,0.057192,0.008455
+random+hill (shuffled),6500,0.062644,0.007198
+random+hill (shuffled),6600,0.060603,0.007839
+random+hill (shuffled),6700,0.057046,0.005871
+random+hill (shuffled),6800,0.060420,0.007289
+random+hill (shuffled),6900,0.058904,0.006218
+random+hill (shuffled),7000,0.053710,0.005062
+random+hill (shuffled),7100,0.057049,0.007813
+random+hill (shuffled),7200,0.054078,0.007852
+random+hill (shuffled),7300,0.058360,0.008299
+random+hill (shuffled),7400,0.059687,0.009639
+random+hill (shuffled),7500,0.063915,0.009388
+random+hill (shuffled),7600,0.066328,0.006653
+random+hill (shuffled),7700,0.066726,0.008877
+random+hill (shuffled),7800,0.064186,0.009304
+random+hill (shuffled),7900,0.059255,0.004526
+random+hill (shuffled),8000,0.062642,0.006042
+random+hill (shuffled),8100,0.065356,0.007209
+random+hill (shuffled),8200,0.059117,0.005729
+random+hill (shuffled),8300,0.057121,0.006058
+random+hill (shuffled),8400,0.057501,0.006315
+random+hill (shuffled),8500,0.051432,0.006167
+random+hill (shuffled),8600,0.059735,0.009386
+random+hill (shuffled),8700,0.060731,0.009136
+random+hill (shuffled),8800,0.066889,0.010210
+random+hill (shuffled),8900,0.058177,0.006621
+random+hill (shuffled),9000,0.059384,0.008280
+random+hill (shuffled),9100,0.058026,0.006770
+random+hill (shuffled),9200,0.060738,0.006142
+random+hill (shuffled),9300,0.069715,0.007711
+random+hill (shuffled),9400,0.071031,0.007407
+random+hill (shuffled),9500,0.060750,0.006429
+random+hill (shuffled),9600,0.058555,0.007390
+random+hill (shuffled),9700,0.060673,0.006497
+random+hill (shuffled),9800,0.062548,0.007606
+random+hill (shuffled),9900,0.069399,0.008254
+random+hill (shuffled),10000,0.065527,0.007554
+random+hill (shuffled),10100,0.062136,0.007684
+random+hill (shuffled),10200,0.062365,0.007721
+random+hill (shuffled),10300,0.064247,0.008715
+random+hill (shuffled),10400,0.066689,0.008667
+random+hill (shuffled),10500,0.064874,0.005851
+random+hill (shuffled),10600,0.066831,0.006404
+random+hill (shuffled),10700,0.058965,0.007104
+random+hill (shuffled),10800,0.060620,0.008105
+random+hill (shuffled),10900,0.063873,0.006985
+random+hill (shuffled),11000,0.059286,0.006704
+random+hill (shuffled),11100,0.062530,0.007865
+random+hill (shuffled),11200,0.056286,0.006006
+random+hill (shuffled),11300,0.057452,0.006747
+random+hill (shuffled),11400,0.061841,0.008474
+random+hill (shuffled),11500,0.063045,0.007776
+random+hill (shuffled),11600,0.062112,0.006499
+random+hill (shuffled),11700,0.063538,0.009715
+random+hill (shuffled),11800,0.066525,0.011590
+random+hill (shuffled),11900,0.062023,0.012276
+random+hill (shuffled),12000,0.064402,0.009442
+random+hill (shuffled),12100,0.063915,0.008811
+random+hill (shuffled),12200,0.062376,0.006377
+random+hill (shuffled),12300,0.056153,0.005926
+random+hill (shuffled),12400,0.052762,0.003823
+random+hill (shuffled),12500,0.056816,0.006685
+random+hill (shuffled),12600,0.058980,0.005921
+random+hill (shuffled),12700,0.060004,0.006108
+random+hill (shuffled),12800,0.064068,0.005942
+random+hill (shuffled),12900,0.065939,0.006420
+random+hill (shuffled),13000,0.061001,0.008028
+random+hill (shuffled),13100,0.059912,0.005571
+random+hill (shuffled),13200,0.059029,0.007749
+random+hill (shuffled),13300,0.059409,0.005931
+random+hill (shuffled),13400,0.065486,0.008129
+random+hill (shuffled),13500,0.064973,0.007818
+random+hill (shuffled),13600,0.069035,0.008703
+random+hill (shuffled),13700,0.062373,0.006964
+random+hill (shuffled),13800,0.062047,0.006558
+random+hill (shuffled),13900,0.062057,0.007110
+random+hill (shuffled),14000,0.059396,0.005473
+random+hill (shuffled),14100,0.064816,0.008124
+random+hill (shuffled),14200,0.064219,0.006416
+random+hill (shuffled),14300,0.060351,0.005230
+random+hill (shuffled),14400,0.058522,0.005624
+random+hill (shuffled),14500,0.062757,0.006546
+random+hill (shuffled),14600,0.061801,0.006525
+random+hill (shuffled),14700,0.063830,0.008040
+random+hill (shuffled),14800,0.061298,0.005867
+random+hill (shuffled),14900,0.061400,0.007812
+random+hill (shuffled),15000,0.057607,0.009222
+random+hill (shuffled),15100,0.060518,0.008987
+random+hill (shuffled),15200,0.058795,0.006330
+random+hill (shuffled),15300,0.059852,0.008748
+random+hill (shuffled),15400,0.058724,0.006633
+random+hill (shuffled),15500,0.060760,0.006489
+random+hill (shuffled),15600,0.060610,0.007549
+random+hill (shuffled),15700,0.061246,0.007529
+random+hill (shuffled),15800,0.060440,0.008046
+random+hill (shuffled),15900,0.057549,0.007953
+random+hill (shuffled),16000,0.062235,0.007633
+random+hill (shuffled),16100,0.058933,0.006788
+random+hill (shuffled),16200,0.067007,0.006831
+random+hill (shuffled),16300,0.061462,0.006953
+random+hill (shuffled),16400,0.061949,0.007352
+random+hill (shuffled),16500,0.061759,0.008258
+random+hill (shuffled),16600,0.057362,0.008633
+random+hill (shuffled),16700,0.059346,0.009656
+random+hill (shuffled),16800,0.064089,0.009896
+random+hill (shuffled),16900,0.059429,0.007280
+random+hill (shuffled),17000,0.056897,0.006108
+random+hill (shuffled),17100,0.054928,0.007668
+random+hill (shuffled),17200,0.052871,0.006130
+random+hill (shuffled),17300,0.058594,0.008144
+random+hill (shuffled),17400,0.061547,0.010523
+random+hill (shuffled),17500,0.058813,0.009272
+random+hill (shuffled),17600,0.060001,0.008321
+random+hill (shuffled),17700,0.056975,0.007730
+random+hill (shuffled),17800,0.057086,0.007909
+random+hill (shuffled),17900,0.061657,0.010388
+random+hill (shuffled),18000,0.049784,0.005545
+random+hill (shuffled),18100,0.057574,0.007161
+random+hill (shuffled),18200,0.063658,0.007209
+random+hill (shuffled),18300,0.064471,0.007049
+random+hill (shuffled),18400,0.069181,0.006948
+random+hill (shuffled),18500,0.066522,0.006990
+random+hill (shuffled),18600,0.065514,0.006628
+random+hill (shuffled),18700,0.056003,0.006806
+random+hill (shuffled),18800,0.055202,0.007815
+random+hill (shuffled),18900,0.055838,0.008025
+random+hill (shuffled),19000,0.053839,0.007486
+random+hill (shuffled),19100,0.059127,0.009592
+random+hill (shuffled),19200,0.066613,0.007633
+random+hill (shuffled),19300,0.067824,0.008516
+random+hill (shuffled),19400,0.064995,0.005892
+random+hill (shuffled),19500,0.059018,0.005369
+random+hill (shuffled),19600,0.057744,0.005812
+random+hill (shuffled),19700,0.055354,0.005628
+random+hill (shuffled),19800,0.061972,0.007050
+random+hill (shuffled),19900,0.065047,0.008450
+random+hill (shuffled),20000,0.064538,0.010096
+random+hill (shuffled),20100,0.059175,0.006025
+random+hill (shuffled),20200,0.062030,0.006159
+random+hill (shuffled),20300,0.065922,0.009915
+random+hill (shuffled),20400,0.062936,0.010138
+random+hill (shuffled),20500,0.060422,0.008810
+random+hill (shuffled),20600,0.058634,0.008159
+random+hill (shuffled),20700,0.059545,0.009600
+random+hill (shuffled),20800,0.062873,0.009577
+random+hill (shuffled),20900,0.064568,0.008012
+random+hill (shuffled),21000,0.063592,0.007696
+random+hill (shuffled),21100,0.060932,0.005456
+random+hill (shuffled),21200,0.061968,0.007011
+random+hill (shuffled),21300,0.066730,0.008124
+random+hill (shuffled),21400,0.065424,0.008446
+random+hill (shuffled),21500,0.064379,0.006418
+random+hill (shuffled),21600,0.067539,0.008574
+random+hill (shuffled),21700,0.060864,0.009292
+random+hill (shuffled),21800,0.063126,0.009596
+random+hill (shuffled),21900,0.059956,0.006668
+random+hill (shuffled),22000,0.055171,0.006092
+random+hill (shuffled),22100,0.055293,0.006511
+random+hill (shuffled),22200,0.054292,0.005783
+random+hill (shuffled),22300,0.062942,0.007661
+random+hill (shuffled),22400,0.058906,0.007768
+random+hill (shuffled),22500,0.058336,0.007265
+random+hill (shuffled),22600,0.053262,0.004261
+random+hill (shuffled),22700,0.058403,0.007643
+random+hill (shuffled),22800,0.058689,0.007102
+random+hill (shuffled),22900,0.060880,0.005993
+random+hill (shuffled),23000,0.059536,0.006931
+random+hill (shuffled),23100,0.061206,0.005431
+random+hill (shuffled),23200,0.057482,0.005087
+random+hill (shuffled),23300,0.058471,0.004866
+random+hill (shuffled),23400,0.056317,0.006435
+random+hill (shuffled),23500,0.059602,0.004067
+random+hill (shuffled),23600,0.056367,0.004617
+random+hill (shuffled),23700,0.061429,0.006113
+random+hill (shuffled),23800,0.057333,0.005679
+random+hill (shuffled),23900,0.058534,0.005916
+random+hill (shuffled),24000,0.058055,0.005587
+random+hill (shuffled),24100,0.059705,0.007484
+random+hill (shuffled),24200,0.061352,0.006707
+random+hill (shuffled),24300,0.059949,0.009139
+random+hill (shuffled),24400,0.064588,0.007046
+random+hill (shuffled),24500,0.066681,0.009107
+random+hill (shuffled),24600,0.062473,0.006337
+random+hill (shuffled),24700,0.069466,0.007938
+random+hill (shuffled),24800,0.064388,0.007290
+random+hill (shuffled),24900,0.066548,0.006944
+random+hill (shuffled),25000,0.067596,0.006965
+random+hill (shuffled),25100,0.066116,0.007899
+random+hill (shuffled),25200,0.056528,0.005692
+random+hill (shuffled),25300,0.054140,0.006703
+random+hill (shuffled),25400,0.057374,0.007979
+random+hill (shuffled),25500,0.060181,0.006174
+random+hill (shuffled),25600,0.063730,0.007781
+random+hill (shuffled),25700,0.067986,0.008634
+random+hill (shuffled),25800,0.062916,0.006859
+random+hill (shuffled),25900,0.062143,0.008250
+random+hill (shuffled),26000,0.061963,0.005986
+random+hill (shuffled),26100,0.063150,0.008144
+random+hill (shuffled),26200,0.067020,0.007038
+random+hill (shuffled),26300,0.066379,0.005953
+random+hill (shuffled),26400,0.061548,0.005471
+random+hill (shuffled),26500,0.057719,0.004711
+random+hill (shuffled),26600,0.060996,0.007076
+random+hill (shuffled),26700,0.064198,0.007589
+random+hill (shuffled),26800,0.070880,0.006563
+random+hill (shuffled),26900,0.075368,0.010752
+random+hill (shuffled),27000,0.071336,0.011369
+random+hill (shuffled),27100,0.066408,0.011660
+random+hill (shuffled),27200,0.061867,0.009316
+random+hill (shuffled),27300,0.062280,0.009918
+random+hill (shuffled),27400,0.068596,0.012112
+random+hill (shuffled),27500,0.066773,0.008593
+random+hill (shuffled),27600,0.060542,0.009392
+random+hill (shuffled),27700,0.061377,0.007205
+random+hill (shuffled),27800,0.062457,0.008705
+random+hill (shuffled),27900,0.057355,0.007776
+random+hill (shuffled),28000,0.056488,0.006704
+random+hill (shuffled),28100,0.058467,0.008035
+random+hill (shuffled),28200,0.058351,0.007382
+random+hill (shuffled),28300,0.056160,0.008105
+random+hill (shuffled),28400,0.058125,0.007601
+random+hill (shuffled),28500,0.059938,0.007983
+random+hill (shuffled),28600,0.058526,0.006996
+random+hill (shuffled),28700,0.059295,0.007531
+random+hill (shuffled),28800,0.055762,0.005523
+random+hill (shuffled),28900,0.056423,0.005553
+random+hill (shuffled),29000,0.061424,0.008350
+random+hill (shuffled),29100,0.061193,0.006279
+random+hill (shuffled),29200,0.057124,0.006581
+random+hill (shuffled),29300,0.062658,0.006893
+random+hill (shuffled),29400,0.063686,0.007612
+random+hill (shuffled),29500,0.064204,0.007762
+random+hill (shuffled),29600,0.064490,0.006702
+random+hill (shuffled),29700,0.066308,0.007862
+random+hill (shuffled),29800,0.071892,0.008084
+random+hill (shuffled),29900,0.064687,0.006909
+random+hill (shuffled),30000,0.067016,0.008592
+random+hill (shuffled),30100,0.061625,0.007916
+random+hill (shuffled),30200,0.057684,0.007155
+random+hill (shuffled),30300,0.054506,0.005752
+random+hill (shuffled),30400,0.058273,0.005738
+random+hill (shuffled),30500,0.060418,0.008466
+random+hill (shuffled),30600,0.062256,0.008092
+random+hill (shuffled),30700,0.056751,0.007089
+random+hill (shuffled),30800,0.062402,0.009442
+random+hill (shuffled),30900,0.059012,0.007444
+random+hill (shuffled),31000,0.063855,0.008160
+random+hill (shuffled),31100,0.064340,0.006045
+random+hill (shuffled),31200,0.064796,0.007214
+random+hill (shuffled),31300,0.057774,0.005568
+random+hill (shuffled),31400,0.060396,0.005453
+random+hill (shuffled),31500,0.059734,0.005419
+random+hill (shuffled),31600,0.060667,0.006146
+random+hill (shuffled),31700,0.054481,0.004908
+random+hill (shuffled),31800,0.057296,0.006394
+random+hill (shuffled),31900,0.059659,0.008180
+random+hill (shuffled),32000,0.056012,0.008077
+random+hill (shuffled),32100,0.058254,0.006343
+random+hill (shuffled),32200,0.056164,0.006269
+random+hill (shuffled),32300,0.061638,0.006420
+random+hill (shuffled),32400,0.061421,0.004209
+random+hill (shuffled),32500,0.062944,0.004321
+random+hill (shuffled),32600,0.059862,0.005971
+random+hill (shuffled),32700,0.056133,0.004948
+random+hill (shuffled),32800,0.058628,0.006285
+random+hill (shuffled),32900,0.063129,0.006638
+random+hill (shuffled),33000,0.063505,0.006434
+random+hill (shuffled),33100,0.067200,0.006840
+random+hill (shuffled),33200,0.061202,0.006819
+random+hill (shuffled),33300,0.054347,0.005361
+random+hill (shuffled),33400,0.053502,0.007145
+random+hill (shuffled),33500,0.054684,0.006706
+random+hill (shuffled),33600,0.059088,0.006656
+random+hill (shuffled),33700,0.058229,0.006229
+random+hill (shuffled),33800,0.057094,0.005547
+random+hill (shuffled),33900,0.060072,0.005368
+random+hill (shuffled),34000,0.061685,0.007338
+random+hill (shuffled),34100,0.060461,0.005865
+random+hill (shuffled),34200,0.060200,0.004500
+random+hill (shuffled),34300,0.064011,0.005801
+random+hill (shuffled),34400,0.066222,0.004970
+random+hill (shuffled),34500,0.061322,0.006524
+random+hill (shuffled),34600,0.058358,0.007066
+random+hill (shuffled),34700,0.056523,0.004597
+random+hill (shuffled),34800,0.055642,0.005208
+random+hill (shuffled),34900,0.059112,0.006607
+random+hill (shuffled),35000,0.063374,0.007578
+random+hill (shuffled),35100,0.071546,0.007405
+random+hill (shuffled),35200,0.075177,0.009123
+random+hill (shuffled),35300,0.066745,0.007716
+random+hill (shuffled),35400,0.059481,0.007984
+random+hill (shuffled),35500,0.062021,0.006373
+random+hill (shuffled),35600,0.061265,0.006399
+random+hill (shuffled),35700,0.062403,0.007760
+random+hill (shuffled),35800,0.058217,0.005994
+random+hill (shuffled),35900,0.055515,0.004553
+random+hill (shuffled),36000,0.058188,0.005898
+random+hill (shuffled),36100,0.061271,0.006383
+random+hill (shuffled),36200,0.059073,0.006415
+random+hill (shuffled),36300,0.060707,0.009700
+random+hill (shuffled),36400,0.065316,0.010235
+random+hill (shuffled),36500,0.063736,0.008034
+random+hill (shuffled),36600,0.057719,0.005307
+random+hill (shuffled),36700,0.055986,0.004693
+random+hill (shuffled),36800,0.054984,0.004245
+random+hill (shuffled),36900,0.063285,0.007678
+random+hill (shuffled),37000,0.059682,0.006819
+random+hill (shuffled),37100,0.060111,0.008644
+random+hill (shuffled),37200,0.056098,0.006921
+random+hill (shuffled),37300,0.059489,0.007474
+random+hill (shuffled),37400,0.058227,0.006933
+random+hill (shuffled),37500,0.062233,0.006910
+random+hill (shuffled),37600,0.062710,0.004241
+random+hill (shuffled),37700,0.061690,0.006836
+random+hill (shuffled),37800,0.064416,0.008295
+random+hill (shuffled),37900,0.063971,0.008640
+random+hill (shuffled),38000,0.055856,0.006492
+random+hill (shuffled),38100,0.059365,0.006958
+random+hill (shuffled),38200,0.055254,0.004226
+random+hill (shuffled),38300,0.062059,0.005499
+random+hill (shuffled),38400,0.068271,0.009370
+random+hill (shuffled),38500,0.064731,0.007793
+random+hill (shuffled),38600,0.062188,0.008063
+random+hill (shuffled),38700,0.060892,0.007664
+random+hill (shuffled),38800,0.066908,0.009034
+random+hill (shuffled),38900,0.069063,0.007725
+random+hill (shuffled),39000,0.065332,0.006654
+random+hill (shuffled),39100,0.056393,0.009607
+random+hill (shuffled),39200,0.054417,0.008024
+random+hill (shuffled),39300,0.052032,0.006446
+random+hill (shuffled),39400,0.054680,0.006800
+random+hill (shuffled),39500,0.057871,0.005562
+random+hill (shuffled),39600,0.055337,0.005690
+random+hill (shuffled),39700,0.059055,0.006223
+random+hill (shuffled),39800,0.058418,0.004597
+random+hill (shuffled),39900,0.060513,0.006527
+random+hill (shuffled),40000,0.061959,0.005777
+random+hill (shuffled),40100,0.064710,0.007047
+random+hill (shuffled),40200,0.063675,0.007859
+random+hill (shuffled),40300,0.056242,0.005703
+random+hill (shuffled),40400,0.057685,0.005680
+random+hill (shuffled),40500,0.062623,0.008635
+random+hill (shuffled),40600,0.066302,0.010499
+random+hill (shuffled),40700,0.064713,0.008687
+random+hill (shuffled),40800,0.068746,0.008531
+random+hill (shuffled),40900,0.064756,0.009258
+random+hill (shuffled),41000,0.070168,0.011116
+random+hill (shuffled),41100,0.064492,0.008952
+random+hill (shuffled),41200,0.055325,0.005442
+random+hill (shuffled),41300,0.062818,0.008974
+random+hill (shuffled),41400,0.057441,0.005353
+random+hill (shuffled),41500,0.056597,0.005008
+random+hill (shuffled),41600,0.060354,0.005768
+random+hill (shuffled),41700,0.057154,0.006100
+random+hill (shuffled),41800,0.062842,0.006228
+random+hill (shuffled),41900,0.065160,0.007564
+random+hill (shuffled),42000,0.067318,0.007313
+random+hill (shuffled),42100,0.067458,0.008413
+random+hill (shuffled),42200,0.063991,0.007610
+random+hill (shuffled),42300,0.062869,0.007948
+random+hill (shuffled),42400,0.057255,0.006381
+random+hill (shuffled),42500,0.056936,0.007132
+random+hill (shuffled),42600,0.056422,0.007152
+random+hill (shuffled),42700,0.059492,0.005532
+random+hill (shuffled),42800,0.056240,0.006485
+random+hill (shuffled),42900,0.063688,0.006657
+random+hill (shuffled),43000,0.065004,0.006754
+random+hill (shuffled),43100,0.061681,0.007771
+random+hill (shuffled),43200,0.068070,0.008509
+random+hill (shuffled),43300,0.064571,0.009222
+random+hill (shuffled),43400,0.065228,0.008163
+random+hill (shuffled),43500,0.060856,0.007371
+random+hill (shuffled),43600,0.062010,0.007523
+random+hill (shuffled),43700,0.065629,0.007424
+random+hill (shuffled),43800,0.064746,0.006772
+random+hill (shuffled),43900,0.070480,0.007590
+random+hill (shuffled),44000,0.062640,0.006303
+random+hill (shuffled),44100,0.065688,0.009646
+random+hill (shuffled),44200,0.066350,0.008409
+random+hill (shuffled),44300,0.066664,0.008108
+random+hill (shuffled),44400,0.062069,0.007479
+random+hill (shuffled),44500,0.065279,0.007555
+random+hill (shuffled),44600,0.062188,0.007390
+random+hill (shuffled),44700,0.063628,0.005877
+random+hill (shuffled),44800,0.062751,0.006648
+random+hill (shuffled),44900,0.063780,0.008130
+random+hill (shuffled),45000,0.063366,0.008145
+random+hill (shuffled),45100,0.059141,0.006176
+random+hill (shuffled),45200,0.063443,0.008239
+random+hill (shuffled),45300,0.064295,0.008936
+random+hill (shuffled),45400,0.060316,0.008099
+random+hill (shuffled),45500,0.058119,0.006650
+random+hill (shuffled),45600,0.059755,0.006597
+random+hill (shuffled),45700,0.061924,0.006536
+random+hill (shuffled),45800,0.064943,0.009186
+random+hill (shuffled),45900,0.062580,0.008453
+random+hill (shuffled),46000,0.060564,0.008160
+random+hill (shuffled),46100,0.057655,0.005407
+random+hill (shuffled),46200,0.055598,0.005998
+random+hill (shuffled),46300,0.055351,0.005705
+random+hill (shuffled),46400,0.056223,0.005418
+random+hill (shuffled),46500,0.055776,0.005585

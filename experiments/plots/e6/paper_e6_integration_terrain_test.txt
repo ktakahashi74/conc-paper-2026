@@ -1,0 +1,11 @@
+Integration Terrain Control (Experiment 4)
+==========================================
+Condition                   Mean C_score (final)
+HH (real terrain)           0.5304 ± 0.0683
+HH (shuffled)               0.0816 ± 0.0492
+RH (real terrain)           0.1070 ± 0.0129
+RH (shuffled)               0.0558 ± 0.0056
+
+Interaction contrast (real):     0.2995 [0.2046, 0.3943], p = 0.000053
+Interaction contrast (shuffled): -0.0980 [-0.1959, -0.0002], p = 0.069065 (exact)
+n_seeds = 20

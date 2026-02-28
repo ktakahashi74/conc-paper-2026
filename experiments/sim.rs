@@ -18,6 +18,7 @@ use conchordal::life::scenario::{
 use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
 use rand::rngs::SmallRng;
+use rand::prelude::SliceRandom;
 use rand::{Rng, SeedableRng};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -119,6 +120,7 @@ pub struct E6RunConfig {
     pub mutation_sigma: f32,
     pub snapshot_interval: usize,
     pub landscape_weight: f32,
+    pub shuffle_landscape: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -514,6 +516,19 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
         E4_ENV_PARTIAL_DECAY_DEFAULT,
     );
     landscape.rhythm = init_rhythms(E3_THETA_FREQ_HZ);
+
+    if cfg.shuffle_landscape {
+        let mut rng_shuffle = SmallRng::seed_from_u64(cfg.seed ^ 0x5E6F_E6E6);
+        let n = landscape.consonance_field_level.len();
+        let mut perm: Vec<usize> = (0..n).collect();
+        perm.shuffle(&mut rng_shuffle);
+        let apply = |v: &[f32]| -> Vec<f32> { perm.iter().map(|&i| v[i]).collect() };
+        landscape.consonance_field_score = apply(&landscape.consonance_field_score);
+        landscape.consonance_field_level = apply(&landscape.consonance_field_level);
+        landscape.consonance_field_energy = apply(&landscape.consonance_field_energy);
+        landscape.consonance_density_mass = apply(&landscape.consonance_density_mass);
+        landscape.consonance_density_pmf = apply(&landscape.consonance_density_pmf);
+    }
 
     let mut pop = Population::new(Timebase {
         fs: E3_FS,
