@@ -2362,6 +2362,48 @@ fn plot_e2_emergent_harmony(
     write_with_log(out_dir.join("paper_e2_delta_c_by_seed.csv"), delta_csv)?;
     write_with_log(out_dir.join("paper_e2_delta_c_summary.csv"), delta_summary)?;
 
+    // ── C1: Independent consonance evaluation (JI ratio-complexity metric) ──
+    {
+        let conditions: Vec<(&str, &[E2Run])> = vec![
+            ("baseline", &baseline_runs),
+            ("no_hill_climb", &nohill_runs),
+            ("no_repulsion", &norep_runs),
+        ];
+
+        let mut eval_text = String::from(
+            "E2 Independent Consonance Evaluation (JI ratio-complexity metric)\n\
+             ================================================================\n\n",
+        );
+
+        for (label, runs) in &conditions {
+            let ji_scores: Vec<f32> = runs
+                .iter()
+                .map(|run| ji_population_score(&run.final_freqs_hz, anchor_hz))
+                .collect();
+            let n = ji_scores.len();
+            let mean = if n > 0 {
+                ji_scores.iter().sum::<f32>() / n as f32
+            } else {
+                0.0
+            };
+            let sd = if n > 1 {
+                let var = ji_scores
+                    .iter()
+                    .map(|x| (x - mean).powi(2))
+                    .sum::<f32>()
+                    / (n - 1) as f32;
+                var.sqrt()
+            } else {
+                0.0
+            };
+            eval_text.push_str(&format!(
+                "{}: JI_score mean={:.4} sd={:.4} (n={})\n",
+                label, mean, sd, n,
+            ));
+        }
+        write_with_log(out_dir.join("paper_e2_independent_eval.txt"), eval_text)?;
+    }
+
     Ok(())
 }
 
@@ -4017,6 +4059,7 @@ fn plot_e6_hereditary_adaptation(
                 condition,
                 mutation_sigma: E6_MUTATION_SIGMA,
                 snapshot_interval: E6_SNAPSHOT_INTERVAL,
+                landscape_weight: 0.0,
             };
             let result = run_e6(&cfg);
             all_results.push((condition, seed, result));
@@ -4218,6 +4261,84 @@ fn plot_e6_hereditary_adaptation(
         &final_st_heredity,
         &final_st_random,
     )?;
+
+    // ── C1: Independent consonance evaluation (JI ratio-complexity metric) ──
+    {
+        let mut ji_scores: Vec<f32> = Vec::new();
+        let mut c_scores: Vec<f32> = Vec::new();
+        let mut ji_heredity: Vec<f32> = Vec::new();
+        let mut ji_random: Vec<f32> = Vec::new();
+
+        for (condition, _seed, result) in &all_results {
+            if let Some(last_snap) = result.snapshots.last() {
+                let ji = ji_population_score(&last_snap.freqs_hz, anchor_hz);
+                let c = e6_snapshot_point(&last_snap.freqs_hz, anchor_hz, &landscape).mean_c_score;
+                ji_scores.push(ji);
+                c_scores.push(c);
+                match condition {
+                    E6Condition::Heredity => ji_heredity.push(ji),
+                    E6Condition::Random => ji_random.push(ji),
+                }
+            }
+        }
+
+        let rho = spearman_rho(&ji_scores, &c_scores);
+        let p = perm_pvalue(&ji_scores, &c_scores, 9999, 0xC1E0A1, spearman_rho);
+
+        let ji_h_mean = if ji_heredity.is_empty() {
+            0.0
+        } else {
+            ji_heredity.iter().sum::<f32>() / ji_heredity.len() as f32
+        };
+        let ji_r_mean = if ji_random.is_empty() {
+            0.0
+        } else {
+            ji_random.iter().sum::<f32>() / ji_random.len() as f32
+        };
+        let ji_h_sd = if ji_heredity.len() > 1 {
+            let var = ji_heredity
+                .iter()
+                .map(|x| (x - ji_h_mean).powi(2))
+                .sum::<f32>()
+                / (ji_heredity.len() - 1) as f32;
+            var.sqrt()
+        } else {
+            0.0
+        };
+        let ji_r_sd = if ji_random.len() > 1 {
+            let var = ji_random
+                .iter()
+                .map(|x| (x - ji_r_mean).powi(2))
+                .sum::<f32>()
+                / (ji_random.len() - 1) as f32;
+            var.sqrt()
+        } else {
+            0.0
+        };
+
+        let eval_text = format!(
+            "E6 Independent Consonance Evaluation (JI ratio-complexity metric)\n\
+             ================================================================\n\
+             Spearman rho(JI_score, C_score): {:.4}\n\
+             Permutation p-value (9999 perms): {}\n\
+             \n\
+             JI score by condition:\n\
+             heredity: mean={:.4} sd={:.4} (n={})\n\
+             random:   mean={:.4} sd={:.4} (n={})\n",
+            rho,
+            format_p_value(p),
+            ji_h_mean,
+            ji_h_sd,
+            ji_heredity.len(),
+            ji_r_mean,
+            ji_r_sd,
+            ji_random.len(),
+        );
+        write_with_log(out_dir.join("paper_e6_independent_eval.txt"), eval_text)?;
+    }
+
+    // ── C2: Integration figure (heredity/random × lw=0.0/0.5) ──
+    plot_e6_integration_figure(out_dir, anchor_hz)?;
 
     Ok(())
 }
@@ -4550,6 +4671,162 @@ where
         }
     }
 
+    Ok(())
+}
+
+/// C2: Integration figure — 4 conditions: heredity/random × lw=0.0/0.5
+fn plot_e6_integration_figure(
+    out_dir: &Path,
+    anchor_hz: f32,
+) -> Result<(), Box<dyn Error>> {
+    struct IntegrationCondition {
+        label: &'static str,
+        condition: E6Condition,
+        landscape_weight: f32,
+        color: RGBColor,
+    }
+
+    let conditions = [
+        IntegrationCondition {
+            label: "heredity",
+            condition: E6Condition::Heredity,
+            landscape_weight: 0.0,
+            color: RGBColor(58, 106, 120), // PAL_H: deep steel teal
+        },
+        IntegrationCondition {
+            label: "heredity+hill",
+            condition: E6Condition::Heredity,
+            landscape_weight: 0.5,
+            color: RGBColor(76, 153, 76), // green
+        },
+        IntegrationCondition {
+            label: "random",
+            condition: E6Condition::Random,
+            landscape_weight: 0.0,
+            color: RGBColor(204, 121, 50), // orange
+        },
+        IntegrationCondition {
+            label: "random+hill",
+            condition: E6Condition::Random,
+            landscape_weight: 0.5,
+            color: RGBColor(139, 34, 82), // PAL_R: dark rose
+        },
+    ];
+
+    let landscape = e3_reference_landscape(anchor_hz);
+
+    // Run all 4 conditions × 20 seeds
+    let mut all_series: Vec<(&str, Vec<(f32, f32, f32)>, RGBColor)> = Vec::new();
+    let mut csv_data = String::from("condition,step,mean_c_score,ci95\n");
+
+    for cond in &conditions {
+        let mut by_seed: HashMap<u64, Vec<(usize, f32)>> = HashMap::new();
+
+        for &seed in &E6_SEEDS {
+            let cfg = E6RunConfig {
+                seed,
+                steps_cap: E6_STEPS_CAP,
+                min_deaths: E6_MIN_DEATHS,
+                pop_size: E6_POP_SIZE,
+                first_k: E6_FIRST_K,
+                condition: cond.condition,
+                mutation_sigma: E6_MUTATION_SIGMA,
+                snapshot_interval: E6_SNAPSHOT_INTERVAL,
+                landscape_weight: cond.landscape_weight,
+            };
+            let result = run_e6(&cfg);
+            for snap in &result.snapshots {
+                let point = e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape);
+                by_seed
+                    .entry(seed)
+                    .or_default()
+                    .push((snap.step, point.mean_c_score));
+            }
+        }
+
+        let stats = e6_series_stats(Some(&by_seed), E6_SNAPSHOT_INTERVAL);
+        for &(step, mean, ci95) in &stats {
+            csv_data.push_str(&format!(
+                "{},{},{:.6},{:.6}\n",
+                cond.label, step as i64, mean, ci95
+            ));
+        }
+        all_series.push((cond.label, stats, cond.color));
+    }
+
+    write_with_log(
+        out_dir.join("paper_e6_integration_timeseries.csv"),
+        csv_data,
+    )?;
+
+    // Render 4-line plot — single-column, landscape aspect ratio
+    let fig_path = out_dir.join("paper_e6_integration_figure.svg");
+    let root = bitmap_root(&fig_path, (1400, 600)).into_drawing_area();
+    root.fill(&WHITE)?;
+
+    let x_max = all_series
+        .iter()
+        .flat_map(|(_, s, _)| s.iter().map(|(x, _, _)| *x))
+        .fold(0.0f32, f32::max)
+        .max(1.0);
+    let y_lo = 0.0f32;
+    let y_hi = 0.65f32;
+
+    let mut chart = ChartBuilder::on(&root)
+        .margin(12)
+        .x_label_area_size(40)
+        .y_label_area_size(55)
+        .build_cartesian_2d(0.0f32..x_max, y_lo..y_hi)?;
+
+    chart
+        .configure_mesh()
+        .x_desc("step")
+        .y_desc("C_score")
+        .x_label_formatter(&|v| {
+            let k = (*v / 1000.0).round() as i64;
+            format!("{}k", k)
+        })
+        .label_style(("sans-serif", 26).into_font())
+        .axis_desc_style(("sans-serif", 28).into_font())
+        .draw()?;
+
+    for (label, series, color) in &all_series {
+        if series.is_empty() {
+            continue;
+        }
+        // CI95 band
+        let mut band: Vec<(f32, f32)> = Vec::with_capacity(series.len() * 2);
+        for (x, mean, ci) in series.iter().copied() {
+            band.push((x, (mean + ci).clamp(y_lo, y_hi)));
+        }
+        for (x, mean, ci) in series.iter().rev().copied() {
+            band.push((x, (mean - ci).clamp(y_lo, y_hi)));
+        }
+        chart.draw_series(std::iter::once(Polygon::new(
+            band,
+            color.mix(0.15).filled(),
+        )))?;
+
+        // Mean line
+        chart
+            .draw_series(LineSeries::new(
+                series.iter().map(|(x, mean, _)| (*x, *mean)),
+                color.stroke_width(2),
+            ))?
+            .label(*label)
+            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], *color));
+    }
+
+    chart
+        .configure_series_labels()
+        .position(SeriesLabelPosition::UpperLeft)
+        .background_style(WHITE.mix(0.85))
+        .border_style(BLACK)
+        .label_font(("sans-serif", 22).into_font())
+        .draw()?;
+
+    root.present()?;
+    log_output_path(&fig_path);
     Ok(())
 }
 
@@ -23658,4 +23935,98 @@ fn nearest_bin(space: &Log2Space, hz: f32) -> usize {
         }
     }
     best_idx
+}
+
+// ── Independent consonance metric: Just Intonation ratio-complexity ──
+
+/// JI ratio table: (interval_semitones, weight = 1/(p*q) for ratio p:q)
+const JI_RATIOS: [(f32, f32); 8] = [
+    (0.0, 1.000),   // 1:1
+    (12.0, 0.500),   // 2:1
+    (7.0196, 0.167), // 3:2
+    (4.9804, 0.083), // 4:3
+    (3.8631, 0.050), // 5:4
+    (8.8436, 0.067), // 5:3
+    (3.1564, 0.033), // 6:5
+    (8.1369, 0.025), // 8:5
+];
+/// Gaussian sharpness for JI proximity (half-width ~0.42 semitones)
+const JI_ALPHA: f32 = 4.0;
+
+/// Score a single interval (in semitones, mod 12) against the JI ratio table.
+/// Returns the weighted Gaussian proximity to the nearest JI ratio.
+fn ji_interval_consonance(interval_st: f32) -> f32 {
+    let mut iv = interval_st.abs() % 12.0;
+    if iv > 6.0 {
+        iv = 12.0 - iv; // fold to [0, 6]
+    }
+    let mut best = 0.0f32;
+    for &(ji_st, weight) in &JI_RATIOS {
+        let mut ji = ji_st % 12.0;
+        if ji > 6.0 {
+            ji = 12.0 - ji;
+        }
+        let dist = (iv - ji).abs();
+        let score = weight * (-JI_ALPHA * dist * dist).exp();
+        if score > best {
+            best = score;
+        }
+    }
+    best
+}
+
+/// Mean pairwise JI consonance score for a population of frequencies.
+fn ji_population_score(freqs_hz: &[f32], anchor_hz: f32) -> f32 {
+    let semitones: Vec<f32> = freqs_hz
+        .iter()
+        .filter(|f| f.is_finite() && **f > 0.0)
+        .map(|f| 12.0 * (*f / anchor_hz).log2())
+        .collect();
+    if semitones.len() < 2 {
+        return 0.0;
+    }
+    let mut total = 0.0f32;
+    let mut count = 0u32;
+    for i in 0..semitones.len() {
+        for j in (i + 1)..semitones.len() {
+            total += ji_interval_consonance(semitones[i] - semitones[j]);
+            count += 1;
+        }
+    }
+    if count > 0 {
+        total / count as f32
+    } else {
+        0.0
+    }
+}
+
+
+#[cfg(test)]
+mod ji_tests {
+    use super::*;
+
+    #[test]
+    fn ji_unison_is_max() {
+        let score = ji_interval_consonance(0.0);
+        assert!(score > 0.9, "unison score should be ~1.0, got {}", score);
+    }
+
+    #[test]
+    fn ji_perfect_fifth_moderate() {
+        let score = ji_interval_consonance(7.02); // ~3:2
+        assert!(score > 0.1, "perfect fifth score should be > 0.1, got {}", score);
+    }
+
+    #[test]
+    fn ji_tritone_is_low() {
+        let score = ji_interval_consonance(6.0); // tritone
+        assert!(score < 0.01, "tritone score should be < 0.01, got {}", score);
+    }
+
+    #[test]
+    fn ji_population_all_unisons() {
+        let freqs = vec![220.0, 220.0, 220.0, 220.0];
+        let score = ji_population_score(&freqs, 220.0);
+        assert!(score > 0.9, "all-unison population should score > 0.9, got {}", score);
+    }
 }

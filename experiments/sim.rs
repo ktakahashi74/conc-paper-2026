@@ -118,6 +118,7 @@ pub struct E6RunConfig {
     pub condition: E6Condition,
     pub mutation_sigma: f32,
     pub snapshot_interval: usize,
+    pub landscape_weight: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -521,7 +522,7 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
     pop.set_seed(cfg.seed);
     pop.set_current_frame(0);
 
-    let spec = e6_spawn_spec(anchor_hz);
+    let spec = e6_spawn_spec(anchor_hz, cfg.landscape_weight);
     let strategy = e3_spawn_strategy(anchor_hz, &space);
     let ids: Vec<u64> = (0..cfg.pop_size as u64).collect();
     pop.apply_action(
@@ -1674,16 +1675,16 @@ fn sample_normal_zero_mean<R: Rng + ?Sized>(rng: &mut R, sigma: f32) -> f32 {
     z0 * sigma
 }
 
-/// Spawn spec for E6: PeakSampler with repulsion only (landscape_weight=0).
-/// Agents move via density-based repulsion without consonance hill-climbing,
+/// Spawn spec for E6: PeakSampler with configurable landscape_weight.
+/// When landscape_weight=0 agents move via density-based repulsion only,
 /// isolating hereditary selection as the sole source of consonance improvement.
-fn e6_spawn_spec(anchor_hz: f32) -> SpawnSpec {
+fn e6_spawn_spec(anchor_hz: f32, landscape_weight: f32) -> SpawnSpec {
     let mut control = AgentControl::default();
     control.pitch.mode = PitchMode::Free;
     control.pitch.core_kind = PitchCoreKind::PeakSampler;
     control.pitch.freq = anchor_hz.max(1.0);
     control.pitch.range_oct = E3_RANGE_OCT;
-    control.pitch.landscape_weight = 0.0; // disable consonance seeking
+    control.pitch.landscape_weight = landscape_weight;
     control.pitch.gravity = 0.0;          // no tessitura pull
     control.pitch.exploration = 0.5;
     control.pitch.persistence = 0.5;

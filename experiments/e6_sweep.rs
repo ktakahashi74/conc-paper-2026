@@ -36,33 +36,41 @@ struct SweepParams {
     mutation_sigma: f32,
     min_deaths: usize,
     pop_size: usize,
+    landscape_weight: f32,
 }
 
 pub fn run_sweep() {
     let params = vec![
-        // Round 6: C_score metric (no sigmoid). Broad sweep.
+        // Round 6: C_score metric (no sigmoid). Broad sweep. landscape_weight=0.0
         // Vary sigma
-        SweepParams { label: "sig0.001_d2000_p32", mutation_sigma: 0.001, min_deaths: 2000, pop_size: 32 },
-        SweepParams { label: "sig0.002_d2000_p32", mutation_sigma: 0.002, min_deaths: 2000, pop_size: 32 },
-        SweepParams { label: "sig0.003_d2000_p32", mutation_sigma: 0.003, min_deaths: 2000, pop_size: 32 },
-        SweepParams { label: "sig0.005_d2000_p32", mutation_sigma: 0.005, min_deaths: 2000, pop_size: 32 },
-        SweepParams { label: "sig0.01_d2000_p32", mutation_sigma: 0.01, min_deaths: 2000, pop_size: 32 },
-        SweepParams { label: "sig0.02_d2000_p32", mutation_sigma: 0.02, min_deaths: 2000, pop_size: 32 },
+        SweepParams { label: "sig0.001_d2000_p32", mutation_sigma: 0.001, min_deaths: 2000, pop_size: 32, landscape_weight: 0.0 },
+        SweepParams { label: "sig0.002_d2000_p32", mutation_sigma: 0.002, min_deaths: 2000, pop_size: 32, landscape_weight: 0.0 },
+        SweepParams { label: "sig0.003_d2000_p32", mutation_sigma: 0.003, min_deaths: 2000, pop_size: 32, landscape_weight: 0.0 },
+        SweepParams { label: "sig0.005_d2000_p32", mutation_sigma: 0.005, min_deaths: 2000, pop_size: 32, landscape_weight: 0.0 },
+        SweepParams { label: "sig0.01_d2000_p32", mutation_sigma: 0.01, min_deaths: 2000, pop_size: 32, landscape_weight: 0.0 },
+        SweepParams { label: "sig0.02_d2000_p32", mutation_sigma: 0.02, min_deaths: 2000, pop_size: 32, landscape_weight: 0.0 },
         // Vary deaths with sigma=0.003
-        SweepParams { label: "sig0.003_d3000_p32", mutation_sigma: 0.003, min_deaths: 3000, pop_size: 32 },
-        SweepParams { label: "sig0.003_d4000_p32", mutation_sigma: 0.003, min_deaths: 4000, pop_size: 32 },
-        SweepParams { label: "sig0.003_d5000_p32", mutation_sigma: 0.003, min_deaths: 5000, pop_size: 32 },
+        SweepParams { label: "sig0.003_d3000_p32", mutation_sigma: 0.003, min_deaths: 3000, pop_size: 32, landscape_weight: 0.0 },
+        SweepParams { label: "sig0.003_d4000_p32", mutation_sigma: 0.003, min_deaths: 4000, pop_size: 32, landscape_weight: 0.0 },
+        SweepParams { label: "sig0.003_d5000_p32", mutation_sigma: 0.003, min_deaths: 5000, pop_size: 32, landscape_weight: 0.0 },
         // Vary pop_size with sigma=0.003, deaths=2000
-        SweepParams { label: "sig0.003_d2000_p16", mutation_sigma: 0.003, min_deaths: 2000, pop_size: 16 },
-        SweepParams { label: "sig0.003_d2000_p24", mutation_sigma: 0.003, min_deaths: 2000, pop_size: 24 },
-        SweepParams { label: "sig0.003_d2000_p48", mutation_sigma: 0.003, min_deaths: 2000, pop_size: 48 },
+        SweepParams { label: "sig0.003_d2000_p16", mutation_sigma: 0.003, min_deaths: 2000, pop_size: 16, landscape_weight: 0.0 },
+        SweepParams { label: "sig0.003_d2000_p24", mutation_sigma: 0.003, min_deaths: 2000, pop_size: 24, landscape_weight: 0.0 },
+        SweepParams { label: "sig0.003_d2000_p48", mutation_sigma: 0.003, min_deaths: 2000, pop_size: 48, landscape_weight: 0.0 },
         // High-generation combos
-        SweepParams { label: "sig0.005_d3000_p32", mutation_sigma: 0.005, min_deaths: 3000, pop_size: 32 },
-        SweepParams { label: "sig0.002_d3000_p32", mutation_sigma: 0.002, min_deaths: 3000, pop_size: 32 },
-        SweepParams { label: "sig0.001_d3000_p32", mutation_sigma: 0.001, min_deaths: 3000, pop_size: 32 },
+        SweepParams { label: "sig0.005_d3000_p32", mutation_sigma: 0.005, min_deaths: 3000, pop_size: 32, landscape_weight: 0.0 },
+        SweepParams { label: "sig0.002_d3000_p32", mutation_sigma: 0.002, min_deaths: 3000, pop_size: 32, landscape_weight: 0.0 },
+        SweepParams { label: "sig0.001_d3000_p32", mutation_sigma: 0.001, min_deaths: 3000, pop_size: 32, landscape_weight: 0.0 },
+        // Sigma variation with landscape_weight=0.5 (hill-climbing enabled)
+        SweepParams { label: "sig0.001_d2000_p32_lw05", mutation_sigma: 0.001, min_deaths: 2000, pop_size: 32, landscape_weight: 0.5 },
+        SweepParams { label: "sig0.002_d2000_p32_lw05", mutation_sigma: 0.002, min_deaths: 2000, pop_size: 32, landscape_weight: 0.5 },
+        SweepParams { label: "sig0.003_d2000_p32_lw05", mutation_sigma: 0.003, min_deaths: 2000, pop_size: 32, landscape_weight: 0.5 },
+        SweepParams { label: "sig0.005_d2000_p32_lw05", mutation_sigma: 0.005, min_deaths: 2000, pop_size: 32, landscape_weight: 0.5 },
+        SweepParams { label: "sig0.01_d2000_p32_lw05", mutation_sigma: 0.01, min_deaths: 2000, pop_size: 32, landscape_weight: 0.5 },
+        SweepParams { label: "sig0.02_d2000_p32_lw05", mutation_sigma: 0.02, min_deaths: 2000, pop_size: 32, landscape_weight: 0.5 },
     ];
 
-    println!("config,condition,seed,total_deaths,n_snapshots,mean_c_start,mean_c_end,delta_mean_c,entropy_end");
+    println!("config,condition,seed,landscape_weight,total_deaths,n_snapshots,mean_c_start,mean_c_end,delta_mean_c,entropy_end");
 
     // Collect per-config, per-condition delta_c values for summary
     struct CondData {
@@ -83,6 +91,7 @@ pub fn run_sweep() {
                     condition,
                     mutation_sigma: p.mutation_sigma,
                     snapshot_interval: SNAPSHOT_INTERVAL,
+                    landscape_weight: p.landscape_weight,
                 };
                 let result = run_e6(&cfg);
 
@@ -131,10 +140,11 @@ pub fn run_sweep() {
                 let delta_c = c_end - c_start;
 
                 println!(
-                    "{},{},{},{},{},{:.6},{:.6},{:.6},{:.4}",
+                    "{},{},{},{:.1},{},{},{:.6},{:.6},{:.6},{:.4}",
                     p.label,
                     condition.label(),
                     seed,
+                    p.landscape_weight,
                     result.total_deaths,
                     snaps.len(),
                     c_start,
@@ -168,7 +178,7 @@ pub fn run_sweep() {
 
     // --- Print summary table ---
     eprintln!("\n=== Sweep Summary ===");
-    eprintln!("config,heredity_delta_mean,heredity_delta_sd,random_delta_mean,random_delta_sd,separation,welch_t,welch_p,positive_sep,sig_p05");
+    eprintln!("config,lw,heredity_delta_mean,heredity_delta_sd,random_delta_mean,random_delta_sd,separation,welch_t,welch_p,positive_sep,sig_p05");
 
     fn mean_sd(xs: &[f64]) -> (f64, f64) {
         let n = xs.len() as f64;
@@ -259,6 +269,12 @@ pub fn run_sweep() {
     let mut n_sig = 0;
     let n_total = params.len();
 
+    // Map label -> landscape_weight for summary output
+    let lw_by_label: HashMap<String, f32> = params
+        .iter()
+        .map(|p| (p.label.to_string(), p.landscape_weight))
+        .collect();
+
     // Sort by label for deterministic output
     let mut labels: Vec<String> = summary.keys().cloned().collect();
     labels.sort();
@@ -276,9 +292,10 @@ pub fn run_sweep() {
             let sig = p < 0.05;
             if positive { n_positive += 1; }
             if sig { n_sig += 1; }
+            let lw = lw_by_label.get(label.as_str()).copied().unwrap_or(0.0);
             eprintln!(
-                "{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.6},{},{}",
-                label, h_mean, h_sd, r_mean, r_sd, sep, t, p, positive, sig
+                "{},{:.1},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.6},{},{}",
+                label, lw, h_mean, h_sd, r_mean, r_sd, sep, t, p, positive, sig
             );
         }
     }
