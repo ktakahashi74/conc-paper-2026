@@ -3295,6 +3295,15 @@ fn run_e2_once(
     let mut nohill_env_loo = Vec::new();
     let mut nohill_density_loo = Vec::new();
 
+    // Fixed permutation for ShuffledLandscape (generated once per run).
+    let shuffle_perm: Vec<usize> = if matches!(condition, E2Condition::ShuffledLandscape) {
+        let mut perm: Vec<usize> = (0..space.n_bins()).collect();
+        perm.shuffle(&mut rng);
+        perm
+    } else {
+        Vec::new()
+    };
+
     let mut anchor_shift = E2AnchorShiftStats {
         step: E2_ANCHOR_SHIFT_STEP,
         anchor_hz_before: anchor_hz_current,
@@ -3467,8 +3476,7 @@ fn run_e2_once(
                 stats
             }
             E2Condition::ShuffledLandscape => {
-                let mut shuffled_scores = c_score_scan.clone();
-                shuffled_scores.shuffle(&mut rng);
+                let shuffled_scores: Vec<f32> = shuffle_perm.iter().map(|&i| c_score_scan[i]).collect();
                 update_e2_sweep_prescored(
                     E2_UPDATE_SCHEDULE,
                     &mut agent_indices,
