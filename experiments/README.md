@@ -1,110 +1,83 @@
-# Paper experiments
+# Paper Experiments
 
-Example runner for generating plots used in the paper.
+Experiment runner and plot generator for all figures and statistical analyses in the paper.
 
-Paper scenarios used for headless behavioral checks are under `experiments/scenarios/`.
+## Experiment mapping
 
-## Run
+| Paper        | Internal ID | Topic                                          |
+|--------------|-------------|------------------------------------------------|
+| Experiment 1 | E1, E2      | Landscape Attractors & Self-Organised Polyphony |
+| Experiment 2 | E3          | Consonance as Selection Pressure               |
+| Experiment 3 | E5          | Rhythmic Entrainment                           |
+| *(skipped)*  | E4          | *(excluded from paper)*                        |
+| Experiment 4 | E6          | Hereditary Adaptation                          |
+
+## Quick start
 
 ```bash
-cargo run --bin paper
-```
+# Run all experiments (release build) + convert SVG→PDF + build paper
+just all
 
-`--exp` を省略した場合は論文向けの既定セット `e1,e2,e3,e5,e6` のみ実行します。
-`e4` は `--exp e4` を明示した場合にのみ実行されます。
-
-## Just recipes
-
-```bash
+# Run a single experiment
 just paper --exp e2
-```
 
-```bash
+# Run experiments + SVG→PDF conversion (no LaTeX)
 just paper-pdf --exp e2
 ```
 
-`paper-pdf` runs the plot generator and converts all emitted SVG files in
-`experiments/plots/` to PDF. Conversion uses `rsvg-convert` or `inkscape`.
-`paper` rejects concurrent runs with a lock at `experiments/.paper_plots.lock`.
-If a previous run crashed, remove that lock directory and retry.
+When `--exp` is omitted, the default set `e1,e2,e3,e5,e6` is run.
 
-## Build check
+## Build and test
 
 ```bash
 cargo check --bin paper
-```
-
-```bash
-cargo check --bins
-```
-
-```bash
-cargo check --all-targets
-```
-
-```bash
-cargo test --bins
+cargo test --bin paper
 ```
 
 ## Options
 
 ```bash
-cargo run --bin paper -- --exp e3
+cargo run --release --bin paper -- --exp e3        # Single experiment
+cargo run --release --bin paper -- --exp e1,e3     # Multiple experiments
+cargo run --release --bin paper -- --clean --exp e2 # Clean output first
 ```
 
-```bash
-cargo run --bin paper -- --exp e4 --e4-hist on
-```
+## Output
 
-```bash
-cargo run --bin paper -- --exp e4 --e4-debug-fit-metrics on
-```
+All outputs are written to `experiments/plots/<exp>/` (e.g., `experiments/plots/e2/`).
 
-```bash
-cargo run --bin paper -- --exp e4 --e4-env-partials 9 --e4-env-decay 0.8
-```
+- `.svg` — vector plots
+- `.pdf` — converted from SVG via `rsvg-convert` or `inkscape`
+- `.csv` — raw data tables
+- `.txt` — statistical summaries and comparison reports
 
-```bash
-cargo run --bin paper -- --exp e4 --e4-dyn-exploration 0.9 --e4-dyn-persistence 0.1 --e4-dyn-step-cents 75
-```
+Key output files per experiment:
 
-E2 uses the `dissonance_then_consonance` phase schedule.
-E4 fit debug CSV outputs are disabled by default and emitted only with `--e4-debug-fit-metrics on`.
+| Experiment | Main figure | Key data files |
+|------------|-------------|----------------|
+| E1 | `paper_e1_landscape_scan_anchor220.svg` | `paper_e1_anchor_robustness.txt` |
+| E2 | `paper_e2_figure_e2_1.svg`, `paper_e2_figure_e2_2.svg` | `paper_e2_shuffled_comparison.txt`, `paper_e2_terrain_controls.txt`, `paper_e2_coefficient_sweep.txt` |
+| E3 | `paper_e3_figure4.svg` | `paper_e3_lifetimes.csv` |
+| E5 | `paper_e5_figure.svg` | `paper_e5_summary.csv` |
+| E6 | `paper_e6_figure.svg`, `paper_e6_integration_figure.svg` | `paper_e6_summary.csv` |
 
-Outputs are written to `experiments/plots/<exp>/` (for example, `experiments/plots/e2/`).
-Plot images are emitted as `.svg` files (vector output).
-Default behavior: only selected experiment directories are cleared and regenerated.
-Use `--clean` to clear `experiments/plots` entirely before generation.
+Use `--clean` when you need strict reproducibility from a fully fresh output tree.
 
-## Manual verification
+## Concurrency lock
 
-```bash
-cargo check --bin paper
-cargo check --bins
-cargo check --all-targets
-cargo test --bins
-cargo run --bin paper -- --clean --exp e4
-find experiments/plots/e4 -maxdepth 1 -type f | rg 'binding_metrics|binding_summary|harmonic_tilt|binding_phase_diagram' || true
-```
+`paper` rejects concurrent runs via a lock at `experiments/.paper_plots.lock`.
+If a previous run crashed, remove that lock directory and retry.
 
-Primary E4 outputs to verify:
-- `paper_e4_binding_metrics_raw.csv`
-- `paper_e4_binding_metrics_summary.csv`
-- `paper_e4_harmonic_tilt.png`
-- `paper_e4_binding_phase_diagram.png`
+## Headless demo scenarios
 
-Use `--clean` when you need strict reproducibility from a fully fresh `plots` tree.
-
-## Paper scenarios (headless demos)
+Lightweight Rhai scripts for quick behavioural checks (not for plot generation):
 
 ```bash
 cargo run -- --nogui experiments/scenarios/e1_landscape_scan_demo.rhai
 ```
 
-Files:
+Available scenarios:
 - `e1_landscape_scan_demo.rhai`
 - `e2_emergent_harmony_demo.rhai`
 - `e3_metabolic_selection_demo.rhai`
-- `e4_mirror_sweep_demo.rhai`
-- `e4_mirror_sweep_between_runs.rhai`
 - `e5_rhythmic_entrainment_demo.rhai`
