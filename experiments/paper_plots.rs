@@ -1474,7 +1474,7 @@ fn plot_e2_emergent_harmony(
     anchor_hz: f32,
     phase_mode: E2PhaseMode,
 ) -> Result<(), Box<dyn Error>> {
-    let (baseline_runs, baseline_stats, nohill_runs, nohill_stats, norep_runs, norep_stats) =
+    let (baseline_runs, baseline_stats, nohill_runs, nohill_stats, norep_runs, norep_stats, shuffled_runs) =
         std::thread::scope(|scope| {
             let baseline_handle = scope.spawn(|| {
                 e2_seed_sweep(
@@ -1483,6 +1483,8 @@ fn plot_e2_emergent_harmony(
                     E2Condition::Baseline,
                     E2_STEP_SEMITONES,
                     phase_mode,
+                    None,
+                    0,
                 )
             });
             let nohill_handle = scope.spawn(|| {
@@ -1492,6 +1494,8 @@ fn plot_e2_emergent_harmony(
                     E2Condition::NoHillClimb,
                     E2_STEP_SEMITONES,
                     phase_mode,
+                    None,
+                    0,
                 )
             });
             let norep_handle = scope.spawn(|| {
@@ -1501,6 +1505,19 @@ fn plot_e2_emergent_harmony(
                     E2Condition::NoRepulsion,
                     E2_STEP_SEMITONES,
                     phase_mode,
+                    None,
+                    0,
+                )
+            });
+            let shuffled_handle = scope.spawn(|| {
+                e2_seed_sweep(
+                    space,
+                    anchor_hz,
+                    E2Condition::ShuffledLandscape,
+                    E2_STEP_SEMITONES,
+                    phase_mode,
+                    None,
+                    0,
                 )
             });
             let (baseline_runs, baseline_stats) = baseline_handle
@@ -1512,6 +1529,9 @@ fn plot_e2_emergent_harmony(
             let (norep_runs, norep_stats) = norep_handle
                 .join()
                 .expect("norep seed sweep thread panicked");
+            let (shuffled_runs, _shuffled_stats) = shuffled_handle
+                .join()
+                .expect("shuffled seed sweep thread panicked");
             (
                 baseline_runs,
                 baseline_stats,
@@ -1519,6 +1539,7 @@ fn plot_e2_emergent_harmony(
                 nohill_stats,
                 norep_runs,
                 norep_stats,
+                shuffled_runs,
             )
         });
     let rep_index = pick_representative_run_index(&baseline_runs);
@@ -2440,6 +2461,8 @@ fn plot_e2_emergent_harmony(
             E2Condition::Baseline,
             E2_STEP_SEMITONES,
             E2PhaseMode::ConsonanceOnly,
+            None,
+            0,
         );
 
         // Diversity metrics
@@ -2624,6 +2647,433 @@ fn plot_e2_emergent_harmony(
         eprintln!("  Consonance-only control written.");
     }
 
+    // ── Shuffled-landscape control (supplementary) ──
+    {
+        eprintln!("  Writing shuffled-landscape comparison...");
+        let shuf_diversity: Vec<DiversityRow> = diversity_rows("shuffled", &shuffled_runs);
+        let base_diversity: Vec<DiversityRow> = diversity_rows("baseline", &baseline_runs);
+
+        fn div_summary_ctrl(rows: &[DiversityRow]) -> (f32, f32, f32, f32) {
+            let bins: Vec<f32> = rows.iter().map(|r| r.metrics.unique_bins as f32).collect();
+            let nns: Vec<f32> = rows.iter().map(|r| r.metrics.nn_mean).collect();
+            let (mb, sb) = mean_std_scalar(&bins);
+            let (mn, sn) = mean_std_scalar(&nns);
+            (mb, sb, mn, sn)
+        }
+
+        let (shuf_bins_m, shuf_bins_s, shuf_nn_m, shuf_nn_s) = div_summary_ctrl(&shuf_diversity);
+        let (base_bins_m, base_bins_s, base_nn_m, base_nn_s) = div_summary_ctrl(&base_diversity);
+
+        let half = E2_SWEEPS / 2;
+        let burn = E2_BURN_IN;
+        fn post_mean_c_ctrl(runs: &[E2Run], start: usize, burn: usize) -> Vec<f32> {
+            runs.iter()
+                .map(|r| {
+                    let from = start + burn;
+                    let slice = &r.mean_c_score_chosen_loo_series[from..];
+                    if slice.is_empty() { 0.0 } else { slice.iter().sum::<f32>() / slice.len() as f32 }
+                })
+                .collect()
+        }
+        let shuf_c_scores = post_mean_c_ctrl(&shuffled_runs, half, burn);
+        let base_c_scores = post_mean_c_ctrl(&baseline_runs, half, burn);
+        let (shuf_c_m, shuf_c_s) = mean_std_scalar(&shuf_c_scores);
+        let (base_c_m, base_c_s) = mean_std_scalar(&base_c_scores);
+
+        fn entropy_from_runs_ctrl(runs: &[E2Run]) -> Vec<f32> {
+            runs.iter()
+                .map(|r| {
+                    let bin_st = 0.05f32;
+                    let n_bins = (12.0 / bin_st).round() as usize;
+                    let mut hist = vec![0u32; n_bins];
+                    for &st in &r.final_semitones {
+                        for &st2 in &r.final_semitones {
+                            let d = (st - st2).abs();
+                            if d < 1e-6 { continue; }
+                            let d_mod = d % 12.0;
+                            let idx = (d_mod / bin_st).round() as usize;
+                            if idx < n_bins { hist[idx] += 1; }
+                        }
+                    }
+                    let total: u32 = hist.iter().sum();
+                    if total == 0 { return 0.0; }
+                    let mut h = 0.0f32;
+                    for &c in &hist {
+                        if c > 0 { let p = c as f32 / total as f32; h -= p * p.ln(); }
+                    }
+                    h
+                })
+                .collect()
+        }
+        let shuf_ent = entropy_from_runs_ctrl(&shuffled_runs);
+        let base_ent = entropy_from_runs_ctrl(&baseline_runs);
+        let (shuf_ent_m, shuf_ent_s) = mean_std_scalar(&shuf_ent);
+        let (base_ent_m, base_ent_s) = mean_std_scalar(&base_ent);
+
+        fn welch_t_ctrl(a: &[f32], b: &[f32]) -> (f32, f32) {
+            let na = a.len() as f32;
+            let nb = b.len() as f32;
+            let (ma, sa) = mean_std_scalar(a);
+            let (mb, sb) = mean_std_scalar(b);
+            let va = sa * sa / na;
+            let vb = sb * sb / nb;
+            let denom = (va + vb).sqrt();
+            if denom < 1e-15 { return (0.0, 1.0); }
+            let t = (ma - mb) / denom;
+            let df = (va + vb).powi(2) / (va * va / (na - 1.0) + vb * vb / (nb - 1.0));
+            let t_abs = t.abs() as f64;
+            let df64 = df as f64;
+            let x = df64 / (df64 + t_abs * t_abs);
+            fn ln_gamma(x: f64) -> f64 {
+                let coeffs = [76.18009172947146, -86.50532032941677, 24.01409824083091,
+                    -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+                let mut y = x;
+                let tmp = x + 5.5 - (x + 0.5) * (x + 5.5).ln();
+                let mut ser = 1.000000000190015_f64;
+                for &c in &coeffs { y += 1.0; ser += c / y; }
+                -tmp + (2.5066282746310005 * ser / x).ln()
+            }
+            fn betacf(a: f64, b: f64, x: f64) -> f64 {
+                let (fpmin, eps) = (1e-30, 3e-12);
+                let (qab, qap, qam) = (a + b, a + 1.0, a - 1.0);
+                let mut c = 1.0_f64;
+                let mut d = (1.0 - qab * x / qap).recip();
+                if d.abs() < fpmin { d = fpmin; }
+                let mut h = d;
+                for m in 1..=200 {
+                    let mf = m as f64;
+                    let aa = mf * (b - mf) * x / ((qam + 2.0 * mf) * (a + 2.0 * mf));
+                    d = 1.0 + aa * d; if d.abs() < fpmin { d = fpmin; }
+                    c = 1.0 + aa / c; if c.abs() < fpmin { c = fpmin; }
+                    d = d.recip(); h *= d * c;
+                    let aa = -(a + mf) * (qab + mf) * x / ((a + 2.0 * mf) * (qap + 2.0 * mf));
+                    d = 1.0 + aa * d; if d.abs() < fpmin { d = fpmin; }
+                    c = 1.0 + aa / c; if c.abs() < fpmin { c = fpmin; }
+                    d = d.recip(); let delta = d * c; h *= delta;
+                    if (delta - 1.0).abs() < eps { break; }
+                }
+                h
+            }
+            fn rib(a: f64, b: f64, x: f64) -> f64 {
+                if x <= 0.0 { return 0.0; }
+                if x >= 1.0 { return 1.0; }
+                let bt = (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b)
+                    + a * x.ln() + b * (1.0 - x).ln()).exp();
+                if x < (a + 1.0) / (a + b + 2.0) {
+                    bt * betacf(a, b, x) / a
+                } else {
+                    1.0 - bt * betacf(b, a, 1.0 - x) / b
+                }
+            }
+            let p = rib(df64 / 2.0, 0.5, x) as f32;
+            (t, p)
+        }
+
+        let bins_vec_shuf: Vec<f32> = shuf_diversity.iter().map(|r| r.metrics.unique_bins as f32).collect();
+        let bins_vec_base: Vec<f32> = base_diversity.iter().map(|r| r.metrics.unique_bins as f32).collect();
+        let nn_vec_shuf: Vec<f32> = shuf_diversity.iter().map(|r| r.metrics.nn_mean).collect();
+        let nn_vec_base: Vec<f32> = base_diversity.iter().map(|r| r.metrics.nn_mean).collect();
+        let (t_bins, p_bins) = welch_t_ctrl(&bins_vec_shuf, &bins_vec_base);
+        let (t_nn, p_nn) = welch_t_ctrl(&nn_vec_shuf, &nn_vec_base);
+        let (t_c, p_c) = welch_t_ctrl(&shuf_c_scores, &base_c_scores);
+        let (t_ent, p_ent) = welch_t_ctrl(&shuf_ent, &base_ent);
+
+        let report = format!(
+            "Shuffled-Landscape vs Baseline Control (Experiment 1, E2 condition)\n\
+             ===================================================================\n\
+             n_seeds = {}\n\n\
+             Metric                  Baseline           Shuffled           Welch t     p\n\
+             ---------------------   ----------------   ----------------   --------   ------\n\
+             C_score (post)          {:.3} ± {:.3}      {:.3} ± {:.3}      {:.2}      {:.4}\n\
+             Unique pitch bins       {:.1} ± {:.1}      {:.1} ± {:.1}      {:.2}      {:.4}\n\
+             NN distance (st)        {:.3} ± {:.3}      {:.3} ± {:.3}      {:.2}      {:.4}\n\
+             Interval entropy        {:.3} ± {:.3}      {:.3} ± {:.3}      {:.2}      {:.4}\n",
+            E2_SEEDS.len(),
+            base_c_m, base_c_s, shuf_c_m, shuf_c_s, t_c, p_c,
+            base_bins_m, base_bins_s, shuf_bins_m, shuf_bins_s, t_bins, p_bins,
+            base_nn_m, base_nn_s, shuf_nn_m, shuf_nn_s, t_nn, p_nn,
+            base_ent_m, base_ent_s, shuf_ent_m, shuf_ent_s, t_ent, p_ent,
+        );
+
+        write_with_log(out_dir.join("paper_e2_shuffled_comparison.txt"), report)?;
+        eprintln!("  Shuffled-landscape comparison written.");
+    }
+
+    // ── Terrain controls + coefficient sweep (supplementary) ──
+    eprintln!("  Running terrain controls...");
+    plot_e2_terrain_controls(out_dir, space, anchor_hz, &baseline_runs)?;
+    eprintln!("  Running coefficient sweep...");
+    plot_e2_coefficient_sweep(out_dir, space, anchor_hz)?;
+
+    Ok(())
+}
+
+fn plot_e2_terrain_controls(
+    out_dir: &Path,
+    space: &Log2Space,
+    anchor_hz: f32,
+    baseline_runs: &[E2Run],
+) -> Result<(), Box<dyn Error>> {
+    let phase_mode = E2PhaseMode::DissonanceThenConsonance;
+    let bins_per_cent = SPACE_BINS_PER_OCT as f32 / 1200.0;
+    let misalign_cents: [f32; 4] = [137.0, 271.0, 389.0, 523.0];
+    let shifts: Vec<i32> = misalign_cents
+        .iter()
+        .map(|&c| (c * bins_per_cent).round() as i32)
+        .collect();
+
+    let base_diversity: Vec<DiversityRow> = diversity_rows("baseline", baseline_runs);
+    let base_bins: Vec<f32> = base_diversity.iter().map(|r| r.metrics.unique_bins as f32).collect();
+    let base_nns: Vec<f32> = base_diversity.iter().map(|r| r.metrics.nn_mean).collect();
+    let (base_bins_m, base_bins_s) = mean_std_scalar(&base_bins);
+    let (base_nn_m, base_nn_s) = mean_std_scalar(&base_nns);
+
+    fn entropy_from_runs_tc(runs: &[E2Run]) -> Vec<f32> {
+        runs.iter()
+            .map(|r| {
+                let bin_st = 0.05f32;
+                let n_bins = (12.0 / bin_st).round() as usize;
+                let mut hist = vec![0u32; n_bins];
+                for &st in &r.final_semitones {
+                    for &st2 in &r.final_semitones {
+                        let d = (st - st2).abs();
+                        if d < 1e-6 { continue; }
+                        let d_mod = d % 12.0;
+                        let idx = (d_mod / bin_st).round() as usize;
+                        if idx < n_bins { hist[idx] += 1; }
+                    }
+                }
+                let total: u32 = hist.iter().sum();
+                if total == 0 { return 0.0; }
+                let mut h = 0.0f32;
+                for &c in &hist {
+                    if c > 0 { let p = c as f32 / total as f32; h -= p * p.ln(); }
+                }
+                h
+            })
+            .collect()
+    }
+    let base_ent = entropy_from_runs_tc(baseline_runs);
+    let (base_ent_m, base_ent_s) = mean_std_scalar(&base_ent);
+
+    let half = E2_SWEEPS / 2;
+    let burn = E2_BURN_IN;
+    fn post_mean_c_tc(runs: &[E2Run], start: usize, burn: usize) -> Vec<f32> {
+        runs.iter()
+            .map(|r| {
+                let from = start + burn;
+                let slice = &r.mean_c_score_chosen_loo_series[from..];
+                if slice.is_empty() { 0.0 } else { slice.iter().sum::<f32>() / slice.len() as f32 }
+            })
+            .collect()
+    }
+    let base_c = post_mean_c_tc(baseline_runs, half, burn);
+    let (base_c_m, base_c_s) = mean_std_scalar(&base_c);
+
+    fn welch_t_tc(a: &[f32], b: &[f32]) -> (f32, f32) {
+        let na = a.len() as f32;
+        let nb = b.len() as f32;
+        let (ma, sa) = mean_std_scalar(a);
+        let (mb, sb) = mean_std_scalar(b);
+        let va = sa * sa / na;
+        let vb = sb * sb / nb;
+        let denom = (va + vb).sqrt();
+        if denom < 1e-15 { return (0.0, 1.0); }
+        let t = (ma - mb) / denom;
+        let df = (va + vb).powi(2) / (va * va / (na - 1.0) + vb * vb / (nb - 1.0));
+        let t_abs = t.abs() as f64;
+        let df64 = df as f64;
+        let x = df64 / (df64 + t_abs * t_abs);
+        fn ln_gamma(x: f64) -> f64 {
+            let coeffs = [76.18009172947146, -86.50532032941677, 24.01409824083091,
+                -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+            let mut y = x;
+            let tmp = x + 5.5 - (x + 0.5) * (x + 5.5).ln();
+            let mut ser = 1.000000000190015_f64;
+            for &c in &coeffs { y += 1.0; ser += c / y; }
+            -tmp + (2.5066282746310005 * ser / x).ln()
+        }
+        fn betacf(a: f64, b: f64, x: f64) -> f64 {
+            let (fpmin, eps) = (1e-30, 3e-12);
+            let (qab, qap, qam) = (a + b, a + 1.0, a - 1.0);
+            let mut c = 1.0_f64;
+            let mut d = (1.0 - qab * x / qap).recip();
+            if d.abs() < fpmin { d = fpmin; }
+            let mut h = d;
+            for m in 1..=200 {
+                let mf = m as f64;
+                let aa = mf * (b - mf) * x / ((qam + 2.0 * mf) * (a + 2.0 * mf));
+                d = 1.0 + aa * d; if d.abs() < fpmin { d = fpmin; }
+                c = 1.0 + aa / c; if c.abs() < fpmin { c = fpmin; }
+                d = d.recip(); h *= d * c;
+                let aa = -(a + mf) * (qab + mf) * x / ((a + 2.0 * mf) * (qap + 2.0 * mf));
+                d = 1.0 + aa * d; if d.abs() < fpmin { d = fpmin; }
+                c = 1.0 + aa / c; if c.abs() < fpmin { c = fpmin; }
+                d = d.recip(); let delta = d * c; h *= delta;
+                if (delta - 1.0).abs() < eps { break; }
+            }
+            h
+        }
+        fn rib(a: f64, b: f64, x: f64) -> f64 {
+            if x <= 0.0 { return 0.0; }
+            if x >= 1.0 { return 1.0; }
+            let bt = (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b)
+                + a * x.ln() + b * (1.0 - x).ln()).exp();
+            if x < (a + 1.0) / (a + b + 2.0) {
+                bt * betacf(a, b, x) / a
+            } else {
+                1.0 - bt * betacf(b, a, 1.0 - x) / b
+            }
+        }
+        let p = rib(df64 / 2.0, 0.5, x) as f32;
+        (t, p)
+    }
+
+    let mut report = format!(
+        "Terrain Controls: Baseline vs H/R Misalignment (Experiment 1, E2)\n\
+         =================================================================\n\
+         n_seeds = {}\n\
+         bins_per_cent = {:.4}\n\n\
+         Condition        shift_cents  shift_bins  unique_bins       nn_mean           entropy           C_score(ref)\n\
+         -----------      ----------   ----------  ----------------  ----------------  ----------------  ----------------\n\
+         Baseline         0            0           {:.1} ± {:.1}     {:.3} ± {:.3}     {:.3} ± {:.3}     {:.3} ± {:.3}\n",
+        E2_SEEDS.len(), bins_per_cent,
+        base_bins_m, base_bins_s, base_nn_m, base_nn_s, base_ent_m, base_ent_s, base_c_m, base_c_s,
+    );
+
+    let mut all_mis_bins: Vec<f32> = Vec::new();
+    let mut all_mis_nns: Vec<f32> = Vec::new();
+    let mut all_mis_ent: Vec<f32> = Vec::new();
+    let mut all_mis_c: Vec<f32> = Vec::new();
+
+    for (i, (&cents, &shift)) in misalign_cents.iter().zip(shifts.iter()).enumerate() {
+        eprintln!("    Misalignment Δ={} cents (shift={} bins)...", cents, shift);
+        let (mis_runs, _) = e2_seed_sweep(
+            space, anchor_hz, E2Condition::Baseline, E2_STEP_SEMITONES, phase_mode, None, shift,
+        );
+        let mis_div: Vec<DiversityRow> = diversity_rows("misaligned", &mis_runs);
+        let mis_bins_v: Vec<f32> = mis_div.iter().map(|r| r.metrics.unique_bins as f32).collect();
+        let mis_nn_v: Vec<f32> = mis_div.iter().map(|r| r.metrics.nn_mean).collect();
+        let mis_ent_v = entropy_from_runs_tc(&mis_runs);
+        let mis_c_v = post_mean_c_tc(&mis_runs, half, burn);
+        let (mb, sb) = mean_std_scalar(&mis_bins_v);
+        let (mn, sn) = mean_std_scalar(&mis_nn_v);
+        let (me, se) = mean_std_scalar(&mis_ent_v);
+        let (mc, sc) = mean_std_scalar(&mis_c_v);
+
+        let (t_bins, p_bins) = welch_t_tc(&mis_bins_v, &base_bins);
+        let (t_nn, p_nn) = welch_t_tc(&mis_nn_v, &base_nns);
+        let (t_ent, p_ent) = welch_t_tc(&mis_ent_v, &base_ent);
+
+        report.push_str(&format!(
+            "Misaligned[{}]   {:<11.0}  {:<10}  {:.1} ± {:.1}     {:.3} ± {:.3}     {:.3} ± {:.3}     {:.3} ± {:.3}  t_bins={:.2} p={:.4} t_nn={:.2} p={:.4} t_ent={:.2} p={:.4}\n",
+            i, cents, shift, mb, sb, mn, sn, me, se, mc, sc, t_bins, p_bins, t_nn, p_nn, t_ent, p_ent,
+        ));
+
+        all_mis_bins.extend_from_slice(&mis_bins_v);
+        all_mis_nns.extend_from_slice(&mis_nn_v);
+        all_mis_ent.extend_from_slice(&mis_ent_v);
+        all_mis_c.extend_from_slice(&mis_c_v);
+    }
+
+    let (grand_bins_m, grand_bins_s) = mean_std_scalar(&all_mis_bins);
+    let (grand_nn_m, grand_nn_s) = mean_std_scalar(&all_mis_nns);
+    let (grand_ent_m, grand_ent_s) = mean_std_scalar(&all_mis_ent);
+    let (grand_c_m, grand_c_s) = mean_std_scalar(&all_mis_c);
+
+    let base_bins_rep: Vec<f32> = (0..shifts.len()).flat_map(|_| base_bins.iter().copied()).collect();
+    let base_nns_rep: Vec<f32> = (0..shifts.len()).flat_map(|_| base_nns.iter().copied()).collect();
+    let base_ent_rep: Vec<f32> = (0..shifts.len()).flat_map(|_| base_ent.iter().copied()).collect();
+    let (t_bins, p_bins) = welch_t_tc(&all_mis_bins, &base_bins_rep);
+    let (t_nn, p_nn) = welch_t_tc(&all_mis_nns, &base_nns_rep);
+    let (t_ent, p_ent) = welch_t_tc(&all_mis_ent, &base_ent_rep);
+
+    report.push_str(&format!(
+        "Misaligned(avg)  --           --          {:.1} ± {:.1}     {:.3} ± {:.3}     {:.3} ± {:.3}     {:.3} ± {:.3}  t_bins={:.2} p={:.4} t_nn={:.2} p={:.4} t_ent={:.2} p={:.4}\n",
+        grand_bins_m, grand_bins_s, grand_nn_m, grand_nn_s, grand_ent_m, grand_ent_s, grand_c_m, grand_c_s,
+        t_bins, p_bins, t_nn, p_nn, t_ent, p_ent,
+    ));
+
+    write_with_log(out_dir.join("paper_e2_terrain_controls.txt"), report)?;
+    Ok(())
+}
+
+fn plot_e2_coefficient_sweep(
+    out_dir: &Path,
+    space: &Log2Space,
+    anchor_hz: f32,
+) -> Result<(), Box<dyn Error>> {
+    let phase_mode = E2PhaseMode::DissonanceThenConsonance;
+    let b_values: [f32; 4] = [-2.0, -1.35, -0.7, 0.0];
+    let c_values: [f32; 4] = [0.0, 0.5, 1.0, 1.5];
+
+    fn entropy_from_runs_cs(runs: &[E2Run]) -> Vec<f32> {
+        runs.iter()
+            .map(|r| {
+                let bin_st = 0.05f32;
+                let n_bins = (12.0 / bin_st).round() as usize;
+                let mut hist = vec![0u32; n_bins];
+                for &st in &r.final_semitones {
+                    for &st2 in &r.final_semitones {
+                        let d = (st - st2).abs();
+                        if d < 1e-6 { continue; }
+                        let d_mod = d % 12.0;
+                        let idx = (d_mod / bin_st).round() as usize;
+                        if idx < n_bins { hist[idx] += 1; }
+                    }
+                }
+                let total: u32 = hist.iter().sum();
+                if total == 0 { return 0.0; }
+                let mut h = 0.0f32;
+                for &ct in &hist {
+                    if ct > 0 { let p = ct as f32 / total as f32; h -= p * p.ln(); }
+                }
+                h
+            })
+            .collect()
+    }
+
+    let half = E2_SWEEPS / 2;
+    let burn = E2_BURN_IN;
+
+    let mut report = String::from(
+        "Coefficient Sweep (b × c) — Experiment 1, E2\n\
+         =============================================\n\
+         a=1.0, d=0.0 fixed. Default: b=-1.35, c=1.0\n\n\
+         b\tc\tunique_bins_m\tunique_bins_s\tnn_mean_m\tnn_mean_s\tentropy_m\tentropy_s\tc_score_m\tc_score_s\n",
+    );
+
+    for &b in &b_values {
+        for &c in &c_values {
+            eprintln!("    Coefficient sweep b={:.2}, c={:.2}...", b, c);
+            let kernel = ConsonanceKernel { a: 1.0, b, c, d: 0.0 };
+            let (runs, _) = e2_seed_sweep(
+                space, anchor_hz, E2Condition::Baseline, E2_STEP_SEMITONES, phase_mode,
+                Some(kernel), 0,
+            );
+            let div: Vec<DiversityRow> = diversity_rows("sweep", &runs);
+            let bins_v: Vec<f32> = div.iter().map(|r| r.metrics.unique_bins as f32).collect();
+            let nn_v: Vec<f32> = div.iter().map(|r| r.metrics.nn_mean).collect();
+            let ent_v = entropy_from_runs_cs(&runs);
+            let c_scores: Vec<f32> = runs.iter()
+                .map(|r| {
+                    let from = half + burn;
+                    let slice = &r.mean_c_score_chosen_loo_series[from..];
+                    if slice.is_empty() { 0.0 } else { slice.iter().sum::<f32>() / slice.len() as f32 }
+                })
+                .collect();
+            let (bm, bs) = mean_std_scalar(&bins_v);
+            let (nm, ns) = mean_std_scalar(&nn_v);
+            let (em, es) = mean_std_scalar(&ent_v);
+            let (cm, cs) = mean_std_scalar(&c_scores);
+            report.push_str(&format!(
+                "{:.2}\t{:.2}\t{:.1}\t{:.1}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\n",
+                b, c, bm, bs, nm, ns, em, es, cm, cs,
+            ));
+        }
+    }
+
+    write_with_log(out_dir.join("paper_e2_coefficient_sweep.txt"), report)?;
     Ok(())
 }
 
@@ -2788,6 +3238,8 @@ fn run_e2_once(
     condition: E2Condition,
     step_semitones: f32,
     phase_mode: E2PhaseMode,
+    kernel: Option<ConsonanceKernel>,
+    r_shift_bins: i32,
 ) -> E2Run {
     let mut rng = seeded_rng(seed);
     let mut anchor_hz_current = anchor_hz;
@@ -2802,7 +3254,11 @@ fn run_e2_once(
     };
 
     let (_erb_scan, du_scan) = erb_grid_for_space(space);
-    let workspace = build_consonance_workspace(space);
+    let mut workspace = build_consonance_workspace(space);
+    if let Some(k) = kernel {
+        workspace.params.consonance_kernel = k;
+    }
+    workspace.r_shift_bins = r_shift_bins;
     let k_bins = k_from_semitones(step_semitones);
 
     let mut mean_c_series = Vec::with_capacity(E2_SWEEPS);
@@ -3010,6 +3466,32 @@ fn run_e2_once(
                 }
                 stats
             }
+            E2Condition::ShuffledLandscape => {
+                let mut shuffled_scores = c_score_scan.clone();
+                shuffled_scores.shuffle(&mut rng);
+                update_e2_sweep_prescored(
+                    E2_UPDATE_SCHEDULE,
+                    &mut agent_indices,
+                    &positions_before_update,
+                    &shuffled_scores,
+                    &log2_ratio_scan,
+                    min_idx,
+                    max_idx,
+                    k_bins,
+                    score_sign,
+                    E2_LAMBDA,
+                    E2_SIGMA,
+                    temperature,
+                    sweep,
+                    block_backtrack,
+                    if block_backtrack {
+                        Some(backtrack_targets.as_slice())
+                    } else {
+                        None
+                    },
+                    &mut rng,
+                )
+            }
         };
         e2_update_backtrack_targets(
             &mut backtrack_targets,
@@ -3037,6 +3519,7 @@ fn run_e2_once(
             E2Condition::Baseline => "baseline",
             E2Condition::NoRepulsion => "norep",
             E2Condition::NoHillClimb => "nohill",
+            E2Condition::ShuffledLandscape => "shuffled",
         };
         debug_assert!(
             stats.mean_c_score_current_loo.is_finite(),
@@ -3142,6 +3625,8 @@ fn e2_seed_sweep(
     condition: E2Condition,
     step_semitones: f32,
     phase_mode: E2PhaseMode,
+    kernel: Option<ConsonanceKernel>,
+    r_shift_bins: i32,
 ) -> (Vec<E2Run>, E2SweepStats) {
     let seeds = &E2_SEEDS;
     let max_threads = std::thread::available_parallelism()
@@ -3159,6 +3644,8 @@ fn e2_seed_sweep(
                 condition,
                 step_semitones,
                 phase_mode,
+                kernel,
+                r_shift_bins,
             ));
         }
         runs
@@ -3185,6 +3672,8 @@ fn e2_seed_sweep(
                             condition,
                             step_semitones,
                             phase_mode,
+                            kernel,
+                            r_shift_bins,
                         );
                         let mut guard = runs.lock().expect("runs lock poisoned");
                         guard[idx] = Some(run);
@@ -3251,6 +3740,8 @@ fn e2_kbins_sweep_csv(space: &Log2Space, anchor_hz: f32, phase_mode: E2PhaseMode
             E2Condition::Baseline,
             step_semitones,
             phase_mode,
+            None,
+            0,
         );
         let mut delta_c = Vec::with_capacity(runs.len());
         let mut delta_c_level = Vec::with_capacity(runs.len());
@@ -6361,6 +6852,7 @@ fn plot_e4_mirror_sweep(
 struct ConsonanceWorkspace {
     params: LandscapeParams,
     r_ref_peak: f32,
+    r_shift_bins: i32,
 }
 
 #[derive(Clone, Copy)]
@@ -6368,6 +6860,7 @@ enum E2Condition {
     Baseline,
     NoHillClimb,
     NoRepulsion,
+    ShuffledLandscape,
 }
 
 struct E2AnchorShiftStats {
@@ -15616,6 +16109,7 @@ fn build_consonance_workspace(space: &Log2Space) -> ConsonanceWorkspace {
     ConsonanceWorkspace {
         params,
         r_ref_peak: r_ref.peak,
+        r_shift_bins: 0,
     }
 }
 
@@ -15682,6 +16176,11 @@ fn compute_c_score_level_scans(
         workspace.params.roughness_k,
         &mut perc_r_state01_scan,
     );
+    if workspace.r_shift_bins != 0 {
+        let n = perc_r_state01_scan.len();
+        let shift = workspace.r_shift_bins.rem_euclid(n as i32) as usize;
+        perc_r_state01_scan.rotate_left(shift);
+    }
     let r_state_stats = r_state01_stats(&perc_r_state01_scan);
 
     let h_ref_max = perc_h_pot_scan
@@ -16256,6 +16755,185 @@ fn update_e2_sweep_scored_loo(
         },
         mean_abs_delta_semitones,
         mean_abs_delta_semitones_moved,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn update_e2_sweep_prescored(
+    schedule: E2UpdateSchedule,
+    indices: &mut [usize],
+    prev_indices: &[usize],
+    prescored_c_score_scan: &[f32],
+    log2_ratio_scan: &[f32],
+    min_idx: usize,
+    max_idx: usize,
+    k: i32,
+    score_sign: f32,
+    lambda: f32,
+    sigma: f32,
+    temperature: f32,
+    sweep: usize,
+    block_backtrack: bool,
+    backtrack_targets: Option<&[usize]>,
+    rng: &mut StdRng,
+) -> UpdateStats {
+    if indices.is_empty() {
+        return UpdateStats {
+            mean_c_score_current_loo: 0.0,
+            mean_c_score_chosen_loo: 0.0,
+            mean_score: 0.0,
+            mean_repulsion: 0.0,
+            moved_frac: 0.0,
+            accepted_worse_frac: 0.0,
+            attempted_update_frac: 0.0,
+            moved_given_attempt_frac: 0.0,
+            mean_abs_delta_semitones: 0.0,
+            mean_abs_delta_semitones_moved: 0.0,
+        };
+    }
+    let sigma = sigma.max(1e-6);
+    let skip_repulsion = lambda <= 0.0;
+    let mut order: Vec<usize> = (0..indices.len()).collect();
+    if matches!(schedule, E2UpdateSchedule::RandomSingle) {
+        order.shuffle(rng);
+    }
+    let u01_by_agent: Vec<f32> = (0..indices.len()).map(|_| rng.random::<f32>()).collect();
+    let u_move_by_agent: Vec<f32> = if matches!(schedule, E2UpdateSchedule::Lazy) {
+        (0..indices.len()).map(|_| rng.random::<f32>()).collect()
+    } else {
+        vec![0.0; indices.len()]
+    };
+    let prev_log2: Vec<f32> = prev_indices
+        .iter()
+        .map(|&idx| log2_ratio_scan[idx])
+        .collect();
+    let mut c_score_current_sum = 0.0f32;
+    let mut c_score_current_count = 0u32;
+    let mut c_score_chosen_sum = 0.0f32;
+    let mut c_score_chosen_count = 0u32;
+    let mut score_sum = 0.0f32;
+    let mut score_count = 0u32;
+    let mut repulsion_sum = 0.0f32;
+    let mut repulsion_count = 0u32;
+    let mut abs_delta_sum = 0.0f32;
+    let mut abs_delta_moved_sum = 0.0f32;
+    let mut attempt_count = 0usize;
+    let mut moved_count = 0usize;
+    let mut accepted_worse_count = 0usize;
+
+    for &agent_i in &order {
+        let update_allowed = match schedule {
+            E2UpdateSchedule::Checkerboard => (agent_i + sweep).is_multiple_of(2),
+            E2UpdateSchedule::Lazy => u_move_by_agent[agent_i] < E2_LAZY_MOVE_PROB.clamp(0.0, 1.0),
+            E2UpdateSchedule::RandomSingle => true,
+        };
+        if update_allowed {
+            attempt_count += 1;
+        }
+        let agent_idx = prev_indices[agent_i];
+        let current_log2 = log2_ratio_scan[agent_idx];
+        let mut current_repulsion = 0.0f32;
+        if !skip_repulsion {
+            for (j, &other_log2) in prev_log2.iter().enumerate() {
+                if j == agent_i { continue; }
+                current_repulsion += (-(current_log2 - other_log2).abs() / sigma).exp();
+            }
+        }
+        let c_score_current = prescored_c_score_scan[agent_idx];
+        let current_score = score_sign * c_score_current - lambda * current_repulsion;
+
+        let backtrack_target = if block_backtrack {
+            backtrack_targets.and_then(|prev| prev.get(agent_i).copied())
+        } else {
+            None
+        };
+
+        let (chosen_idx, chosen_score_val, chosen_repulsion_val, accepted_worse) = if update_allowed {
+            let start = (agent_idx as isize - k as isize).max(min_idx as isize) as usize;
+            let end = (agent_idx as isize + k as isize).min(max_idx as isize) as usize;
+            let mut best_idx = agent_idx;
+            let mut best_score = f32::NEG_INFINITY;
+            let mut best_repulsion = 0.0f32;
+            let mut found_candidate = false;
+            for cand in start..=end {
+                if cand == agent_idx { continue; }
+                let cand_log2 = log2_ratio_scan[cand];
+                let mut repulsion = 0.0f32;
+                if !skip_repulsion {
+                    for (j, &other_log2) in prev_log2.iter().enumerate() {
+                        if j == agent_i { continue; }
+                        repulsion += (-(cand_log2 - other_log2).abs() / sigma).exp();
+                    }
+                }
+                let c_score = prescored_c_score_scan[cand];
+                let score = score_sign * c_score - lambda * repulsion;
+                if let Some(prev_idx) = backtrack_target
+                    && cand == prev_idx
+                    && (score - current_score) <= E2_BACKTRACK_ALLOW_EPS
+                {
+                    continue;
+                }
+                if score > best_score {
+                    best_score = score;
+                    best_idx = cand;
+                    best_repulsion = repulsion;
+                    found_candidate = true;
+                }
+            }
+            if found_candidate {
+                let delta = best_score - current_score;
+                if delta > E2_SCORE_IMPROVE_EPS {
+                    (best_idx, best_score, best_repulsion, false)
+                } else if delta < 0.0 {
+                    let (accept, acc_worse) = metropolis_accept(delta, temperature, u01_by_agent[agent_i]);
+                    if accept {
+                        (best_idx, best_score, best_repulsion, acc_worse)
+                    } else {
+                        (agent_idx, current_score, current_repulsion, false)
+                    }
+                } else {
+                    (agent_idx, current_score, current_repulsion, false)
+                }
+            } else {
+                (agent_idx, current_score, current_repulsion, false)
+            }
+        } else {
+            (agent_idx, current_score, current_repulsion, false)
+        };
+
+        indices[agent_i] = chosen_idx;
+        let moved = chosen_idx != agent_idx;
+        let delta_semitones = 12.0 * (log2_ratio_scan[chosen_idx] - log2_ratio_scan[agent_idx]);
+        let abs_delta = delta_semitones.abs();
+        let abs_delta_moved = if moved { abs_delta } else { 0.0 };
+        let c_score_chosen = prescored_c_score_scan[chosen_idx];
+
+        if moved { moved_count += 1; }
+        if accepted_worse { accepted_worse_count += 1; }
+        abs_delta_sum += abs_delta;
+        abs_delta_moved_sum += abs_delta_moved;
+        if c_score_current.is_finite() { c_score_current_sum += c_score_current; c_score_current_count += 1; }
+        if c_score_chosen.is_finite() { c_score_chosen_sum += c_score_chosen; c_score_chosen_count += 1; }
+        if chosen_score_val.is_finite() { score_sum += chosen_score_val; score_count += 1; }
+        if chosen_repulsion_val.is_finite() { repulsion_sum += chosen_repulsion_val; repulsion_count += 1; }
+    }
+
+    let n = indices.len() as f32;
+    let mean_c_score_current_loo = if c_score_current_count > 0 { c_score_current_sum / c_score_current_count as f32 } else { 0.0 };
+    let mean_c_score_chosen_loo = if c_score_chosen_count > 0 { c_score_chosen_sum / c_score_chosen_count as f32 } else { 0.0 };
+    let mean_score = if score_count > 0 { score_sum / score_count as f32 } else { 0.0 };
+    let mean_repulsion = if repulsion_count > 0 { repulsion_sum / repulsion_count as f32 } else { 0.0 };
+    UpdateStats {
+        mean_c_score_current_loo,
+        mean_c_score_chosen_loo,
+        mean_score,
+        mean_repulsion,
+        moved_frac: moved_count as f32 / n,
+        accepted_worse_frac: accepted_worse_count as f32 / n,
+        attempted_update_frac: attempt_count as f32 / n,
+        moved_given_attempt_frac: if attempt_count > 0 { moved_count as f32 / attempt_count as f32 } else { 0.0 },
+        mean_abs_delta_semitones: abs_delta_sum / n,
+        mean_abs_delta_semitones_moved: if moved_count > 0 { abs_delta_moved_sum / moved_count as f32 } else { 0.0 },
     }
 }
 
@@ -22265,12 +22943,15 @@ mod tests {
             condition,
             step_semitones,
             phase_mode,
+            None,
+            0,
         );
         assert_eq!(run.mean_c_score_loo_series.len(), E2_SWEEPS);
         let label = match condition {
             E2Condition::Baseline => "baseline",
             E2Condition::NoHillClimb => "nohill",
             E2Condition::NoRepulsion => "norep",
+            E2Condition::ShuffledLandscape => "shuffled",
         };
         assert!(
             run.mean_c_score_loo_series.iter().all(|v| v.is_finite()),
@@ -23760,6 +24441,8 @@ mod tests {
             E2Condition::Baseline,
             E2_STEP_SEMITONES,
             E2PhaseMode::DissonanceThenConsonance,
+            None,
+            0,
         );
         let after_burn: Vec<f32> = run
             .moved_frac_series
@@ -24043,6 +24726,8 @@ mod tests {
             E2Condition::Baseline,
             E2_STEP_SEMITONES,
             E2PhaseMode::DissonanceThenConsonance,
+            None,
+            0,
         );
         assert_eq!(run.mean_c_score_chosen_loo_series.len(), E2_SWEEPS);
         assert!(
@@ -24065,6 +24750,8 @@ mod tests {
             E2Condition::Baseline,
             E2_STEP_SEMITONES,
             E2PhaseMode::DissonanceThenConsonance,
+            None,
+            0,
         );
         assert_eq!(run.mean_abs_delta_semitones_series.len(), E2_SWEEPS);
         assert!(

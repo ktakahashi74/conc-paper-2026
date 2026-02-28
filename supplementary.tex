@@ -8,10 +8,11 @@
 \title{Supplementary Material:\\Conchordal: Emergent Harmony via Direct Cognitive Coupling\\in a Psychoacoustic Landscape}
 
 \author{
-    Koichi Takahashi$^{1}$$^{2}$
+    Koichi Takahashi$^{1,2,3}$
     \mbox{}\\
     $^1$Graduate School of Media and Governance, Keio University \\
-    $^2$Conchordal.org \\
+    $^2$Laboratory for Biologically Inspired Computing, RIKEN Center for Biosystems Dynamics Research \\
+    $^3$Conchordal.org \\
     info@conchordal.org
 }
 
@@ -266,6 +267,105 @@ Interval entropy & $3.93 \pm 0.16$ & $3.53 \pm 0.32$ & $-5.0$ \\
 \end{table}
 
 The consonance-only condition still produces structured polyphony (14.8 unique pitch bins, well above the collapse level of $\approx$13 observed without repulsion in the main text) and achieves \emph{higher} mean consonance ($C_{\text{score}} = 0.54$ vs.\ $0.47$), confirming that consonant structure emerges from the landscape--repulsion interaction alone. However, the curriculum significantly improves diversity: more unique pitch bins ($19.2$ vs.\ $14.8$), wider nearest-neighbour spacing ($0.57$ vs.\ $0.35$\,st), and higher interval entropy ($3.93$ vs.\ $3.53$\,nats). The dissonance-seeking phase thus serves as an initialisation strategy that broadens the starting distribution, but the self-organised polyphony reported in the main text is not an artefact of the curriculum schedule.
+
+\section{S7. Terrain Control and Robustness Analysis (Experiment~1)}
+
+Three supplementary analyses test whether the self-organised polyphony reported in Experiment~1 depends on the specific structure of the psychoacoustic landscape rather than on incidental parameter choices.
+
+\subsection{S7.1 Shuffled-Landscape Control}
+
+We destroy spatial coherence by independently shuffling the $C_{\text{score}}$ bins at each sweep before hill-climbing.
+Agents therefore move on a landscape with the same \emph{marginal} score distribution but no local gradient structure.
+Table~\ref{tab:shuffled} compares the shuffled condition with the standard baseline ($n=20$ seeds each).
+
+\begin{table}[h]
+\centering
+\caption{Baseline vs.\ Shuffled landscape (Experiment~1).}
+\label{tab:shuffled}
+\footnotesize
+\begin{tabular}{@{}lccr@{}}
+\toprule
+\textbf{Metric} & \textbf{Baseline} & \textbf{Shuffled} & $t$ \\
+\midrule
+Unique pitch bins & $19.2 \pm 1.3$ & $19.0 \pm 1.4$ & $-0.6$ \\
+NN distance (st)  & $0.574 \pm 0.048$ & $0.513 \pm 0.053$ & $-3.8^{**}$ \\
+Interval entropy  & $3.93 \pm 0.16$ & $4.60 \pm 0.13$ & $14.6^{***}$ \\
+$C_{\text{score}}$ (ref) & $0.474 \pm 0.040$ & $0.259 \pm 0.020$ & $-21.5^{***}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Without coherent spatial gradients, agents still spread across the register (similar unique-bin count) thanks to the repulsion term, but the interval structure degrades sharply: entropy rises from $3.93$ to $4.60$\,nats ($p < 0.0001$), approaching the uniform distribution, and nearest-neighbour distance shrinks ($p = 0.0006$).
+The coherent psychoacoustic landscape is therefore necessary for agents to self-organise into musically structured pitch configurations.
+
+\subsection{S7.2 Harmonicity--Roughness Misalignment Control}
+
+The consonance kernel combines harmonicity ($H_{01}$) and roughness ($R_{01}$).
+We test whether their spatial alignment matters by circularly shifting $R_{01}$ by $\Delta$ cents before scoring, which preserves each component's marginal statistics but breaks the psychoacoustically motivated registration between them.
+Four shift values span the range $\Delta \in \{137, 271, 389, 523\}$\,cents.
+Table~\ref{tab:misaligned} reports the results ($n=20$ seeds per shift, 80 runs total for the misaligned aggregate).
+
+\begin{table}[h]
+\centering
+\caption{Baseline vs.\ H/R-misaligned conditions (Experiment~1).}
+\label{tab:misaligned}
+\footnotesize
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Condition} & \textbf{Unique bins} & \textbf{NN dist.\ (st)} & \textbf{Entropy} \\
+\midrule
+Baseline            & $19.2 \pm 1.3$ & $0.574 \pm 0.048$ & $3.93 \pm 0.16$ \\
+$\Delta = 137$\,¢   & $18.8 \pm 1.3$ & $0.547 \pm 0.099$ & $3.87 \pm 0.17$ \\
+$\Delta = 271$\,¢   & $19.0 \pm 1.5$ & $0.581 \pm 0.093$ & $3.92 \pm 0.15$ \\
+$\Delta = 389$\,¢   & $19.3 \pm 1.9$ & $0.595 \pm 0.093$ & $3.85 \pm 0.26$ \\
+$\Delta = 523$\,¢   & $19.1 \pm 1.5$ & $0.590 \pm 0.080$ & $3.91 \pm 0.19$ \\
+\midrule
+Misaligned (avg)    & $19.0 \pm 1.6$ & $0.578 \pm 0.094$ & $3.89 \pm 0.20$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+No individual shift or the aggregate reaches significance on any terrain-agnostic metric (all $p > 0.17$).
+This suggests that at the coarse resolution of the E2 simulation (24 agents, semitone-scale steps), moderate H--R misalignment does not destroy polyphonic structure.
+The shuffled-landscape control (S7.1) remains the stronger test, demonstrating that \emph{some} form of coherent landscape gradient is essential.
+
+\subsection{S7.3 Consonance Kernel Coefficient Sensitivity}
+
+The consonance kernel $C = a\,H_{01} + b\,R_{01} + c\,H_{01}\,R_{01} + d$ has four coefficients; the default is $(a,b,c,d) = (1.0, {-}1.35, 1.0, 0.0)$.
+We sweep $b \in \{-2.0, {-}1.35, {-}0.7, 0.0\}$ and $c \in \{0.0, 0.5, 1.0, 1.5\}$ with $a=1$, $d=0$ fixed (16 conditions, 20 seeds each).
+Table~\ref{tab:coeff} shows all conditions produce unique-bin counts of $\geq 19$, well above the collapse level of $\approx$13 observed without repulsion.
+
+\begin{table}[h]
+\centering
+\caption{Coefficient sweep: polyphony metrics across 16 $(b,c)$ settings.}
+\label{tab:coeff}
+\footnotesize
+\begin{tabular}{@{}rrcccc@{}}
+\toprule
+$b$ & $c$ & Unique bins & NN (st) & Entropy & $C_{\text{score}}$ \\
+\midrule
+$-2.00$ & $0.00$ & $20.0 \pm 1.7$ & $0.620 \pm 0.081$ & $3.99 \pm 0.21$ & $0.356 \pm 0.046$ \\
+$-2.00$ & $0.50$ & $19.9 \pm 1.3$ & $0.593 \pm 0.069$ & $4.00 \pm 0.21$ & $0.391 \pm 0.046$ \\
+$-2.00$ & $1.00$ & $19.2 \pm 1.8$ & $0.561 \pm 0.100$ & $3.91 \pm 0.20$ & $0.413 \pm 0.038$ \\
+$-2.00$ & $1.50$ & $19.8 \pm 1.8$ & $0.586 \pm 0.085$ & $3.90 \pm 0.21$ & $0.445 \pm 0.045$ \\
+$-1.35$ & $0.00$ & $19.7 \pm 1.5$ & $0.590 \pm 0.056$ & $3.85 \pm 0.24$ & $0.436 \pm 0.034$ \\
+$-1.35$ & $0.50$ & $19.5 \pm 1.2$ & $0.588 \pm 0.087$ & $3.92 \pm 0.24$ & $0.449 \pm 0.044$ \\
+$-1.35$ & $1.00$ & $19.2 \pm 1.3$ & $0.574 \pm 0.048$ & $3.93 \pm 0.16$ & $0.474 \pm 0.040$ \\
+$-1.35$ & $1.50$ & $19.5 \pm 1.5$ & $0.573 \pm 0.081$ & $3.95 \pm 0.22$ & $0.491 \pm 0.039$ \\
+$-0.70$ & $0.00$ & $20.2 \pm 1.4$ & $0.630 \pm 0.095$ & $3.89 \pm 0.22$ & $0.483 \pm 0.034$ \\
+$-0.70$ & $0.50$ & $19.9 \pm 1.2$ & $0.617 \pm 0.089$ & $3.87 \pm 0.21$ & $0.511 \pm 0.039$ \\
+$-0.70$ & $1.00$ & $19.5 \pm 1.3$ & $0.578 \pm 0.082$ & $3.89 \pm 0.21$ & $0.538 \pm 0.049$ \\
+$-0.70$ & $1.50$ & $19.4 \pm 1.0$ & $0.592 \pm 0.072$ & $3.93 \pm 0.17$ & $0.558 \pm 0.045$ \\
+$0.00$  & $0.00$ & $19.0 \pm 1.4$ & $0.566 \pm 0.092$ & $3.89 \pm 0.19$ & $0.547 \pm 0.039$ \\
+$0.00$  & $0.50$ & $19.0 \pm 1.6$ & $0.583 \pm 0.104$ & $3.84 \pm 0.28$ & $0.556 \pm 0.041$ \\
+$0.00$  & $1.00$ & $19.5 \pm 1.1$ & $0.596 \pm 0.083$ & $3.92 \pm 0.15$ & $0.593 \pm 0.053$ \\
+$0.00$  & $1.50$ & $19.2 \pm 1.4$ & $0.592 \pm 0.086$ & $3.82 \pm 0.20$ & $0.619 \pm 0.042$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Polyphonic diversity (unique bins $\geq 19$, entropy $\geq 3.82$\,nats) is stable across the entire $(b,c)$ grid.
+The only systematic trend is that $C_{\text{score}}$ itself increases when the roughness penalty $|b|$ decreases or the interaction weight $c$ increases, which is expected from the kernel definition; the emergent pitch structure, however, remains robust.
 
 \bibliographystyle{apalike}
 \bibliography{conc}
