@@ -1,11 +1,20 @@
-Integration Terrain Control (Experiment 4)
-==========================================
-Condition                   Mean C_score (final)
-HH (real terrain)           0.5304 ± 0.0683
-HH (shuffled)               0.0816 ± 0.0492
-RH (real terrain)           0.1070 ± 0.0129
-RH (shuffled)               0.0558 ± 0.0056
+Integration Terrain Control — Full 2×2×2 Factorial
+===================================================
+Condition                   Mean C_score (final)  95% CI half
+H  (real terrain)           0.1849                ± 0.0761
+H  (shuffled)               0.0510                ± 0.0064
+HH (real terrain)           0.5304                ± 0.0683
+HH (shuffled)               0.0816                ± 0.0492
+R  (real terrain)           0.0610                ± 0.0078
+R  (shuffled)               0.0585                ± 0.0077
+RH (real terrain)           0.1070                ± 0.0129
+RH (shuffled)               0.0558                ± 0.0056
 
 Interaction contrast (real):     0.2995 [0.2046, 0.3943], p = 0.000053
-Interaction contrast (shuffled): -0.0980 [-0.1959, -0.0002], p = 0.069065 (exact)
+Interaction contrast (shuffled): 0.0334 [-0.0173, 0.0840], p = 0.190727
+
+Metabolism-only terrain effect (no hill-climbing):
+H − H_s:  0.1339 [0.0593, 0.2086], p = 0.0002
+R − R_s:  0.0025 [-0.0099, 0.0150], p = 0.7011
+
 n_seeds = 20

@@ -5559,11 +5559,27 @@ fn plot_e6_integration_figure(
             dashed: false,
         },
         IntegrationCondition {
+            label: "heredity (shuffled)",
+            condition: E6Condition::Heredity,
+            landscape_weight: 0.0,
+            shuffle_landscape: true,
+            color: RGBColor(58, 106, 120), // PAL_H (same as H)
+            dashed: true,
+        },
+        IntegrationCondition {
             label: "heredity+hill (shuffled)",
             condition: E6Condition::Heredity,
             landscape_weight: 0.5,
             shuffle_landscape: true,
             color: RGBColor(76, 153, 76), // green (same as HH)
+            dashed: true,
+        },
+        IntegrationCondition {
+            label: "random (shuffled)",
+            condition: E6Condition::Random,
+            landscape_weight: 0.0,
+            shuffle_landscape: true,
+            color: RGBColor(204, 121, 50), // orange (same as R)
             dashed: true,
         },
         IntegrationCondition {
@@ -5632,45 +5648,56 @@ fn plot_e6_integration_figure(
         all_series.push((cond.label, stats, cond.color, cond.dashed));
     }
 
-    // ── Interaction test ──────────────────────────────────────────────
-    // Conditions: 0=heredity(H), 1=heredity+hill(HH), 2=random(R), 3=random+hill(RH)
-    // Interaction contrast per seed: HH_i - H_i - RH_i + R_i
+    // ── Interaction test (full 2×2×2 factorial) ────────────────────────
+    // Conditions: 0=H, 1=HH, 2=R, 3=RH, 4=H_s, 5=HH_s, 6=R_s, 7=RH_s
     {
         let n_seeds = E6_SEEDS.len();
+        let mean_of = |idx: usize| cond_seed_finals[idx].iter().sum::<f32>() / n_seeds as f32;
+        let ci_of = |idx: usize| ci95_half_width(&cond_seed_finals[idx]);
+
+        // Condition means
+        let mean_h = mean_of(0);
+        let mean_hh = mean_of(1);
+        let mean_r = mean_of(2);
+        let mean_rh = mean_of(3);
+        let mean_h_s = mean_of(4);
+        let mean_hh_s = mean_of(5);
+        let mean_r_s = mean_of(6);
+        let mean_rh_s = mean_of(7);
+
+        // Real-terrain interaction contrast: HH - H - RH + R
         let mut contrasts = Vec::with_capacity(n_seeds);
         for i in 0..n_seeds {
-            let hh = cond_seed_finals[1][i];
-            let h = cond_seed_finals[0][i];
-            let rh = cond_seed_finals[3][i];
-            let r = cond_seed_finals[2][i];
-            contrasts.push(hh - h - rh + r);
+            contrasts.push(cond_seed_finals[1][i] - cond_seed_finals[0][i]
+                         - cond_seed_finals[3][i] + cond_seed_finals[2][i]);
         }
         let mean_contrast = contrasts.iter().copied().sum::<f32>() / n_seeds as f32;
         let ci = ci95_half_width(&contrasts);
         let (p_val, method) = permutation_pvalue_one_sample(&contrasts, 100_000, 0xBEEF);
 
-        // Condition means
-        let mean_h = cond_seed_finals[0].iter().sum::<f32>() / n_seeds as f32;
-        let mean_hh = cond_seed_finals[1].iter().sum::<f32>() / n_seeds as f32;
-        let mean_r = cond_seed_finals[2].iter().sum::<f32>() / n_seeds as f32;
-        let mean_rh = cond_seed_finals[3].iter().sum::<f32>() / n_seeds as f32;
-
-        // Shuffled interaction contrast: HH_s - H - RH_s + R
-        // Conditions: 4=HH_shuffled, 5=RH_shuffled; H=0, R=2 (unchanged)
+        // Full-shuffled interaction contrast: HH_s - H_s - RH_s + R_s
         let mut contrasts_shuf = Vec::with_capacity(n_seeds);
         for i in 0..n_seeds {
-            let hh_s = cond_seed_finals[4][i];
-            let h = cond_seed_finals[0][i];
-            let rh_s = cond_seed_finals[5][i];
-            let r = cond_seed_finals[2][i];
-            contrasts_shuf.push(hh_s - h - rh_s + r);
+            contrasts_shuf.push(cond_seed_finals[5][i] - cond_seed_finals[4][i]
+                              - cond_seed_finals[7][i] + cond_seed_finals[6][i]);
         }
         let mean_contrast_shuf = contrasts_shuf.iter().copied().sum::<f32>() / n_seeds as f32;
         let ci_shuf = ci95_half_width(&contrasts_shuf);
-        let (p_val_shuf, method_shuf) = permutation_pvalue_one_sample(&contrasts_shuf, 100_000, 0xBEEF ^ 0x5E6F);
+        let (p_val_shuf, _method_shuf) = permutation_pvalue_one_sample(&contrasts_shuf, 100_000, 0xBEEF ^ 0x5E6F);
 
-        let mean_hh_s = cond_seed_finals[4].iter().sum::<f32>() / n_seeds as f32;
-        let mean_rh_s = cond_seed_finals[5].iter().sum::<f32>() / n_seeds as f32;
+        // H vs H_s and R vs R_s: empirical check that metabolism-only terrain effect is small
+        let mut h_diff = Vec::with_capacity(n_seeds);
+        let mut r_diff = Vec::with_capacity(n_seeds);
+        for i in 0..n_seeds {
+            h_diff.push(cond_seed_finals[0][i] - cond_seed_finals[4][i]);
+            r_diff.push(cond_seed_finals[2][i] - cond_seed_finals[6][i]);
+        }
+        let mean_h_diff = h_diff.iter().copied().sum::<f32>() / n_seeds as f32;
+        let ci_h_diff = ci95_half_width(&h_diff);
+        let (p_h_diff, _) = permutation_pvalue_one_sample(&h_diff, 100_000, 0xBEEF ^ 0xA1D1);
+        let mean_r_diff = r_diff.iter().copied().sum::<f32>() / n_seeds as f32;
+        let ci_r_diff = ci95_half_width(&r_diff);
+        let (p_r_diff, _) = permutation_pvalue_one_sample(&r_diff, 100_000, 0xBEEF ^ 0x1D2D);
 
         let report = format!(
             "Interaction test (sign-flip permutation, {})\n\
@@ -5697,25 +5724,40 @@ fn plot_e6_integration_figure(
             report,
         )?;
 
-        // Terrain control report
+        // Full factorial terrain control report
         let terrain_report = format!(
-            "Integration Terrain Control (Experiment 4)\n\
-             ==========================================\n\
-             Condition                   Mean C_score (final)\n\
-             HH (real terrain)           {:.4} ± {:.4}\n\
-             HH (shuffled)               {:.4} ± {:.4}\n\
-             RH (real terrain)           {:.4} ± {:.4}\n\
-             RH (shuffled)               {:.4} ± {:.4}\n\
+            "Integration Terrain Control — Full 2×2×2 Factorial\n\
+             ===================================================\n\
+             Condition                   Mean C_score (final)  95% CI half\n\
+             H  (real terrain)           {:.4}                ± {:.4}\n\
+             H  (shuffled)               {:.4}                ± {:.4}\n\
+             HH (real terrain)           {:.4}                ± {:.4}\n\
+             HH (shuffled)               {:.4}                ± {:.4}\n\
+             R  (real terrain)           {:.4}                ± {:.4}\n\
+             R  (shuffled)               {:.4}                ± {:.4}\n\
+             RH (real terrain)           {:.4}                ± {:.4}\n\
+             RH (shuffled)               {:.4}                ± {:.4}\n\
              \n\
              Interaction contrast (real):     {:.4} [{:.4}, {:.4}], p = {:.6}\n\
-             Interaction contrast (shuffled): {:.4} [{:.4}, {:.4}], p = {:.6} ({})\n\
+             Interaction contrast (shuffled): {:.4} [{:.4}, {:.4}], p = {:.6}\n\
+             \n\
+             Metabolism-only terrain effect (no hill-climbing):\n\
+             H − H_s:  {:.4} [{:.4}, {:.4}], p = {:.4}\n\
+             R − R_s:  {:.4} [{:.4}, {:.4}], p = {:.4}\n\
+             \n\
              n_seeds = {}\n",
-            mean_hh, ci95_half_width(&cond_seed_finals[1]),
-            mean_hh_s, ci95_half_width(&cond_seed_finals[4]),
-            mean_rh, ci95_half_width(&cond_seed_finals[3]),
-            mean_rh_s, ci95_half_width(&cond_seed_finals[5]),
+            mean_h, ci_of(0),
+            mean_h_s, ci_of(4),
+            mean_hh, ci_of(1),
+            mean_hh_s, ci_of(5),
+            mean_r, ci_of(2),
+            mean_r_s, ci_of(6),
+            mean_rh, ci_of(3),
+            mean_rh_s, ci_of(7),
             mean_contrast, mean_contrast - ci, mean_contrast + ci, p_val,
-            mean_contrast_shuf, mean_contrast_shuf - ci_shuf, mean_contrast_shuf + ci_shuf, p_val_shuf, method_shuf,
+            mean_contrast_shuf, mean_contrast_shuf - ci_shuf, mean_contrast_shuf + ci_shuf, p_val_shuf,
+            mean_h_diff, mean_h_diff - ci_h_diff, mean_h_diff + ci_h_diff, p_h_diff,
+            mean_r_diff, mean_r_diff - ci_r_diff, mean_r_diff + ci_r_diff, p_r_diff,
             n_seeds,
         );
         eprintln!("{}", terrain_report);

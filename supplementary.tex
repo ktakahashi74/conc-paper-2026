@@ -370,29 +370,31 @@ The only systematic trend is that $C_{\text{score}}$ itself increases when the r
 
 \subsection{S7.4 Integration Test Terrain Control (Experiment~4)}
 
-To test whether the synergistic heredity$\times$hill-climbing interaction (main text, \S5.1) depends on the coherent structure of the psychoacoustic landscape, we repeated the $2 \times 2$ integration test with shuffled-landscape variants. The two non-hill conditions (H,~R) use \texttt{landscape\_weight}$\,{=}\,0$, so their pitch movement is driven by density-based repulsion alone and does not follow landscape gradients. Although consonance-gated metabolism still evaluates the landscape at each agent's position, the shuffled permutation preserves the marginal score distribution, making the metabolic selection pressure statistically equivalent for repulsion-only agents regardless of spatial arrangement. We therefore held H and R baselines fixed and re-ran only the two hill-climbing conditions on a shuffled landscape (HH$_{\text{s}}$, RH$_{\text{s}}$); this isolates the contribution of coherent gradients to the hill-guided search component of the interaction. The shuffled interaction contrast is thus HH$_{\text{s}}$ $-$ H $-$ RH$_{\text{s}}$ $+$ R.
+To test whether the synergistic heredity$\times$hill-climbing interaction (main text, \S5.1) depends on the coherent structure of the psychoacoustic landscape, we repeated all four integration-test conditions on a shuffled landscape, yielding a complete $2 \times 2 \times 2$ factorial (heredity/random $\times$ hill-climbing on/off $\times$ real/shuffled terrain; 8 conditions $\times$ 20 seeds $= 160$ runs).
 
 \begin{table}[h]
 \centering
-\caption{Integration terrain control: real vs.\ shuffled landscape (20 seeds each).}
+\caption{Full $2{\times}2{\times}2$ integration terrain control (20 seeds each).}
 \label{tab:s7-integration-terrain}
 \footnotesize
-\begin{tabular}{@{}lcc@{}}
+\begin{tabular}{@{}lccc@{}}
 \toprule
-Condition & Mean $C_{\text{score}}$ (final) & 95\% CI half-width \\
+Condition & Real terrain & Shuffled & Difference \\
 \midrule
-HH (real terrain) & $0.53$ & $\pm 0.07$ \\
-HH (shuffled) & $0.08$ & $\pm 0.05$ \\
-RH (real terrain) & $0.11$ & $\pm 0.01$ \\
-RH (shuffled) & $0.06$ & $\pm 0.01$ \\
+H  (heredity, no hill)  & $0.185 \pm 0.076$ & $0.051 \pm 0.006$ & $0.134^{***}$ \\
+HH (heredity + hill)    & $0.530 \pm 0.068$ & $0.082 \pm 0.049$ & $0.449^{***}$ \\
+R  (random, no hill)    & $0.061 \pm 0.008$ & $0.059 \pm 0.008$ & $0.003$ \\
+RH (random + hill)      & $0.107 \pm 0.013$ & $0.056 \pm 0.006$ & $0.051^{***}$ \\
 \midrule
-\multicolumn{3}{@{}l}{Interaction contrast (real): $0.30$ [$0.20$, $0.39$], $p < 0.001$} \\
-\multicolumn{3}{@{}l}{Interaction contrast (shuffled): $-0.10$ [$-0.20$, $0.00$], $p = 0.07$} \\
+\multicolumn{4}{@{}l}{Interaction contrast (real): $0.30$ [$0.20$, $0.39$], $p < 0.001$} \\
+\multicolumn{4}{@{}l}{Interaction contrast (shuffled): $0.03$ [$-0.02$, $0.08$], $p = 0.19$} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The real-terrain interaction contrast ($0.30$) is large and significant, while the shuffled-terrain contrast ($-0.10$) is small and non-significant ($p = 0.07$). This is consistent with the synergistic effect of combining heredity with hill-climbing requiring the coherent gradient structure of the psychoacoustic landscape: no positive interaction remains when spatial coherence is destroyed, even though the marginal score distribution is preserved.
+On real terrain, the interaction contrast is large and significant ($0.30$, $p < 0.001$); on the shuffled landscape the contrast drops to $0.03$ ($p = 0.19$), eliminating the synergy entirely.
+The full factorial also reveals that coherent terrain affects the non-hill conditions asymmetrically: heredity benefits substantially from real terrain even without hill-climbing (H~real $0.185$ vs.\ H~shuffled $0.051$, $p = 0.0002$), because consonance-gated metabolism rewards agents that happen to inherit consonant positions, an effect that vanishes when the landscape is spatially incoherent.
+Random respawn shows no such terrain dependence (R~real $0.061$ vs.\ R~shuffled $0.059$, $p = 0.70$), confirming that the metabolism-mediated terrain effect operates specifically through heritable pitch structure.
 
 \bibliographystyle{apalike}
 \bibliography{conc}
