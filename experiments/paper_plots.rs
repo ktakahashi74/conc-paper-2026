@@ -1272,6 +1272,172 @@ fn plot_e1_landscape_scan(
         &perc_h_pot_scan_m1,
     )?;
 
+    // --- B3: Anchor robustness (110 Hz, 440 Hz) ---
+    // Run the same consonance scan at additional anchors and compare peak positions.
+    {
+        /// Find local-max bins of c_field within ±1 octave of anchor, return as (ratio, c_value).
+        fn find_peaks(
+            c_field: &[f32],
+            log2_ratios: &[f32],
+        ) -> Vec<(f32, f32)> {
+            let mut peaks = Vec::new();
+            for i in 1..c_field.len() - 1 {
+                let r = log2_ratios[i];
+                if r.abs() > 1.0 {
+                    continue; // within ±1 octave
+                }
+                if c_field[i] > c_field[i - 1]
+                    && c_field[i] > c_field[i + 1]
+                    && c_field[i] > 0.1
+                {
+                    peaks.push((r, c_field[i]));
+                }
+            }
+            peaks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            peaks.truncate(10); // top-10 peaks
+            peaks
+        }
+
+        fn scan_at_anchor(
+            space: &Log2Space,
+            alt_hz: f32,
+            roughness_kernel: &RoughnessKernel,
+            harmonicity_kernel: &HarmonicityKernel,
+            consonance_kernel: &ConsonanceKernel,
+            r_ref_peak: f32,
+            roughness_k: f32,
+            h_ref_max: f32,
+        ) -> Vec<(f32, f32)> {
+            let alt_idx = nearest_bin(space, alt_hz);
+            let (_erb, du) = erb_grid_for_space(space);
+            let mut density = vec![0.0f32; space.n_bins()];
+            density[alt_idx] = 1.0 / du[alt_idx].max(1e-12);
+            let mut env = vec![0.0f32; space.n_bins()];
+            env[alt_idx] = 1.0;
+            let (h_pot, _) = harmonicity_kernel.potential_h_from_log2_spectrum(&env, space);
+            let (r_pot, _) =
+                roughness_kernel.potential_r_from_log2_spectrum_density(&density, space);
+            let mut r01 = vec![0.0f32; space.n_bins()];
+            psycho_state::r_pot_scan_to_r_state01_scan(&r_pot, r_ref_peak, roughness_k, &mut r01);
+            let mut h01 = vec![0.0f32; space.n_bins()];
+            psycho_state::h_pot_scan_to_h_state01_scan(&h_pot, h_ref_max, &mut h01);
+            let mut c_field = vec![0.0f32; space.n_bins()];
+            for i in 0..space.n_bins() {
+                let c = consonance_kernel.score(h01[i], r01[i]);
+                c_field[i] = if c.is_finite() { c } else { 0.0 };
+            }
+            let alt_log2 = alt_hz.log2();
+            let ratios: Vec<f32> = space
+                .centers_log2
+                .iter()
+                .map(|&l| l - alt_log2)
+                .collect();
+            find_peaks(&c_field, &ratios)
+        }
+
+        let peaks_220 = find_peaks(&perc_c_field_scan, &log2_ratio_scan);
+
+        let peaks_110 = scan_at_anchor(
+            space,
+            110.0,
+            &roughness_kernel,
+            &harmonicity_kernel,
+            &params.consonance_kernel,
+            r_ref.peak,
+            params.roughness_k,
+            h_ref_max,
+        );
+        let peaks_440 = scan_at_anchor(
+            space,
+            440.0,
+            &roughness_kernel,
+            &harmonicity_kernel,
+            &params.consonance_kernel,
+            r_ref.peak,
+            params.roughness_k,
+            h_ref_max,
+        );
+
+        // Compare: for each 220 Hz peak, find nearest peak in alt scan and report shift in cents
+        fn compare_peaks(
+            ref_peaks: &[(f32, f32)],
+            alt_peaks: &[(f32, f32)],
+        ) -> Vec<f64> {
+            let mut shifts = Vec::new();
+            for &(r_ref, _) in ref_peaks {
+                if let Some(&(r_alt, _)) = alt_peaks
+                    .iter()
+                    .min_by(|a, b| {
+                        (a.0 - r_ref)
+                            .abs()
+                            .partial_cmp(&(b.0 - r_ref).abs())
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                {
+                    // shift in cents: (r_alt - r_ref) * 1200
+                    shifts.push(((r_alt - r_ref) as f64) * 1200.0);
+                }
+            }
+            shifts
+        }
+
+        let shifts_110 = compare_peaks(&peaks_220, &peaks_110);
+        let shifts_440 = compare_peaks(&peaks_220, &peaks_440);
+
+        let max_shift_110 = shifts_110
+            .iter()
+            .map(|s| s.abs())
+            .fold(0.0f64, f64::max);
+        let max_shift_440 = shifts_440
+            .iter()
+            .map(|s| s.abs())
+            .fold(0.0f64, f64::max);
+        let overall_max = max_shift_110.max(max_shift_440);
+
+        let mut report = String::new();
+        report.push_str("=== E1 Anchor Robustness ===\n\n");
+        report.push_str(&format!(
+            "Reference: {} Hz ({} peaks found)\n",
+            anchor_hz,
+            peaks_220.len()
+        ));
+        report.push_str("Peaks (log2 ratio, c_field):\n");
+        for (r, c) in &peaks_220 {
+            report.push_str(&format!("  ratio={:.4} ({:.1} cents), c={:.4}\n", r, r * 1200.0, c));
+        }
+        report.push('\n');
+        for (alt_hz_val, alt_peaks, shifts) in [
+            (110.0, &peaks_110, &shifts_110),
+            (440.0, &peaks_440, &shifts_440),
+        ] {
+            report.push_str(&format!(
+                "Anchor {} Hz ({} peaks):\n",
+                alt_hz_val,
+                alt_peaks.len()
+            ));
+            for (r, c) in alt_peaks {
+                report.push_str(&format!(
+                    "  ratio={:.4} ({:.1} cents), c={:.4}\n",
+                    r, r * 1200.0, c
+                ));
+            }
+            let max_s = shifts.iter().map(|s| s.abs()).fold(0.0f64, f64::max);
+            report.push_str(&format!(
+                "  max peak shift vs 220 Hz: {:.1} cents\n\n",
+                max_s
+            ));
+        }
+        report.push_str(&format!(
+            "Overall max peak shift: {:.1} cents\n",
+            overall_max
+        ));
+
+        write_with_log(
+            out_dir.join("paper_e1_anchor_robustness.txt"),
+            report,
+        )?;
+    }
+
     Ok(())
 }
 
@@ -3294,6 +3460,193 @@ fn plot_e3_metabolic_selection(
 
     write_with_log(out_dir.join("paper_e3_lifetimes_long.csv"), long_csv)?;
     write_with_log(out_dir.join("paper_e3_summary_by_seed.csv"), summary_csv)?;
+
+    // --- Seed-level summary statistics (B1) ---
+    {
+        let baseline_rs: Vec<f64> = seed_outputs
+            .iter()
+            .filter(|o| o.condition == E3Condition::Baseline)
+            .map(|o| o.corr_firstk.pearson_r as f64)
+            .collect();
+        let norecharge_rs: Vec<f64> = seed_outputs
+            .iter()
+            .filter(|o| o.condition == E3Condition::NoRecharge)
+            .map(|o| o.corr_firstk.pearson_r as f64)
+            .collect();
+
+        fn mean_sd(xs: &[f64]) -> (f64, f64) {
+            let n = xs.len() as f64;
+            let mean = xs.iter().sum::<f64>() / n;
+            let var = xs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
+            (mean, var.sqrt())
+        }
+
+        /// Lanczos approximation of ln(Gamma(x))
+        fn ln_gamma(x: f64) -> f64 {
+            let coeffs = [
+                76.18009172947146,
+                -86.50532032941677,
+                24.01409824083091,
+                -1.231739572450155,
+                0.1208650973866179e-2,
+                -0.5395239384953e-5,
+            ];
+            let mut y = x;
+            let tmp = x + 5.5 - (x + 0.5) * (x + 5.5).ln();
+            let mut ser = 1.000000000190015_f64;
+            for &c in &coeffs {
+                y += 1.0;
+                ser += c / y;
+            }
+            -tmp + (2.5066282746310005 * ser / x).ln()
+        }
+
+        /// Continued-fraction evaluation for I_x(a,b) (Numerical Recipes betacf)
+        fn betacf(a: f64, b: f64, x: f64) -> f64 {
+            let max_iter = 200;
+            let eps = 3.0e-12;
+            let fpmin = 1.0e-30;
+            let qab = a + b;
+            let qap = a + 1.0;
+            let qam = a - 1.0;
+            let mut c = 1.0_f64;
+            let mut d = (1.0 - qab * x / qap).recip();
+            if d.abs() < fpmin {
+                d = fpmin;
+            }
+            let mut h = d;
+            for m in 1..=max_iter {
+                let m_f = m as f64;
+                // even step
+                let aa = m_f * (b - m_f) * x / ((qam + 2.0 * m_f) * (a + 2.0 * m_f));
+                d = 1.0 + aa * d;
+                if d.abs() < fpmin {
+                    d = fpmin;
+                }
+                c = 1.0 + aa / c;
+                if c.abs() < fpmin {
+                    c = fpmin;
+                }
+                d = d.recip();
+                h *= d * c;
+                // odd step
+                let aa =
+                    -(a + m_f) * (qab + m_f) * x / ((a + 2.0 * m_f) * (qap + 2.0 * m_f));
+                d = 1.0 + aa * d;
+                if d.abs() < fpmin {
+                    d = fpmin;
+                }
+                c = 1.0 + aa / c;
+                if c.abs() < fpmin {
+                    c = fpmin;
+                }
+                d = d.recip();
+                let delta = d * c;
+                h *= delta;
+                if (delta - 1.0).abs() < eps {
+                    break;
+                }
+            }
+            h
+        }
+
+        /// Regularized incomplete beta I_x(a,b)
+        fn reg_inc_beta(a: f64, b: f64, x: f64) -> f64 {
+            if x <= 0.0 {
+                return 0.0;
+            }
+            if x >= 1.0 {
+                return 1.0;
+            }
+            let bt = (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b)
+                + a * x.ln()
+                + b * (1.0 - x).ln())
+            .exp();
+            if x < (a + 1.0) / (a + b + 2.0) {
+                bt * betacf(a, b, x) / a
+            } else {
+                1.0 - bt * betacf(b, a, 1.0 - x) / b
+            }
+        }
+
+        /// Two-tailed p-value for Student's t with given df
+        fn two_tailed_t_p(t_abs: f64, df: f64) -> f64 {
+            let x = df / (df + t_abs * t_abs);
+            reg_inc_beta(df / 2.0, 0.5, x)
+        }
+
+        fn one_sample_t(xs: &[f64], mu0: f64) -> (f64, usize, f64) {
+            let n = xs.len();
+            let (mean, sd) = mean_sd(xs);
+            let t = (mean - mu0) / (sd / (n as f64).sqrt());
+            let df = n - 1;
+            let p = two_tailed_t_p(t.abs(), df as f64);
+            (t, df, p)
+        }
+
+        fn welch_t(a: &[f64], b: &[f64]) -> (f64, f64, f64) {
+            let (ma, sa) = mean_sd(a);
+            let (mb, sb) = mean_sd(b);
+            let na = a.len() as f64;
+            let nb = b.len() as f64;
+            let va = sa * sa / na;
+            let vb = sb * sb / nb;
+            let t = (ma - mb) / (va + vb).sqrt();
+            let df = (va + vb).powi(2) / (va * va / (na - 1.0) + vb * vb / (nb - 1.0));
+            let p = two_tailed_t_p(t.abs(), df);
+            (t, df, p)
+        }
+
+        let (base_mean, base_sd) = mean_sd(&baseline_rs);
+        let (nore_mean, nore_sd) = mean_sd(&norecharge_rs);
+        let (t_one, df_one, p_one) = one_sample_t(&baseline_rs, 0.0);
+        let (t_welch, df_welch, p_welch) = welch_t(&baseline_rs, &norecharge_rs);
+
+        let mut stats_text = String::new();
+        stats_text.push_str("=== E3 Seed-Level Statistics ===\n\n");
+        stats_text.push_str(&format!(
+            "Baseline (n={}): mean Pearson r = {:.3} ± {:.3}\n",
+            baseline_rs.len(),
+            base_mean,
+            base_sd
+        ));
+        stats_text.push_str(&format!(
+            "  per-seed values: {}\n",
+            baseline_rs
+                .iter()
+                .map(|r| format!("{:.3}", r))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        stats_text.push_str(&format!(
+            "  one-sample t({}) = {:.3}, p = {:.6} (H0: r = 0)\n\n",
+            df_one, t_one, p_one
+        ));
+        stats_text.push_str(&format!(
+            "NoRecharge (n={}): mean Pearson r = {:.3} ± {:.3}\n",
+            norecharge_rs.len(),
+            nore_mean,
+            nore_sd
+        ));
+        stats_text.push_str(&format!(
+            "  per-seed values: {}\n\n",
+            norecharge_rs
+                .iter()
+                .map(|r| format!("{:.3}", r))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        stats_text.push_str(&format!(
+            "Welch two-sample t({:.1}) = {:.3}, p = {:.6}\n",
+            df_welch, t_welch, p_welch
+        ));
+        stats_text.push_str("  (Baseline vs NoRecharge seed-level Pearson r)\n");
+
+        write_with_log(
+            out_dir.join("paper_e3_seed_level_stats.txt"),
+            stats_text,
+        )?;
+    }
 
     Ok(())
 }

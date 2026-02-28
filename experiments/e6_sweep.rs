@@ -1,6 +1,7 @@
 /// E6 parameter sweep: systematically explore conditions for hereditary adaptation.
 /// Run with: cargo run --release --bin e6sweep
 use crate::sim::{E6Condition, E6RunConfig, run_e6};
+use std::collections::HashMap;
 
 const ANCHOR_HZ: f32 = 220.0;
 const STEPS_CAP: usize = 200_000;
@@ -63,6 +64,13 @@ pub fn run_sweep() {
 
     println!("config,condition,seed,total_deaths,n_snapshots,mean_c_start,mean_c_end,delta_mean_c,entropy_end");
 
+    // Collect per-config, per-condition delta_c values for summary
+    struct CondData {
+        deltas: Vec<f64>,
+        c_ends: Vec<f64>,
+    }
+    let mut summary: HashMap<String, HashMap<String, CondData>> = HashMap::new();
+
     for p in &params {
         for condition in [E6Condition::Heredity, E6Condition::Random] {
             for &seed in &SWEEP_SEEDS {
@@ -120,6 +128,7 @@ pub fn run_sweep() {
                 let c_start = consonance_of_snap(&snaps[0]);
                 let c_end = consonance_of_snap(snaps.last().unwrap());
                 let entropy_end = entropy_of_snap(snaps.last().unwrap());
+                let delta_c = c_end - c_start;
 
                 println!(
                     "{},{},{},{},{},{:.6},{:.6},{:.6},{:.4}",
@@ -130,11 +139,151 @@ pub fn run_sweep() {
                     snaps.len(),
                     c_start,
                     c_end,
-                    c_end - c_start,
+                    delta_c,
                     entropy_end,
                 );
+
+                let cond_label = condition.label().to_string();
+                summary
+                    .entry(p.label.to_string())
+                    .or_insert_with(HashMap::new)
+                    .entry(cond_label)
+                    .or_insert_with(|| CondData {
+                        deltas: Vec::new(),
+                        c_ends: Vec::new(),
+                    })
+                    .deltas
+                    .push(delta_c);
+                summary
+                    .get_mut(p.label)
+                    .unwrap()
+                    .get_mut(condition.label())
+                    .unwrap()
+                    .c_ends
+                    .push(c_end);
             }
         }
         eprintln!("Done: {}", p.label);
     }
+
+    // --- Print summary table ---
+    eprintln!("\n=== Sweep Summary ===");
+    eprintln!("config,heredity_delta_mean,heredity_delta_sd,random_delta_mean,random_delta_sd,separation,welch_t,welch_p,positive_sep,sig_p05");
+
+    fn mean_sd(xs: &[f64]) -> (f64, f64) {
+        let n = xs.len() as f64;
+        let mean = xs.iter().sum::<f64>() / n;
+        let var = xs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
+        (mean, var.sqrt())
+    }
+
+    fn welch_t_test(a: &[f64], b: &[f64]) -> (f64, f64, f64) {
+        let (ma, sa) = mean_sd(a);
+        let (mb, sb) = mean_sd(b);
+        let na = a.len() as f64;
+        let nb = b.len() as f64;
+        let va = sa * sa / na;
+        let vb = sb * sb / nb;
+        let denom = (va + vb).sqrt();
+        if denom < 1e-15 {
+            return (0.0, 1.0, 1.0);
+        }
+        let t = (ma - mb) / denom;
+        let df = (va + vb).powi(2) / (va * va / (na - 1.0) + vb * vb / (nb - 1.0));
+        // Approximate p via betacf for incomplete beta I_x(a,b)
+        let p = two_tailed_t_p(t.abs(), df);
+        (t, df, p)
+    }
+
+    fn ln_gamma(x: f64) -> f64 {
+        let coeffs = [
+            76.18009172947146,
+            -86.50532032941677,
+            24.01409824083091,
+            -1.231739572450155,
+            0.1208650973866179e-2,
+            -0.5395239384953e-5,
+        ];
+        let mut y = x;
+        let tmp = x + 5.5 - (x + 0.5) * (x + 5.5).ln();
+        let mut ser = 1.000000000190015_f64;
+        for &c in &coeffs {
+            y += 1.0;
+            ser += c / y;
+        }
+        -tmp + (2.5066282746310005 * ser / x).ln()
+    }
+
+    fn betacf(a: f64, b: f64, x: f64) -> f64 {
+        let fpmin = 1.0e-30;
+        let eps = 3.0e-12;
+        let qab = a + b;
+        let qap = a + 1.0;
+        let qam = a - 1.0;
+        let mut c = 1.0_f64;
+        let mut d = (1.0 - qab * x / qap).recip();
+        if d.abs() < fpmin { d = fpmin; }
+        let mut h = d;
+        for m in 1..=200 {
+            let m_f = m as f64;
+            let aa = m_f * (b - m_f) * x / ((qam + 2.0 * m_f) * (a + 2.0 * m_f));
+            d = 1.0 + aa * d; if d.abs() < fpmin { d = fpmin; }
+            c = 1.0 + aa / c; if c.abs() < fpmin { c = fpmin; }
+            d = d.recip(); h *= d * c;
+            let aa = -(a + m_f) * (qab + m_f) * x / ((a + 2.0 * m_f) * (qap + 2.0 * m_f));
+            d = 1.0 + aa * d; if d.abs() < fpmin { d = fpmin; }
+            c = 1.0 + aa / c; if c.abs() < fpmin { c = fpmin; }
+            d = d.recip(); let delta = d * c; h *= delta;
+            if (delta - 1.0).abs() < eps { break; }
+        }
+        h
+    }
+
+    fn reg_inc_beta(a: f64, b: f64, x: f64) -> f64 {
+        if x <= 0.0 { return 0.0; }
+        if x >= 1.0 { return 1.0; }
+        let bt = (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b) + a * x.ln() + b * (1.0 - x).ln()).exp();
+        if x < (a + 1.0) / (a + b + 2.0) {
+            bt * betacf(a, b, x) / a
+        } else {
+            1.0 - bt * betacf(b, a, 1.0 - x) / b
+        }
+    }
+
+    fn two_tailed_t_p(t_abs: f64, df: f64) -> f64 {
+        let x = df / (df + t_abs * t_abs);
+        reg_inc_beta(df / 2.0, 0.5, x)
+    }
+
+    let mut n_positive = 0;
+    let mut n_sig = 0;
+    let n_total = params.len();
+
+    // Sort by label for deterministic output
+    let mut labels: Vec<String> = summary.keys().cloned().collect();
+    labels.sort();
+
+    for label in &labels {
+        let conds = &summary[label];
+        let h_data = conds.get("heredity");
+        let r_data = conds.get("random");
+        if let (Some(h), Some(r)) = (h_data, r_data) {
+            let (h_mean, h_sd) = mean_sd(&h.deltas);
+            let (r_mean, r_sd) = mean_sd(&r.deltas);
+            let sep = h_mean - r_mean;
+            let (t, _df, p) = welch_t_test(&h.deltas, &r.deltas);
+            let positive = sep > 0.0;
+            let sig = p < 0.05;
+            if positive { n_positive += 1; }
+            if sig { n_sig += 1; }
+            eprintln!(
+                "{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.6},{},{}",
+                label, h_mean, h_sd, r_mean, r_sd, sep, t, p, positive, sig
+            );
+        }
+    }
+    eprintln!(
+        "\nPositive separation: {}/{}, Significant (p<0.05): {}/{}",
+        n_positive, n_total, n_sig, n_total
+    );
 }

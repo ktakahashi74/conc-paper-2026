@@ -13,7 +13,7 @@ use conchordal::life::lifecycle::LifecycleConfig;
 use conchordal::life::metabolism_policy::MetabolismPolicy;
 use conchordal::life::population::Population;
 use conchordal::life::scenario::{
-    Action, ArticulationCoreConfig, EnvelopeConfig, SpawnSpec, SpawnStrategy,
+    Action, ArticulationCoreConfig, EnvelopeConfig, RhythmCouplingMode, SpawnSpec, SpawnStrategy,
 };
 use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
@@ -1695,6 +1695,8 @@ fn e6_spawn_spec(anchor_hz: f32) -> SpawnSpec {
         lifecycle,
         rhythm_freq: Some(E3_THETA_FREQ_HZ),
         rhythm_sensitivity: None,
+        rhythm_coupling: RhythmCouplingMode::TemporalOnly,
+        rhythm_reward: None,
         breath_gain_init: None,
     };
 
@@ -1714,6 +1716,8 @@ fn e3_spawn_spec(condition: E3Condition, anchor_hz: f32) -> SpawnSpec {
         lifecycle,
         rhythm_freq: Some(E3_THETA_FREQ_HZ),
         rhythm_sensitivity: None,
+        rhythm_coupling: RhythmCouplingMode::TemporalOnly,
+        rhythm_reward: None,
         breath_gain_init: None,
     };
 
