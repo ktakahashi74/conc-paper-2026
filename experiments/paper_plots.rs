@@ -5911,7 +5911,7 @@ fn plot_e6_integration_figure(
 
     // Render 4-line plot — single-column, wide landscape aspect ratio
     let fig_path = out_dir.join("paper_e6_integration_figure.svg");
-    let root = bitmap_root(&fig_path, (1400, 700)).into_drawing_area();
+    let root = bitmap_root(&fig_path, (1400, 630)).into_drawing_area();
     root.fill(&WHITE)?;
 
     let x_max = all_series
@@ -22460,7 +22460,7 @@ fn render_e3_figure4(
     right_scatter: &ScatterData,
 ) -> Result<(), Box<dyn Error>> {
     // 1×4 horizontal layout: A B C D
-    let root = bitmap_root(out_path, (2160, 600)).into_drawing_area();
+    let root = bitmap_root(out_path, (2160, 510)).into_drawing_area();
     root.fill(&WHITE)?;
     let panels = root.split_evenly((1, 4));
 
