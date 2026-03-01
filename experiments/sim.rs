@@ -14,7 +14,8 @@ use conchordal::life::lifecycle::LifecycleConfig;
 use conchordal::life::metabolism_policy::MetabolismPolicy;
 use conchordal::life::population::Population;
 use conchordal::life::scenario::{
-    Action, ArticulationCoreConfig, EnvelopeConfig, RhythmCouplingMode, SpawnSpec, SpawnStrategy,
+    Action, ArticulationCoreConfig, EnvelopeConfig, RhythmCouplingMode, SpawnSpec,
+    SpawnStrategy,
 };
 use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
@@ -1050,7 +1051,7 @@ fn run_e4_condition_with_config(mirror_weight: f32, seed: u64, cfg: &E4SimConfig
         );
         landscape.rhythm = rhythms;
         pop.advance(cfg.hop, cfg.fs, step as u64, dt, &landscape);
-        pop.cleanup_dead(step as u64, dt, false);
+        pop.cleanup_dead(step as u64, dt, false, &landscape);
         rhythms.advance_in_place(dt);
     }
 
@@ -1197,7 +1198,7 @@ fn run_e4_condition_tail_samples_with_config_uncached(
         );
         landscape.rhythm = rhythms;
         pop.advance(cfg.hop, cfg.fs, step as u64, dt, &landscape);
-        pop.cleanup_dead(step as u64, dt, false);
+        pop.cleanup_dead(step as u64, dt, false, &landscape);
         rhythms.advance_in_place(dt);
 
         if step >= start_step {
@@ -1342,7 +1343,7 @@ fn run_e4_mirror_schedule_samples_with_config(
         );
         landscape.rhythm = rhythms;
         pop.advance(cfg.hop, cfg.fs, step as u64, dt, &landscape);
-        pop.cleanup_dead(step as u64, dt, false);
+        pop.cleanup_dead(step as u64, dt, false, &landscape);
         rhythms.advance_in_place(dt);
         update_e4_landscape_from_population(
             &space,
