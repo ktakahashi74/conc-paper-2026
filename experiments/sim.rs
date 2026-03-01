@@ -7,6 +7,7 @@ use conchordal::core::log2space::Log2Space;
 use conchordal::core::modulation::{NeuralRhythms, RhythmBand};
 use conchordal::core::roughness_kernel::{KernelParams, RoughnessKernel};
 use conchordal::core::timebase::Timebase;
+use conchordal::life::articulation_core::AnyArticulationCore;
 use conchordal::life::control::{AgentControl, PhonationType, PitchCoreKind, PitchMode};
 use conchordal::life::individual::SoundBody;
 use conchordal::life::lifecycle::LifecycleConfig;
@@ -109,7 +110,7 @@ impl E6Condition {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct E6RunConfig {
     pub seed: u64,
     pub steps_cap: usize,
@@ -121,12 +122,15 @@ pub struct E6RunConfig {
     pub snapshot_interval: usize,
     pub landscape_weight: f32,
     pub shuffle_landscape: bool,
+    pub env_partials: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
 pub struct E6PitchSnapshot {
     pub step: usize,
     pub freqs_hz: Vec<f32>,
+    /// Kuramoto order parameter R ∈ [0,1]: population phase coherence
+    pub phase_coherence: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -508,11 +512,12 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
     let anchor_hz = E4_ANCHOR_HZ;
     let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
     let params = make_landscape_params(&space, E3_FS, 1.0);
+    let partials = cfg.env_partials.unwrap_or(E4_ENV_PARTIALS_DEFAULT);
     let mut landscape = build_anchor_landscape(
         &space,
         &params,
         anchor_hz,
-        E4_ENV_PARTIALS_DEFAULT,
+        partials,
         E4_ENV_PARTIAL_DECAY_DEFAULT,
     );
     landscape.rhythm = init_rhythms(E3_THETA_FREQ_HZ);
@@ -581,14 +586,34 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
         pop.advance(E3_HOP, E3_FS, step as u64, dt, &landscape);
 
         if step % snapshot_interval == 0 {
-            let freqs_hz: Vec<f32> = pop
-                .individuals
-                .iter()
-                .filter(|agent| agent.is_alive())
-                .map(|agent| agent.body.base_freq_hz())
-                .filter(|f| f.is_finite() && *f > 0.0)
-                .collect();
-            out.snapshots.push(E6PitchSnapshot { step, freqs_hz });
+            let mut freqs_hz: Vec<f32> = Vec::new();
+            let mut phase_sin_sum = 0.0f32;
+            let mut phase_cos_sum = 0.0f32;
+            let mut phase_count = 0u32;
+            let theta_phase = landscape.rhythm.theta.phase;
+            for agent in pop.individuals.iter() {
+                if !agent.is_alive() {
+                    continue;
+                }
+                let f = agent.body.base_freq_hz();
+                if !f.is_finite() || f <= 0.0 {
+                    continue;
+                }
+                freqs_hz.push(f);
+                if let AnyArticulationCore::Entrain(ref k) = agent.articulation.core {
+                    let phase_err = k.rhythm_phase - theta_phase;
+                    phase_sin_sum += phase_err.sin();
+                    phase_cos_sum += phase_err.cos();
+                    phase_count += 1;
+                }
+            }
+            let phase_coherence = if phase_count > 0 {
+                let n = phase_count as f32;
+                ((phase_sin_sum / n).powi(2) + (phase_cos_sum / n).powi(2)).sqrt()
+            } else {
+                0.0
+            };
+            out.snapshots.push(E6PitchSnapshot { step, freqs_hz, phase_coherence });
         }
 
         let mut respawn_ids: Vec<u64> = Vec::new();
@@ -724,6 +749,10 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
 }
 
 pub fn e3_reference_landscape(anchor_hz: f32) -> Landscape {
+    e3_reference_landscape_with_partials(anchor_hz, E4_ENV_PARTIALS_DEFAULT)
+}
+
+pub fn e3_reference_landscape_with_partials(anchor_hz: f32, env_partials: u32) -> Landscape {
     let anchor_hz = anchor_hz.max(1.0);
     let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
     let params = make_landscape_params(&space, E3_FS, 1.0);
@@ -731,7 +760,7 @@ pub fn e3_reference_landscape(anchor_hz: f32) -> Landscape {
         &space,
         &params,
         anchor_hz,
-        E4_ENV_PARTIALS_DEFAULT,
+        env_partials,
         E4_ENV_PARTIAL_DECAY_DEFAULT,
     );
     landscape.rhythm = init_rhythms(E3_THETA_FREQ_HZ);

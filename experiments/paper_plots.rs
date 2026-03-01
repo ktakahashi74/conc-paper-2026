@@ -15,7 +15,7 @@ use plotters::prelude::*;
 
 use crate::sim::{
     E3Condition, E3DeathRecord, E3RunConfig, E4_ANCHOR_HZ, E4RuntimeOverrides, E4TailSamples,
-    E6Condition, E6RunConfig, E6RunResult, e3_policy_params, e3_reference_landscape,
+    E6Condition, E6RunConfig, E6RunResult, e3_policy_params, e3_reference_landscape, e3_reference_landscape_with_partials,
     e4_paper_meta, run_e3_collect_deaths, run_e4_condition_tail_samples,
     run_e4_condition_tail_samples_with_wr, run_e4_mirror_schedule_samples, run_e6,
     set_e4_runtime_overrides,
@@ -4819,6 +4819,7 @@ fn plot_e6_hereditary_adaptation(
                 snapshot_interval: E6_SNAPSHOT_INTERVAL,
                 landscape_weight: 0.0,
                 shuffle_landscape: false,
+                env_partials: None,
             };
             let result = run_e6(&cfg);
             all_results.push((condition, seed, result));
@@ -5594,14 +5595,17 @@ fn plot_e6_integration_figure(
 
     let landscape = e3_reference_landscape(anchor_hz);
 
-    // Run all 4 conditions × 20 seeds
+    // Run all 8 conditions × 20 seeds
     let mut all_series: Vec<(&str, Vec<(f32, f32, f32)>, RGBColor, bool)> = Vec::new();
     let mut csv_data = String::from("condition,step,mean_c_score,ci95\n");
     // Collect seed-level final C_scores for each condition (for interaction test)
     let mut cond_seed_finals: Vec<Vec<f32>> = Vec::new();
+    // Collect seed-level final phase coherence R for each condition
+    let mut cond_seed_phase: Vec<Vec<f32>> = Vec::new();
 
     for cond in &conditions {
         let mut by_seed: HashMap<u64, Vec<(usize, f32)>> = HashMap::new();
+        let mut phase_by_seed: HashMap<u64, Vec<(usize, f32)>> = HashMap::new();
 
         for &seed in &E6_SEEDS {
             let cfg = E6RunConfig {
@@ -5615,6 +5619,7 @@ fn plot_e6_integration_figure(
                 snapshot_interval: E6_SNAPSHOT_INTERVAL,
                 landscape_weight: cond.landscape_weight,
                 shuffle_landscape: cond.shuffle_landscape,
+                env_partials: None,
             };
             let result = run_e6(&cfg);
             for snap in &result.snapshots {
@@ -5623,11 +5628,16 @@ fn plot_e6_integration_figure(
                     .entry(seed)
                     .or_default()
                     .push((snap.step, point.mean_c_score));
+                phase_by_seed
+                    .entry(seed)
+                    .or_default()
+                    .push((snap.step, snap.phase_coherence));
             }
         }
 
         // Extract final C_score per seed (last snapshot value)
         let mut seed_finals: Vec<f32> = Vec::with_capacity(E6_SEEDS.len());
+        let mut seed_phase_finals: Vec<f32> = Vec::with_capacity(E6_SEEDS.len());
         for &seed in &E6_SEEDS {
             if let Some(points) = by_seed.get(&seed) {
                 let last_val = points.iter().map(|(_, v)| *v).last().unwrap_or(0.0);
@@ -5635,8 +5645,15 @@ fn plot_e6_integration_figure(
             } else {
                 seed_finals.push(0.0);
             }
+            if let Some(points) = phase_by_seed.get(&seed) {
+                let last_val = points.iter().map(|(_, v)| *v).last().unwrap_or(0.0);
+                seed_phase_finals.push(last_val);
+            } else {
+                seed_phase_finals.push(0.0);
+            }
         }
         cond_seed_finals.push(seed_finals);
+        cond_seed_phase.push(seed_phase_finals);
 
         let stats = e6_series_stats(Some(&by_seed), E6_SNAPSHOT_INTERVAL);
         for &(step, mean, ci95) in &stats {
@@ -5764,6 +5781,126 @@ fn plot_e6_integration_figure(
         write_with_log(
             out_dir.join("paper_e6_integration_terrain_test.txt"),
             terrain_report,
+        )?;
+
+        // ── Phase coherence report ──────────────────────────────────
+        let phase_mean_of = |idx: usize| cond_seed_phase[idx].iter().sum::<f32>() / n_seeds as f32;
+        let phase_ci_of = |idx: usize| ci95_half_width(&cond_seed_phase[idx]);
+        let cond_labels = ["H", "HH", "R", "RH", "H_s", "HH_s", "R_s", "RH_s"];
+        let mut phase_report = String::from(
+            "Phase Coherence (Kuramoto R) — Final snapshot\n\
+             ==============================================\n\
+             Condition                   Mean R    95% CI half\n",
+        );
+        for (i, label) in cond_labels.iter().enumerate() {
+            phase_report.push_str(&format!(
+                "{:<28} {:.4}    ± {:.4}\n",
+                label, phase_mean_of(i), phase_ci_of(i),
+            ));
+        }
+        // Phase coherence: HH vs R (does heredity+hill produce higher entrainment?)
+        let mut phase_hh_r: Vec<f32> = Vec::with_capacity(n_seeds);
+        for i in 0..n_seeds {
+            phase_hh_r.push(cond_seed_phase[1][i] - cond_seed_phase[3][i]);
+        }
+        let phase_hh_r_mean = phase_hh_r.iter().sum::<f32>() / n_seeds as f32;
+        let phase_hh_r_ci = ci95_half_width(&phase_hh_r);
+        let (phase_hh_r_p, _) = permutation_pvalue_one_sample(&phase_hh_r, 100_000, 0xFA5E_A5A5);
+        // Phase: H vs R (heredity-only effect on entrainment)
+        let mut phase_h_r: Vec<f32> = Vec::with_capacity(n_seeds);
+        for i in 0..n_seeds {
+            phase_h_r.push(cond_seed_phase[0][i] - cond_seed_phase[2][i]);
+        }
+        let phase_h_r_mean = phase_h_r.iter().sum::<f32>() / n_seeds as f32;
+        let phase_h_r_ci = ci95_half_width(&phase_h_r);
+        let (phase_h_r_p, _) = permutation_pvalue_one_sample(&phase_h_r, 100_000, 0xFA5E_A6A6);
+        phase_report.push_str(&format!(
+            "\nContrasts:\n\
+             HH − RH: {:.4} [{:.4}, {:.4}], p = {:.4}\n\
+             H − R:   {:.4} [{:.4}, {:.4}], p = {:.4}\n",
+            phase_hh_r_mean, phase_hh_r_mean - phase_hh_r_ci, phase_hh_r_mean + phase_hh_r_ci, phase_hh_r_p,
+            phase_h_r_mean, phase_h_r_mean - phase_h_r_ci, phase_h_r_mean + phase_h_r_ci, phase_h_r_p,
+        ));
+        eprintln!("{}", phase_report);
+        write_with_log(
+            out_dir.join("paper_e6_phase_coherence.txt"),
+            phase_report,
+        )?;
+    }
+
+    // ── Topology generalization sweep (varying env partials) ────────────
+    {
+        eprintln!("  Running topology generalization sweep for E6 integration...");
+        let partials_settings: Vec<(&str, u32)> = vec![
+            ("3 partials", 3),
+            ("6 partials (default)", 6),
+            ("10 partials", 10),
+        ];
+        let mut topo_report = String::from(
+            "Topology Generalization — E6 Integration\n\
+             =========================================\n\
+             4 real-terrain conditions (H, HH, R, RH) × 20 seeds per topology\n\
+             Varying number of environment partials (changes harmonicity structure)\n\n\
+             Topology                        H       HH      R       RH      Contrast  CI95          p\n",
+        );
+        for (tlabel, n_partials) in &partials_settings {
+            eprintln!("    Topology: {}", tlabel);
+            // Build evaluation landscape matching this topology
+            let eval_landscape = e3_reference_landscape_with_partials(anchor_hz, *n_partials);
+            let topo_conds = [
+                (E6Condition::Heredity, 0.0f32),
+                (E6Condition::Heredity, 0.5f32),
+                (E6Condition::Random, 0.0f32),
+                (E6Condition::Random, 0.5f32),
+            ];
+            let mut tc_finals: Vec<Vec<f32>> = Vec::new();
+            for &(condition, lw) in &topo_conds {
+                let mut seed_vals: Vec<f32> = Vec::new();
+                for &seed in &E6_SEEDS {
+                    let cfg = E6RunConfig {
+                        seed,
+                        steps_cap: E6_STEPS_CAP,
+                        min_deaths: E6_MIN_DEATHS,
+                        pop_size: E6_POP_SIZE,
+                        first_k: E6_FIRST_K,
+                        condition,
+                        mutation_sigma: E6_MUTATION_SIGMA,
+                        snapshot_interval: E6_SNAPSHOT_INTERVAL,
+                        landscape_weight: lw,
+                        shuffle_landscape: false,
+                        env_partials: Some(*n_partials),
+                    };
+                    let result = run_e6(&cfg);
+                    let final_c = result.snapshots.last()
+                        .map(|s| {
+                            let pt = e6_snapshot_point(&s.freqs_hz, anchor_hz, &eval_landscape);
+                            pt.mean_c_score
+                        })
+                        .unwrap_or(0.0);
+                    seed_vals.push(final_c);
+                }
+                tc_finals.push(seed_vals);
+            }
+            let n = E6_SEEDS.len();
+            let tm = |i: usize| tc_finals[i].iter().sum::<f32>() / n as f32;
+            let mut contrasts: Vec<f32> = Vec::with_capacity(n);
+            for i in 0..n {
+                contrasts.push(tc_finals[1][i] - tc_finals[0][i]
+                             - tc_finals[3][i] + tc_finals[2][i]);
+            }
+            let tc_mean = contrasts.iter().sum::<f32>() / n as f32;
+            let tc_ci = ci95_half_width(&contrasts);
+            let (tc_p, _) = permutation_pvalue_one_sample(&contrasts, 100_000, 0xBEEF ^ 0xCEA1);
+            topo_report.push_str(&format!(
+                "{:<32} {:.3}   {:.3}   {:.3}   {:.3}   {:.3}     [{:.3}, {:.3}]  {:.4}\n",
+                tlabel, tm(0), tm(1), tm(2), tm(3),
+                tc_mean, tc_mean - tc_ci, tc_mean + tc_ci, tc_p,
+            ));
+        }
+        eprintln!("{}", topo_report);
+        write_with_log(
+            out_dir.join("paper_e6_topology_generalization.txt"),
+            topo_report,
         )?;
     }
 
