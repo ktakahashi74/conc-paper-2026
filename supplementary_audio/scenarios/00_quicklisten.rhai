@@ -15,7 +15,7 @@ let anchor_spec = derive(harmonic)
     .brain("drone")
     .amp(0.3)
     .pitch_mode("lock")
-    .sustain_drive(0.0002)
+    .sustain_drive(0.02)
     .pitch_smooth(0.05)
     .adsr(0.5, 0.2, 0.9, 1.5);
 
@@ -25,7 +25,7 @@ let agent_random = derive(harmonic)
     .respawn_random()
     .pitch_core("hill_climb")
     .amp(0.15)
-    .sustain_drive(0.0002)
+    .sustain_drive(0.02)
     .pitch_smooth(0.05)
     .adsr(0.3, 0.3, 0.7, 1.2);
 
@@ -35,7 +35,7 @@ let agent_hereditary = derive(harmonic)
     .respawn_hereditary(0.003)
     .pitch_core("hill_climb")
     .amp(0.15)
-    .sustain_drive(0.0002)
+    .sustain_drive(0.02)
     .pitch_smooth(0.05)
     .adsr(0.3, 0.3, 0.7, 1.2);
 
