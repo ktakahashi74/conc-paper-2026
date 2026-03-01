@@ -13,14 +13,20 @@ let anchor_spec = derive(harmonic)
     .freq(220.0)
     .brain("drone")
     .amp(0.3)
-    .pitch_mode("lock");
+    .pitch_mode("lock")
+    .sustain_drive(0.0002)
+    .pitch_smooth(0.05)
+    .adsr(0.5, 0.2, 0.9, 1.5);
 
 let agent_spec = derive(harmonic)
-    .brain("entrain")
-    .metabolism(0.5)
+    .brain("drone")
+    .metabolism(0.01)
     .respawn_random()
     .pitch_core("hill_climb")
-    .amp(0.15);
+    .amp(0.15)
+    .sustain_drive(0.0002)
+    .pitch_smooth(0.05)
+    .adsr(0.3, 0.3, 0.7, 1.2);
 
 // ── Segment 1: Seed 0, Baseline ──────────────────────────────────
 seed(12648430);
@@ -30,7 +36,7 @@ scene("s1_seed0_baseline", || {
         .place(random_log(110.0, 880.0))
         .landscape_weight(1.0)
         .repulsion(0.15, 72.0);
-    wait(8.0);
+    wait(12.0);
 });
 wait(1.0);
 
@@ -42,7 +48,7 @@ scene("s2_seed0_nohill", || {
         .place(random_log(110.0, 880.0))
         .landscape_weight(0.0)
         .repulsion(0.15, 72.0);
-    wait(8.0);
+    wait(12.0);
 });
 wait(1.0);
 
@@ -54,7 +60,7 @@ scene("s3_seed0_norep", || {
         .place(random_log(110.0, 880.0))
         .landscape_weight(1.0)
         .repulsion(0.0);
-    wait(8.0);
+    wait(12.0);
 });
 wait(1.0);
 
@@ -66,7 +72,7 @@ scene("s4_seed10_baseline", || {
         .place(random_log(110.0, 880.0))
         .landscape_weight(1.0)
         .repulsion(0.15, 72.0);
-    wait(8.0);
+    wait(12.0);
 });
 wait(1.0);
 
@@ -78,7 +84,7 @@ scene("s5_seed10_nohill", || {
         .place(random_log(110.0, 880.0))
         .landscape_weight(0.0)
         .repulsion(0.15, 72.0);
-    wait(8.0);
+    wait(12.0);
 });
 wait(1.0);
 
@@ -90,5 +96,5 @@ scene("s6_seed10_norep", || {
         .place(random_log(110.0, 880.0))
         .landscape_weight(1.0)
         .repulsion(0.0);
-    wait(8.0);
+    wait(12.0);
 });

@@ -14,21 +14,30 @@ let anchor_spec = derive(harmonic)
     .freq(220.0)
     .brain("drone")
     .amp(0.3)
-    .pitch_mode("lock");
+    .pitch_mode("lock")
+    .sustain_drive(0.0002)
+    .pitch_smooth(0.05)
+    .adsr(0.5, 0.2, 0.9, 1.5);
 
 let agent_random = derive(harmonic)
-    .brain("entrain")
-    .metabolism(0.5)
+    .brain("drone")
+    .metabolism(0.01)
     .respawn_random()
     .pitch_core("hill_climb")
-    .amp(0.15);
+    .amp(0.15)
+    .sustain_drive(0.0002)
+    .pitch_smooth(0.05)
+    .adsr(0.3, 0.3, 0.7, 1.2);
 
 let agent_hereditary = derive(harmonic)
-    .brain("entrain")
-    .metabolism(0.5)
+    .brain("drone")
+    .metabolism(0.01)
     .respawn_hereditary(0.003)
     .pitch_core("hill_climb")
-    .amp(0.15);
+    .amp(0.15)
+    .sustain_drive(0.0002)
+    .pitch_smooth(0.05)
+    .adsr(0.3, 0.3, 0.7, 1.2);
 
 // ── Segment 1: Seed 0, Neither ──────────────────────────────────
 seed(12648490);
@@ -37,7 +46,7 @@ scene("s1_seed0_neither", || {
     create(agent_random, 8)
         .place(random_log(110.0, 880.0))
         .landscape_weight(0.0);
-    wait(6.0);
+    wait(10.0);
 });
 wait(1.0);
 
@@ -48,7 +57,7 @@ scene("s2_seed0_honly", || {
     create(agent_hereditary, 8)
         .place(random_log(110.0, 880.0))
         .landscape_weight(0.0);
-    wait(6.0);
+    wait(10.0);
 });
 wait(1.0);
 
@@ -59,7 +68,7 @@ scene("s3_seed0_hillonly", || {
     create(agent_random, 8)
         .place(random_log(110.0, 880.0))
         .landscape_weight(0.5);
-    wait(6.0);
+    wait(10.0);
 });
 wait(1.0);
 
@@ -70,7 +79,7 @@ scene("s4_seed0_both", || {
     create(agent_hereditary, 8)
         .place(random_log(110.0, 880.0))
         .landscape_weight(0.5);
-    wait(6.0);
+    wait(10.0);
 });
 wait(1.0);
 
@@ -81,7 +90,7 @@ scene("s5_seed10_neither", || {
     create(agent_random, 8)
         .place(random_log(110.0, 880.0))
         .landscape_weight(0.0);
-    wait(6.0);
+    wait(10.0);
 });
 wait(1.0);
 
@@ -92,7 +101,7 @@ scene("s6_seed10_honly", || {
     create(agent_hereditary, 8)
         .place(random_log(110.0, 880.0))
         .landscape_weight(0.0);
-    wait(6.0);
+    wait(10.0);
 });
 wait(1.0);
 
@@ -103,7 +112,7 @@ scene("s7_seed10_hillonly", || {
     create(agent_random, 8)
         .place(random_log(110.0, 880.0))
         .landscape_weight(0.5);
-    wait(6.0);
+    wait(10.0);
 });
 wait(1.0);
 
@@ -114,5 +123,5 @@ scene("s8_seed10_both", || {
     create(agent_hereditary, 8)
         .place(random_log(110.0, 880.0))
         .landscape_weight(0.5);
-    wait(6.0);
+    wait(10.0);
 });
