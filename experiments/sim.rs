@@ -265,16 +265,14 @@ impl E4SimConfig {
         if let Some(decay) = overrides.env_partial_decay {
             cfg.env_partial_decay = sanitize_env_partial_decay(decay);
         }
-        if let Some(exploration) = overrides.exploration {
-            if exploration.is_finite() {
+        if let Some(exploration) = overrides.exploration
+            && exploration.is_finite() {
                 cfg.exploration = exploration.clamp(0.0, 1.0);
             }
-        }
-        if let Some(persistence) = overrides.persistence {
-            if persistence.is_finite() {
+        if let Some(persistence) = overrides.persistence
+            && persistence.is_finite() {
                 cfg.persistence = persistence.clamp(0.0, 1.0);
             }
-        }
         if let Some(step) = overrides.neighbor_step_cents {
             cfg.neighbor_step_cents = sanitize_neighbor_step_cents(step);
         }

@@ -115,8 +115,8 @@ const E2_CONSONANT_STEPS: [f32; 8] = [
     3.8631372,              // 5:4 major third
     4.9804499,              // 4:3 perfect fourth
     7.0195501,              // 3:2 perfect fifth
-    8.1368628,              // 8:5 minor sixth
-    8.8435872,              // 5:3 major sixth
+    8.136_863,              // 8:5 minor sixth
+    8.843_587,              // 5:3 major sixth
     12.0,                   // 2:1 octave
 ];
 const E2_CONSONANT_TARGETS_CORE: [f32; 3] = [3.1564128, 3.8631372, 7.0195501];
@@ -125,8 +125,8 @@ const E2_CONSONANT_TARGETS_EXTENDED: [f32; 6] = [
     3.8631372,  // 5:4 major third
     4.9804499,  // 4:3 perfect fourth
     7.0195501,  // 3:2 perfect fifth
-    8.1368628,  // 8:5 minor sixth
-    8.8435872,  // 5:3 major sixth
+    8.136_863,  // 8:5 minor sixth
+    8.843_587,  // 5:3 major sixth
 ];
 const E2_CONSONANT_WINDOW_ST: f32 = 0.25;
 const E2_PERM_MAX_EXACT_COMBOS: u64 = 500_000;
@@ -144,6 +144,7 @@ enum E2UpdateSchedule {
 const E2_UPDATE_SCHEDULE: E2UpdateSchedule = E2UpdateSchedule::Checkerboard;
 
 const E4_TAIL_WINDOW_STEPS: u32 = 400;
+#[allow(dead_code)]
 const E4_DELTA_TAU: f32 = 0.05;
 const E4_WEIGHT_COARSE_STEP: f32 = 0.1;
 const E4_WEIGHT_FINE_STEP: f32 = 0.02;
@@ -191,6 +192,7 @@ const E4_SEEDS: [u64; 20] = [
     0xC0FFEE_u64 + 28,
     0xC0FFEE_u64 + 29,
 ];
+#[allow(dead_code)]
 const E4_REP_WEIGHTS: [f32; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
 const E4_WR_GRID: [f32; 3] = [1.0, 0.5, 0.0];
 const E4_WR_MIRROR_WEIGHTS: [f32; 3] = [0.0, 0.5, 1.0];
@@ -252,6 +254,7 @@ const E5_E_CAP: f32 = 1.0;
 const E5_E_INIT: f32 = 0.1;
 const E5_CB: f32 = 0.05;
 const E5_RECHARGE: f32 = 0.1;
+#[allow(dead_code)]
 const E5_N_SEEDS: usize = 20;
 const E5_SEEDS: [u64; 20] = [
     0xE5C0FF_u64,
@@ -1325,6 +1328,7 @@ fn plot_e1_landscape_scan(
             peaks
         }
 
+        #[allow(clippy::too_many_arguments)]
         fn scan_at_anchor(
             space: &Log2Space,
             alt_hz: f32,
@@ -3231,6 +3235,7 @@ fn init_e2_agent_indices_reject_consonant<R: Rng + ?Sized>(
     indices
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_e2_once(
     space: &Log2Space,
     anchor_hz: f32,
@@ -4622,6 +4627,7 @@ fn pick_e3_representative_seed(outputs: &[E3SeedOutput]) -> Option<u64> {
     Some(baseline[baseline.len() / 2].0)
 }
 
+#[allow(clippy::type_complexity)]
 fn plot_e5_vitality_entrainment(out_dir: &Path) -> Result<(), Box<dyn Error>> {
     let landscape = e3_reference_landscape(E5_ANCHOR_HZ);
 
@@ -4651,7 +4657,7 @@ fn plot_e5_vitality_entrainment(out_dir: &Path) -> Result<(), Box<dyn Error>> {
             final_plv,
         ));
     }
-    write_with_log(&out_dir.join("paper_e5_summary.csv"), &summary_csv)?;
+    write_with_log(out_dir.join("paper_e5_summary.csv"), &summary_csv)?;
 
     // ── CSV: per-agent for representative seed ───────────────────
     let mut agent_csv = String::from("condition,seed,agent,consonance,plv_final\n");
@@ -4670,7 +4676,7 @@ fn plot_e5_vitality_entrainment(out_dir: &Path) -> Result<(), Box<dyn Error>> {
             ));
         }
     }
-    write_with_log(&out_dir.join("paper_e5_agent_detail.csv"), &agent_csv)?;
+    write_with_log(out_dir.join("paper_e5_agent_detail.csv"), &agent_csv)?;
 
     // ── Compute per-condition group PLV series (mean ± 95% CI) ──
     // (scatter data written after stratified sims below)
@@ -4721,7 +4727,7 @@ fn plot_e5_vitality_entrainment(out_dir: &Path) -> Result<(), Box<dyn Error>> {
                 ));
             }
         }
-        write_with_log(&out_dir.join("paper_e5_scatter_detail.csv"), &csv)?;
+        write_with_log(out_dir.join("paper_e5_scatter_detail.csv"), &csv)?;
     }
 
     // ── Per-condition Pearson r values ───────────────────────────
@@ -4796,6 +4802,7 @@ struct E6SnapshotPoint {
     n_alive: usize,
 }
 
+#[allow(clippy::type_complexity)]
 fn plot_e6_hereditary_adaptation(
     out_dir: &Path,
     _space: &Log2Space,
@@ -5333,6 +5340,7 @@ fn e6_series_stats(
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_e6_figure(
     out_path: &Path,
     c_heredity: &[(f32, f32, f32)],
@@ -5422,8 +5430,8 @@ where
             .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
 
         // Dashed extension from last point to x_max
-        if let Some(&(last_x, last_mean, _)) = series.last() {
-            if last_x < x_max - 1.0 {
+        if let Some(&(last_x, last_mean, _)) = series.last()
+            && last_x < x_max - 1.0 {
                 let dash_len = (x_max - last_x) / 80.0;
                 let mut segments: Vec<PathElement<(f32, f32)>> = Vec::new();
                 let mut cx = last_x;
@@ -5437,7 +5445,6 @@ where
                 }
                 chart.draw_series(segments)?;
             }
-        }
     }
 
     chart
@@ -5513,6 +5520,7 @@ where
 }
 
 /// C2: Integration figure — 4 conditions: heredity/random × lw=0.0/0.5
+#[allow(clippy::type_complexity)]
 fn plot_e6_integration_figure(
     out_dir: &Path,
     anchor_hz: f32,
@@ -5640,13 +5648,13 @@ fn plot_e6_integration_figure(
         let mut seed_phase_finals: Vec<f32> = Vec::with_capacity(E6_SEEDS.len());
         for &seed in &E6_SEEDS {
             if let Some(points) = by_seed.get(&seed) {
-                let last_val = points.iter().map(|(_, v)| *v).last().unwrap_or(0.0);
+                let last_val = points.iter().map(|(_, v)| *v).next_back().unwrap_or(0.0);
                 seed_finals.push(last_val);
             } else {
                 seed_finals.push(0.0);
             }
             if let Some(points) = phase_by_seed.get(&seed) {
-                let last_val = points.iter().map(|(_, v)| *v).last().unwrap_or(0.0);
+                let last_val = points.iter().map(|(_, v)| *v).next_back().unwrap_or(0.0);
                 seed_phase_finals.push(last_val);
             } else {
                 seed_phase_finals.push(0.0);
@@ -5683,32 +5691,29 @@ fn plot_e6_integration_figure(
         let mean_rh_s = mean_of(7);
 
         // Real-terrain interaction contrast: HH - H - RH + R
-        let mut contrasts = Vec::with_capacity(n_seeds);
-        for i in 0..n_seeds {
-            contrasts.push(cond_seed_finals[1][i] - cond_seed_finals[0][i]
-                         - cond_seed_finals[3][i] + cond_seed_finals[2][i]);
-        }
+        let contrasts: Vec<f32> = cond_seed_finals[0].iter().zip(&cond_seed_finals[1])
+            .zip(cond_seed_finals[2].iter().zip(&cond_seed_finals[3]))
+            .map(|((&h, &hh), (&r, &rh))| hh - h - rh + r)
+            .collect();
         let mean_contrast = contrasts.iter().copied().sum::<f32>() / n_seeds as f32;
         let ci = ci95_half_width(&contrasts);
         let (p_val, method) = permutation_pvalue_one_sample(&contrasts, 100_000, 0xBEEF);
 
         // Full-shuffled interaction contrast: HH_s - H_s - RH_s + R_s
-        let mut contrasts_shuf = Vec::with_capacity(n_seeds);
-        for i in 0..n_seeds {
-            contrasts_shuf.push(cond_seed_finals[5][i] - cond_seed_finals[4][i]
-                              - cond_seed_finals[7][i] + cond_seed_finals[6][i]);
-        }
+        let contrasts_shuf: Vec<f32> = cond_seed_finals[4].iter().zip(&cond_seed_finals[5])
+            .zip(cond_seed_finals[6].iter().zip(&cond_seed_finals[7]))
+            .map(|((&h_s, &hh_s), (&r_s, &rh_s))| hh_s - h_s - rh_s + r_s)
+            .collect();
         let mean_contrast_shuf = contrasts_shuf.iter().copied().sum::<f32>() / n_seeds as f32;
         let ci_shuf = ci95_half_width(&contrasts_shuf);
         let (p_val_shuf, _method_shuf) = permutation_pvalue_one_sample(&contrasts_shuf, 100_000, 0xBEEF ^ 0x5E6F);
 
         // H vs H_s and R vs R_s: empirical check that metabolism-only terrain effect is small
-        let mut h_diff = Vec::with_capacity(n_seeds);
-        let mut r_diff = Vec::with_capacity(n_seeds);
-        for i in 0..n_seeds {
-            h_diff.push(cond_seed_finals[0][i] - cond_seed_finals[4][i]);
-            r_diff.push(cond_seed_finals[2][i] - cond_seed_finals[6][i]);
-        }
+        let (h_diff, r_diff): (Vec<f32>, Vec<f32>) = cond_seed_finals[0].iter()
+            .zip(&cond_seed_finals[4])
+            .zip(cond_seed_finals[2].iter().zip(&cond_seed_finals[6]))
+            .map(|((&h, &h_s), (&r, &r_s))| (h - h_s, r - r_s))
+            .unzip();
         let mean_h_diff = h_diff.iter().copied().sum::<f32>() / n_seeds as f32;
         let ci_h_diff = ci95_half_width(&h_diff);
         let (p_h_diff, _) = permutation_pvalue_one_sample(&h_diff, 100_000, 0xBEEF ^ 0xA1D1);
@@ -5799,18 +5804,16 @@ fn plot_e6_integration_figure(
             ));
         }
         // Phase coherence: HH vs R (does heredity+hill produce higher entrainment?)
-        let mut phase_hh_r: Vec<f32> = Vec::with_capacity(n_seeds);
-        for i in 0..n_seeds {
-            phase_hh_r.push(cond_seed_phase[1][i] - cond_seed_phase[3][i]);
-        }
+        let phase_hh_r: Vec<f32> = cond_seed_phase[1].iter().zip(&cond_seed_phase[3])
+            .map(|(&hh, &rh)| hh - rh)
+            .collect();
         let phase_hh_r_mean = phase_hh_r.iter().sum::<f32>() / n_seeds as f32;
         let phase_hh_r_ci = ci95_half_width(&phase_hh_r);
         let (phase_hh_r_p, _) = permutation_pvalue_one_sample(&phase_hh_r, 100_000, 0xFA5E_A5A5);
         // Phase: H vs R (heredity-only effect on entrainment)
-        let mut phase_h_r: Vec<f32> = Vec::with_capacity(n_seeds);
-        for i in 0..n_seeds {
-            phase_h_r.push(cond_seed_phase[0][i] - cond_seed_phase[2][i]);
-        }
+        let phase_h_r: Vec<f32> = cond_seed_phase[0].iter().zip(&cond_seed_phase[2])
+            .map(|(&h, &r)| h - r)
+            .collect();
         let phase_h_r_mean = phase_h_r.iter().sum::<f32>() / n_seeds as f32;
         let phase_h_r_ci = ci95_half_width(&phase_h_r);
         let (phase_h_r_p, _) = permutation_pvalue_one_sample(&phase_h_r, 100_000, 0xFA5E_A6A6);
@@ -5883,11 +5886,10 @@ fn plot_e6_integration_figure(
             }
             let n = E6_SEEDS.len();
             let tm = |i: usize| tc_finals[i].iter().sum::<f32>() / n as f32;
-            let mut contrasts: Vec<f32> = Vec::with_capacity(n);
-            for i in 0..n {
-                contrasts.push(tc_finals[1][i] - tc_finals[0][i]
-                             - tc_finals[3][i] + tc_finals[2][i]);
-            }
+            let contrasts: Vec<f32> = tc_finals[0].iter().zip(&tc_finals[1])
+                .zip(tc_finals[2].iter().zip(&tc_finals[3]))
+                .map(|((&h, &hh), (&r, &rh))| hh - h - rh + r)
+                .collect();
             let tc_mean = contrasts.iter().sum::<f32>() / n as f32;
             let tc_ci = ci95_half_width(&contrasts);
             let (tc_p, _) = permutation_pvalue_one_sample(&contrasts, 100_000, 0xBEEF ^ 0xCEA1);
@@ -6051,7 +6053,7 @@ where
         .y_desc("density")
         .y_label_formatter(&|v| {
             let r = (*v * 10.0).round() as i32;
-            if ((*v - r as f32 / 10.0).abs() < 1e-4) && r % 1 == 0 && (*v * 100.0).round() as i32 % 10 == 0 {
+            if ((*v - r as f32 / 10.0).abs() < 1e-4) && (*v * 100.0).round() as i32 % 10 == 0 {
                 format!("{:.1}", v)
             } else {
                 String::new()
@@ -6214,11 +6216,11 @@ fn e5_stratified_pitches(
     // If a stratum is empty, pick the nearest candidate to that stratum's midpoint.
     let mut pitches = Vec::with_capacity(n);
     let mut consonances = Vec::with_capacity(n);
-    for i in 0..n {
+    for (i, stratum) in strata.iter().enumerate().take(n) {
         let mid = (i as f32 + 0.5) / n as f32;
-        if !strata[i].is_empty() {
-            let idx = rng.random_range(0..strata[i].len());
-            let (hz, c) = strata[i][idx];
+        if !stratum.is_empty() {
+            let idx = rng.random_range(0..stratum.len());
+            let (hz, c) = stratum[idx];
             pitches.push(hz);
             consonances.push(c);
         } else {
@@ -6494,13 +6496,13 @@ fn pearson_r_e5(agents: &[E5AgentFinal]) -> f32 {
     }
 }
 
-fn build_e5_delta_series<'a>(
+fn build_e5_delta_series(
     label: &'static str,
     color: RGBColor,
     lhs: E5Condition,
     rhs: E5Condition,
     seeds: &[u64],
-    result_by_cond_seed: &HashMap<(E5Condition, u64), &'a E5VitalityResult>,
+    result_by_cond_seed: &HashMap<(E5Condition, u64), &E5VitalityResult>,
 ) -> E5DeltaSeries {
     let mut first_len: Option<usize> = None;
     let mut t_axis: Vec<f32> = Vec::new();
@@ -6540,19 +6542,18 @@ fn build_e5_delta_series<'a>(
         let n = n_steps
             .min(lhs_res.group_plv_series.len())
             .min(rhs_res.group_plv_series.len());
-        for step in 0..n {
+        for (step, diffs) in diffs_by_step.iter_mut().enumerate().take(n) {
             let v_l = lhs_res.group_plv_series[step].1;
             let v_r = rhs_res.group_plv_series[step].1;
             if v_l.is_finite() && v_r.is_finite() {
-                diffs_by_step[step].push(v_l - v_r);
+                diffs.push(v_l - v_r);
             }
         }
     }
 
     let mut series: Vec<(f32, f32, f32)> = Vec::with_capacity(n_steps);
-    for step in 0..n_steps {
+    for (step, vals) in diffs_by_step.iter().enumerate().take(n_steps) {
         let t = t_axis.get(step).copied().unwrap_or(step as f32 * E5_DT);
-        let vals = &diffs_by_step[step];
         if vals.is_empty() {
             series.push((t, f32::NAN, 0.0));
             continue;
@@ -7290,6 +7291,7 @@ struct ConsonantMassRow {
     mass_extended: f32,
 }
 
+#[allow(dead_code)]
 struct E4RunRecord {
     count_mode: &'static str,
     mirror_weight: f32,
@@ -7314,6 +7316,7 @@ struct E4RunRecord {
     histogram_source: &'static str,
 }
 
+#[allow(dead_code)]
 struct E4SummaryRecord {
     count_mode: &'static str,
     mirror_weight: f32,
@@ -7341,6 +7344,7 @@ struct E4SummaryRecord {
     n_runs: usize,
 }
 
+#[allow(dead_code)]
 struct E4DeltaEffectRow {
     count_mode: &'static str,
     mirror_weight: f32,
@@ -7362,6 +7366,7 @@ struct E4DeltaEffectRow {
     sd_mass_p5_class: f32,
 }
 
+#[allow(dead_code)]
 struct E4RegressionRow {
     count_mode: &'static str,
     bin_width: f32,
@@ -7375,6 +7380,7 @@ struct E4RegressionRow {
     n_weights: usize,
 }
 
+#[allow(dead_code)]
 struct E4EndpointEffectRow {
     count_mode: &'static str,
     bin_width: f32,
@@ -7387,6 +7393,7 @@ struct E4EndpointEffectRow {
     n1: usize,
 }
 
+#[allow(dead_code)]
 struct E4SeedSlopeRow {
     count_mode: &'static str,
     seed: u64,
@@ -7397,6 +7404,7 @@ struct E4SeedSlopeRow {
     n_weights: usize,
 }
 
+#[allow(dead_code)]
 struct E4RunLevelRegressionRow {
     count_mode: &'static str,
     bin_width: f32,
@@ -7408,6 +7416,7 @@ struct E4RunLevelRegressionRow {
     n_runs: usize,
 }
 
+#[allow(dead_code)]
 struct E4SeedSlopeMetaRow {
     count_mode: &'static str,
     bin_width: f32,
@@ -7421,6 +7430,7 @@ struct E4SeedSlopeMetaRow {
     n_seeds: usize,
 }
 
+#[allow(dead_code)]
 struct E4ThirdMassRow {
     count_mode: &'static str,
     mirror_weight: f32,
@@ -7442,6 +7452,7 @@ struct E4HistRecord {
     histogram: Histogram,
 }
 
+#[allow(dead_code)]
 struct E4TailIntervalRow {
     count_mode: &'static str,
     mirror_weight: f32,
@@ -7538,6 +7549,7 @@ struct E4BindingSummaryRow {
 }
 
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 struct E4FingerprintRow {
     mirror_weight: f32,
     seed: u64,
@@ -7546,6 +7558,7 @@ struct E4FingerprintRow {
 }
 
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 struct E4FingerprintSummaryRow {
     mirror_weight: f32,
     category: &'static str,
@@ -8015,6 +8028,7 @@ fn build_weight_grid(step: f32) -> Vec<f32> {
     weights
 }
 
+#[allow(dead_code)]
 fn refine_weights_from_sign_change(
     run_records: &[E4RunRecord],
     bin_width: f32,
@@ -8107,6 +8121,7 @@ fn format_float_token(value: f32) -> String {
     s.replace('.', "p")
 }
 
+#[allow(dead_code)]
 fn fmt_eps(eps_cents: f32) -> String {
     let rounded = eps_cents.round();
     if (eps_cents - rounded).abs() < 1e-3 {
@@ -8116,6 +8131,7 @@ fn fmt_eps(eps_cents: f32) -> String {
     }
 }
 
+#[allow(dead_code)]
 fn fmt_eps_token(eps_cents: f32) -> String {
     fmt_eps(eps_cents).trim_end_matches('c').replace('.', "p")
 }
@@ -8561,6 +8577,7 @@ fn run_e4_sweep_for_weights(
     Ok((runs, hists, tail_rows, tail_agent_rows, tail_landscape_rows))
 }
 
+#[allow(dead_code)]
 fn e4_runs_csv(records: &[E4RunRecord]) -> String {
     let mut out = String::from(
         "count_mode,mirror_weight,seed,bin_width,eps_cents,triad_major,triad_minor,delta_t,major_frac,mass_m3,mass_M3,mass_P4,mass_P5,mass_P5class,steps_total,burn_in,tail_window,histogram_source\n",
@@ -8591,6 +8608,7 @@ fn e4_runs_csv(records: &[E4RunRecord]) -> String {
     out
 }
 
+#[allow(dead_code)]
 fn e4_tail_interval_csv(rows: &[E4TailIntervalRow]) -> String {
     let mut out = String::from(
         "count_mode,mirror_weight,seed,bin_width,eps_cents,step,mass_m3,mass_M3,mass_P4,mass_P5,mass_P5class,delta_t\n",
@@ -8615,6 +8633,7 @@ fn e4_tail_interval_csv(rows: &[E4TailIntervalRow]) -> String {
     out
 }
 
+#[allow(dead_code)]
 fn e4_tail_agents_csv(rows: &[E4TailAgentRow]) -> String {
     let mut out = String::from("mirror_weight,seed,step,agent_id,freq_hz\n");
     for row in rows {
@@ -9789,6 +9808,7 @@ fn e4_interval_fingerprint_probs(freqs: &[f32], tol_cents: f32) -> [f32; 13] {
     probs
 }
 
+#[allow(dead_code)]
 fn e4_fingerprint_rows_from_tail_agents(rows: &[E4TailAgentRow]) -> Vec<E4FingerprintRow> {
     let mut latest_step: std::collections::HashMap<(i32, u64), u32> =
         std::collections::HashMap::new();
@@ -9839,6 +9859,7 @@ fn e4_fingerprint_rows_from_tail_agents(rows: &[E4TailAgentRow]) -> Vec<E4Finger
     out
 }
 
+#[allow(dead_code)]
 fn e4_fingerprint_raw_csv(rows: &[E4FingerprintRow]) -> String {
     let mut out = String::from("mirror_weight,seed,category,prob\n");
     for row in rows {
@@ -9850,6 +9871,7 @@ fn e4_fingerprint_raw_csv(rows: &[E4FingerprintRow]) -> String {
     out
 }
 
+#[allow(dead_code)]
 fn e4_fingerprint_summary_rows(rows: &[E4FingerprintRow]) -> Vec<E4FingerprintSummaryRow> {
     let mut grouped: std::collections::HashMap<(i32, &'static str), Vec<f32>> =
         std::collections::HashMap::new();
@@ -9887,6 +9909,7 @@ fn e4_fingerprint_summary_rows(rows: &[E4FingerprintRow]) -> Vec<E4FingerprintSu
     out
 }
 
+#[allow(dead_code)]
 fn e4_fingerprint_summary_csv(rows: &[E4FingerprintSummaryRow]) -> String {
     let mut out = String::from("mirror_weight,category,prob_mean,prob_ci_lo,prob_ci_hi,n_seeds\n");
     for row in rows {
@@ -9985,6 +10008,7 @@ fn compute_e4_landscape_scans(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compute_e4_landscape_scans_with_env_params(
     space: &Log2Space,
     anchor_hz: f32,
@@ -11647,8 +11671,8 @@ fn e4_abcd_trace_rows(
                 du_scan,
             );
             let mut oracle_indices = indices.clone();
-            for agent_i in 0..oracle_indices.len() {
-                oracle_indices[agent_i] = e4_wr_probe_best_index(
+            for (agent_i, oi) in oracle_indices.iter_mut().enumerate() {
+                *oi = e4_wr_probe_best_index(
                     agent_i,
                     &indices,
                     &scan.c,
@@ -13013,6 +13037,7 @@ fn plot_e4_mirror_sweep_wr_cut(out_dir: &Path, anchor_hz: f32) -> Result<(), Box
     Ok(())
 }
 
+#[allow(dead_code)]
 fn e4_summary_csv(records: &[E4SummaryRecord]) -> String {
     let mut out = String::from(
         "count_mode,mirror_weight,bin_width,eps_cents,mean_major,std_major,mean_minor,std_minor,mean_delta_t,std_delta_t,mean_m3,std_m3,mean_M3,std_M3,mean_P4,std_P4,mean_P5,std_P5,mean_P5class,std_P5class,major_rate,minor_rate,ambiguous_rate,n_runs\n",
@@ -13082,6 +13107,7 @@ fn e4_hist_csv(
     out
 }
 
+#[allow(dead_code)]
 fn summarize_e4_runs(records: &[E4RunRecord]) -> Vec<E4SummaryRecord> {
     let mut map: std::collections::HashMap<(&'static str, i32, i32, i32), Vec<&E4RunRecord>> =
         std::collections::HashMap::new();
@@ -13179,6 +13205,7 @@ fn summarize_e4_runs(records: &[E4RunRecord]) -> Vec<E4SummaryRecord> {
     summaries
 }
 
+#[allow(dead_code)]
 fn mean_std(values: &[f32]) -> (f32, f32) {
     if values.is_empty() {
         return (0.0, 0.0);
@@ -13188,6 +13215,7 @@ fn mean_std(values: &[f32]) -> (f32, f32) {
     (mean, var.sqrt())
 }
 
+#[allow(dead_code)]
 fn mean_std_sample(values: &[f32]) -> (f32, f32) {
     if values.is_empty() {
         return (0.0, 0.0);
@@ -13200,10 +13228,12 @@ fn mean_std_sample(values: &[f32]) -> (f32, f32) {
     (mean, var.sqrt())
 }
 
+#[allow(dead_code)]
 fn std_to_se(std: f32, n: usize) -> f32 {
     if n == 0 { 0.0 } else { std / (n as f32).sqrt() }
 }
 
+#[allow(dead_code)]
 struct LinearFit {
     slope: f32,
     intercept: f32,
@@ -13211,6 +13241,7 @@ struct LinearFit {
     se_slope: f32,
 }
 
+#[allow(dead_code)]
 fn linear_regression(x: &[f32], y: &[f32]) -> Option<LinearFit> {
     if x.len() != y.len() || x.len() < 2 {
         return None;
@@ -13253,6 +13284,7 @@ fn linear_regression(x: &[f32], y: &[f32]) -> Option<LinearFit> {
     })
 }
 
+#[allow(dead_code)]
 fn t_crit_975(df: usize) -> f32 {
     match df {
         1 => 12.706,
@@ -13290,6 +13322,7 @@ fn t_crit_975(df: usize) -> f32 {
     }
 }
 
+#[allow(dead_code)]
 fn binomial_coeff(n: usize, k: usize) -> f64 {
     if k > n {
         return 0.0;
@@ -13303,6 +13336,7 @@ fn binomial_coeff(n: usize, k: usize) -> f64 {
     c
 }
 
+#[allow(dead_code)]
 fn binomial_two_sided_p(k: usize, n: usize) -> f32 {
     if n == 0 {
         return 1.0;
@@ -13317,6 +13351,7 @@ fn binomial_two_sided_p(k: usize, n: usize) -> f32 {
     p as f32
 }
 
+#[allow(dead_code)]
 fn e4_delta_effects_from_summary(summaries: &[E4SummaryRecord]) -> Vec<E4DeltaEffectRow> {
     let mut rows = Vec::new();
     for summary in summaries {
@@ -13367,6 +13402,7 @@ fn e4_delta_effects_from_summary(summaries: &[E4SummaryRecord]) -> Vec<E4DeltaEf
     rows
 }
 
+#[allow(dead_code)]
 fn e4_delta_effects_csv(rows: &[E4DeltaEffectRow]) -> String {
     let mut out = String::from(
         "count_mode,mirror_weight,bin_width,eps_cents,mean_delta,sd_delta,se_delta,ci_lo,ci_hi,n_seeds,mean_mass_m3,sd_mass_m3,mean_mass_M3,sd_mass_M3,mean_mass_P5,sd_mass_P5,mean_mass_P5class,sd_mass_P5class\n",
@@ -13397,6 +13433,7 @@ fn e4_delta_effects_csv(rows: &[E4DeltaEffectRow]) -> String {
     out
 }
 
+#[allow(dead_code)]
 fn e4_regression_rows(summaries: &[E4SummaryRecord]) -> Vec<E4RegressionRow> {
     let mut map: std::collections::HashMap<(&'static str, i32, i32), Vec<&E4SummaryRecord>> =
         std::collections::HashMap::new();
@@ -13460,6 +13497,7 @@ fn e4_regression_rows(summaries: &[E4SummaryRecord]) -> Vec<E4RegressionRow> {
     rows
 }
 
+#[allow(dead_code)]
 fn e4_regression_csv(rows: &[E4RegressionRow]) -> String {
     let mut out = String::from(
         "count_mode,bin_width,eps_cents,slope,slope_ci_lo,slope_ci_hi,r2,spearman_rho,spearman_p,n_weights\n",
@@ -13482,6 +13520,7 @@ fn e4_regression_csv(rows: &[E4RegressionRow]) -> String {
     out
 }
 
+#[allow(dead_code)]
 fn e4_endpoint_effect_rows(records: &[E4RunRecord]) -> Vec<E4EndpointEffectRow> {
     #[derive(Default)]
     struct EndpointAccum {
@@ -13568,6 +13607,7 @@ fn e4_endpoint_effect_rows(records: &[E4RunRecord]) -> Vec<E4EndpointEffectRow> 
     rows
 }
 
+#[allow(dead_code)]
 fn e4_endpoint_effect_csv(rows: &[E4EndpointEffectRow]) -> String {
     let mut out =
         String::from("count_mode,bin_width,eps_cents,delta_end,ci_lo,ci_hi,cohen_d,n0,n1\n");
@@ -13588,6 +13628,7 @@ fn e4_endpoint_effect_csv(rows: &[E4EndpointEffectRow]) -> String {
     out
 }
 
+#[allow(dead_code)]
 fn e4_seed_slopes_rows(records: &[E4RunRecord]) -> Vec<E4SeedSlopeRow> {
     type SeedSlopeKey = (&'static str, u64, i32, i32);
     type SeedSlopePoint = (f32, f32);
@@ -13636,6 +13677,7 @@ fn e4_seed_slopes_rows(records: &[E4RunRecord]) -> Vec<E4SeedSlopeRow> {
     rows
 }
 
+#[allow(dead_code)]
 fn e4_seed_slopes_csv(rows: &[E4SeedSlopeRow]) -> String {
     let mut out =
         String::from("count_mode,seed,bin_width,eps_cents,slope_seed,r2_seed,n_weights\n");
@@ -13654,6 +13696,7 @@ fn e4_seed_slopes_csv(rows: &[E4SeedSlopeRow]) -> String {
     out
 }
 
+#[allow(dead_code)]
 fn e4_run_level_regression_rows(records: &[E4RunRecord]) -> Vec<E4RunLevelRegressionRow> {
     type RunLevelKey = (&'static str, i32, i32);
     type RunLevelPoint = (f32, f32);
@@ -13708,6 +13751,7 @@ fn e4_run_level_regression_rows(records: &[E4RunRecord]) -> Vec<E4RunLevelRegres
     rows
 }
 
+#[allow(dead_code)]
 fn e4_run_level_regression_csv(rows: &[E4RunLevelRegressionRow]) -> String {
     let mut out =
         String::from("count_mode,bin_width,eps_cents,slope,slope_ci_lo,slope_ci_hi,r2,n_runs\n");
@@ -13727,6 +13771,7 @@ fn e4_run_level_regression_csv(rows: &[E4RunLevelRegressionRow]) -> String {
     out
 }
 
+#[allow(dead_code)]
 fn e4_seed_slope_meta_rows(seed_rows: &[E4SeedSlopeRow]) -> Vec<E4SeedSlopeMetaRow> {
     let mut map: std::collections::HashMap<(&'static str, i32, i32), Vec<&E4SeedSlopeRow>> =
         std::collections::HashMap::new();
@@ -13795,6 +13840,7 @@ fn e4_seed_slope_meta_rows(seed_rows: &[E4SeedSlopeRow]) -> Vec<E4SeedSlopeMetaR
     rows
 }
 
+#[allow(dead_code)]
 fn e4_seed_slope_meta_csv(rows: &[E4SeedSlopeMetaRow]) -> String {
     let mut out = String::from(
         "count_mode,bin_width,eps_cents,mean_slope,ci_lo,ci_hi,sign_p,var_slope_across_seeds,mean_r2,n_seeds\n",
@@ -13817,6 +13863,7 @@ fn e4_seed_slope_meta_csv(rows: &[E4SeedSlopeMetaRow]) -> String {
     out
 }
 
+#[allow(dead_code)]
 fn e4_total_third_mass_rows(records: &[E4RunRecord]) -> Vec<E4ThirdMassRow> {
     let mut map: std::collections::HashMap<(&'static str, i32, i32, i32), Vec<f32>> =
         std::collections::HashMap::new();
@@ -13862,6 +13909,7 @@ fn e4_total_third_mass_rows(records: &[E4RunRecord]) -> Vec<E4ThirdMassRow> {
     rows
 }
 
+#[allow(dead_code)]
 fn e4_total_third_mass_csv(rows: &[E4ThirdMassRow]) -> String {
     let mut out = String::from(
         "count_mode,mirror_weight,bin_width,eps_cents,mean_third_mass,std_third_mass,n_runs\n",
@@ -13938,6 +13986,7 @@ fn bootstrap_mean_ci95(values: &[f32], iters: usize, seed: u64) -> (f32, f32, f3
     (mean, samples[lo_idx], samples[hi_idx])
 }
 
+#[allow(dead_code)]
 fn estimate_piecewise_changepoint(points: &[(f32, f32)]) -> Option<f32> {
     if points.len() < 4 {
         return None;
@@ -13985,6 +14034,7 @@ fn estimate_piecewise_changepoint(points: &[(f32, f32)]) -> Option<f32> {
     }
 }
 
+#[allow(dead_code)]
 fn render_e4_figure1_mirror_vs_delta_t(
     out_path: &Path,
     run_records: &[E4RunRecord],
@@ -14186,6 +14236,7 @@ fn render_e4_bind_vs_weight(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn render_e4_binding_components_vs_weight(
     out_path: &Path,
     summary_rows: &[E4BindingSummaryRow],
@@ -14695,6 +14746,7 @@ fn render_e4_binding_phase_diagram_png(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn render_e4_fingerprint_heatmap_png(
     out_path: &Path,
     summary_rows: &[E4FingerprintSummaryRow],
@@ -14783,6 +14835,7 @@ fn render_e4_fingerprint_heatmap_png(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn render_e4_figure2_interval_hist_triptych(
     out_path: &Path,
     hist_records: &[E4HistRecord],
@@ -15367,6 +15420,7 @@ fn run_e4_step_and_hysteresis_protocol(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn e4_protocol_meta_diff_csv(
     anchor_hz: f32,
     primary_bin_st: f32,
@@ -15437,6 +15491,7 @@ fn e4_protocol_meta_diff_csv(
     out
 }
 
+#[allow(dead_code)]
 fn e4_fixed_except_mirror_check_csv(
     records: &[E4RunRecord],
     tail_agents: &[E4TailAgentRow],
@@ -15531,6 +15586,7 @@ fn e4_fixed_except_mirror_check_csv(
     out
 }
 
+#[allow(dead_code)]
 fn render_e4_hist_overlay(
     out_path: &Path,
     hist_records: &[E4HistRecord],
@@ -15604,6 +15660,7 @@ fn render_e4_hist_overlay(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn render_e4_delta_plot(
     out_path: &Path,
     summaries: &[E4SummaryRecord],
@@ -15715,6 +15772,7 @@ fn render_e4_delta_plot(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn render_e4_delta_spaghetti(
     out_path: &Path,
     run_records: &[E4RunRecord],
@@ -15812,6 +15870,7 @@ fn render_e4_delta_spaghetti(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn render_e4_major_minor_plot(
     out_path: &Path,
     summaries: &[E4SummaryRecord],
@@ -15960,6 +16019,7 @@ fn render_e4_major_minor_plot(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn render_e4_third_mass_plot(
     out_path: &Path,
     summaries: &[E4SummaryRecord],
@@ -16106,6 +16166,7 @@ fn render_e4_third_mass_plot(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn render_e4_major_minor_rate_plot(
     out_path: &Path,
     summaries: &[E4SummaryRecord],
@@ -17777,6 +17838,7 @@ fn mean_c_score_loo_pair_at_indices_with_prev_reused(
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 fn mean_c_score_loo_at_indices(
     space: &Log2Space,
     workspace: &ConsonanceWorkspace,
@@ -20185,6 +20247,7 @@ fn draw_diversity_metric_panel_large(
     draw_diversity_metric_panel_impl(area, caption, y_desc, rows, select, 32, 20, 24)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_diversity_metric_panel_impl(
     area: &DrawingArea<SVGBackend, Shift>,
     caption: &str,
@@ -20518,6 +20581,7 @@ fn draw_consonant_mass_panel(
     draw_consonant_mass_panel_impl(area, caption, subtitle, rows, select, 22, 16, 18)
 }
 
+#[allow(dead_code)]
 fn draw_consonant_mass_panel_large(
     area: &DrawingArea<SVGBackend, Shift>,
     caption: &str,
@@ -20528,6 +20592,7 @@ fn draw_consonant_mass_panel_large(
     draw_consonant_mass_panel_impl(area, caption, subtitle, rows, select, 32, 20, 24)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_consonant_mass_panel_impl(
     area: &DrawingArea<SVGBackend, Shift>,
     caption: &str,
@@ -20957,6 +21022,7 @@ fn render_e2_figure1(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_e2_figure2(
     out_path: &Path,
     pairwise_centers: &[f32],
@@ -21985,6 +22051,7 @@ fn render_scatter_on_area(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn render_scatter_on_area_large(
     area: &DrawingArea<SVGBackend, Shift>,
     caption: &str,
@@ -22277,6 +22344,7 @@ fn render_survival_on_area(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn render_survival_on_area_large(
     area: &DrawingArea<SVGBackend, Shift>,
     caption: &str,
@@ -22656,6 +22724,7 @@ fn render_survival_by_c_level(
 }
 
 // ── E5 Combined 3-Panel Figure ───────────────────────────────────
+#[allow(clippy::type_complexity)]
 fn render_e5_combined_figure(
     out_path: &Path,
     cond_series: &[(E5Condition, Vec<(f32, f32, f32)>)],
@@ -22677,6 +22746,7 @@ fn render_e5_combined_figure(
 }
 
 /// Panel A: Group mean PLV over time with CI shading
+#[allow(clippy::type_complexity)]
 fn draw_e5_plv_panel<DB: DrawingBackend>(
     area: &DrawingArea<DB, Shift>,
     cond_series: &[(E5Condition, Vec<(f32, f32, f32)>)],
@@ -22691,6 +22761,7 @@ where
     Ok(())
 }
 
+#[allow(clippy::type_complexity)]
 fn draw_e5_plv_raw_subpanel<DB: DrawingBackend>(
     area: &DrawingArea<DB, Shift>,
     cond_series: &[(E5Condition, Vec<(f32, f32, f32)>)],
@@ -22764,6 +22835,7 @@ where
     Ok(())
 }
 
+#[allow(clippy::type_complexity)]
 fn draw_e5_plv_delta_subpanel<DB: DrawingBackend>(
     area: &DrawingArea<DB, Shift>,
     cond_series: &[(E5Condition, Vec<(f32, f32, f32)>)],
@@ -22952,8 +23024,8 @@ where
     }
 
     // Add fitted guides: vitality sigmoid, control mean baseline
-    if !vitality_points.is_empty() {
-        if let Some(fit) = fit_e5_sigmoid(&vitality_points) {
+    if !vitality_points.is_empty()
+        && let Some(fit) = fit_e5_sigmoid(&vitality_points) {
             let curve: Vec<(f32, f32)> = (0..=200)
                 .map(|i| {
                     let x = i as f32 / 200.0;
@@ -22969,7 +23041,6 @@ where
                 ShapeStyle::from(&PAL_E5_VITALITY.mix(0.98)).stroke_width(5),
             )))?;
         }
-    }
     if !control_points.is_empty() {
         let mean_control =
             control_points.iter().map(|(_, y)| *y).sum::<f32>() / control_points.len() as f32;
@@ -23106,6 +23177,7 @@ where
     Ok(())
 }
 
+#[allow(dead_code)]
 fn draw_vertical_guides_labeled<DB: DrawingBackend>(
     chart: &mut ChartContext<DB, Cartesian2d<RangedCoordf32, RangedCoordf32>>,
     markers: &[(f32, &str)],
@@ -23156,6 +23228,7 @@ fn histogram_counts(values: &[f32], min: f32, max: f32, bin_width: f32) -> Vec<(
         .collect()
 }
 
+#[allow(dead_code)]
 fn phase_hist_bins(sample_count: usize) -> usize {
     if sample_count == 0 {
         return 12;
@@ -24261,12 +24334,12 @@ mod tests {
             for lag in -max_lag..=max_lag {
                 let mut sum = 0.0f32;
                 let mut count = 0usize;
-                for t in burn_in..n {
+                for (t, &agent_val) in agent.iter().enumerate().take(n).skip(burn_in) {
                     let t2 = t as i32 + lag;
                     if t2 < 0 || t2 as usize >= n {
                         continue;
                     }
-                    let score = if agent[t] == oracle[t2 as usize] {
+                    let score = if agent_val == oracle[t2 as usize] {
                         1.0
                     } else {
                         0.0
