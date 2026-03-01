@@ -6670,9 +6670,55 @@ fn render_e1_plot(
 
     let y01_max = 1.05f32;
 
-    let root = bitmap_root(out_path, (2200, 1200)).into_drawing_area();
+    // Compute C and D y-ranges before layout so we can size panels proportionally
+    let mut c_min = f32::INFINITY;
+    let mut c_max = f32::NEG_INFINITY;
+    for &(_, y) in &c_points {
+        if y.is_finite() {
+            c_min = c_min.min(y);
+            c_max = c_max.max(y);
+        }
+    }
+    if !c_min.is_finite() || !c_max.is_finite() || (c_max - c_min).abs() < 1e-6 {
+        c_min = -1.0;
+        c_max = 1.0;
+    }
+    let pad = 0.05f32;
+    let c_y_min = c_min - pad;
+    let c_y_max = c_max + pad;
+    let c_span = c_y_max - c_y_min;
+
+    let mut d_max_val = f32::NEG_INFINITY;
+    for &(_, y) in &d_points {
+        if y.is_finite() {
+            d_max_val = d_max_val.max(y);
+        }
+    }
+    if !d_max_val.is_finite() {
+        d_max_val = 1.0;
+    }
+    let d_y_min = 0.0f32;
+    let d_y_max = d_max_val + pad;
+    let d_span = d_y_max - d_y_min;
+
+    // Size C and D panels so their chart areas share the same pixels-per-unit scale.
+    // Vertical overhead: top_margin(12) + caption(~48) + bottom_margin + x_label_area
+    //   Panel C: 12 + 48 + 24 + 0  = 84
+    //   Panel D: 12 + 48 + 12 + 90 = 162
+    let total_h: u32 = 1020;
+    let h_ab: u32 = 217; // A,B each (15% smaller than equal quarter)
+    let remaining = total_h - 2 * h_ab; // 586 for C+D (15% larger)
+    let ov_c = 84.0f32;
+    let ov_d = 162.0f32;
+    let h_d =
+        ((d_span * (remaining as f32 - ov_c) + ov_d * c_span) / (c_span + d_span)).round() as u32;
+    let h_c = remaining - h_d;
+
+    let root = bitmap_root(out_path, (2200, total_h)).into_drawing_area();
     root.fill(&WHITE)?;
-    let panels = root.split_evenly((4, 1));
+    let (top_half, bottom_half) = root.split_vertically(2 * h_ab);
+    let (panel_a, panel_b) = top_half.split_vertically(h_ab);
+    let (panel_c, panel_d) = bottom_half.split_vertically(h_c);
 
     let ratio_guides = [0.5f32, 6.0 / 5.0, 1.25, 4.0 / 3.0, 1.5, 5.0 / 3.0, 2.0];
     let ratio_guides_log2: Vec<f32> = ratio_guides.iter().map(|r| r.log2()).collect();
@@ -6680,9 +6726,10 @@ fn render_e1_plot(
     let ratio_guide_style = RGBColor(50, 100, 180).mix(0.55);
     let y_guides = [-0.5f32, 0.0, 0.5, 1.0];
 
-    let mut chart_h = ChartBuilder::on(&panels[0])
+    let mut chart_h = ChartBuilder::on(&panel_a)
         .caption("A: Harmonicity H\u{2080}\u{2081}(f)", ("sans-serif", 48))
         .margin(12)
+        .margin_right(25)
         .margin_bottom(24)
         .x_label_area_size(0)
         .y_label_area_size(110)
@@ -6723,9 +6770,10 @@ fn render_e1_plot(
 
     chart_h.draw_series(LineSeries::new(h_points, &PAL_H))?;
 
-    let mut chart_r = ChartBuilder::on(&panels[1])
+    let mut chart_r = ChartBuilder::on(&panel_b)
         .caption("B: Roughness R\u{2080}\u{2081}(f)", ("sans-serif", 48))
         .margin(12)
+        .margin_right(25)
         .margin_bottom(24)
         .x_label_area_size(0)
         .y_label_area_size(110)
@@ -6766,27 +6814,14 @@ fn render_e1_plot(
 
     chart_r.draw_series(LineSeries::new(r_points, &PAL_R))?;
 
-    let mut c_min = f32::INFINITY;
-    let mut c_max = f32::NEG_INFINITY;
-    for &(_, y) in &c_points {
-        if y.is_finite() {
-            c_min = c_min.min(y);
-            c_max = c_max.max(y);
-        }
-    }
-    if !c_min.is_finite() || !c_max.is_finite() || (c_max - c_min).abs() < 1e-6 {
-        c_min = -1.0;
-        c_max = 1.0;
-    }
-    let pad = 0.05f32;
-
-    let mut chart_c = ChartBuilder::on(&panels[2])
+    let mut chart_c = ChartBuilder::on(&panel_c)
         .caption("C: Consonance field C_field(f)", ("sans-serif", 48))
         .margin(12)
+        .margin_right(25)
         .margin_bottom(24)
         .x_label_area_size(0)
         .y_label_area_size(110)
-        .build_cartesian_2d(x_min..x_max, (c_min - pad)..(c_max + pad))?;
+        .build_cartesian_2d(x_min..x_max, c_y_min..c_y_max)?;
 
     chart_c
         .configure_mesh()
@@ -6800,20 +6835,20 @@ fn render_e1_plot(
 
     for &x in &x_grid {
         chart_c.draw_series(std::iter::once(PathElement::new(
-            vec![(x, c_min - pad), (x, c_max + pad)],
+            vec![(x, c_y_min), (x, c_y_max)],
             BLACK.mix(0.10),
         )))?;
     }
     for &x in &ratio_guides_log2 {
         if x >= x_min && x <= x_max {
             chart_c.draw_series(std::iter::once(DashedPathElement::new(
-                vec![(x, c_min - pad), (x, c_max + pad)].into_iter(),
+                vec![(x, c_y_min), (x, c_y_max)].into_iter(),
                 8, 6, ratio_guide_style,
             )))?;
         }
     }
     for &y in &y_guides {
-        if y >= (c_min - pad) && y <= (c_max + pad) {
+        if y >= c_y_min && y <= c_y_max {
             chart_c.draw_series(std::iter::once(PathElement::new(
                 vec![(x_min, y), (x_max, y)],
                 BLACK.mix(0.12),
@@ -6823,47 +6858,41 @@ fn render_e1_plot(
 
     chart_c.draw_series(LineSeries::new(c_points, &PAL_C))?;
 
-    // Panel 4: C_density raw = H * (1 - R)
-    let d_max = d_points
-        .iter()
-        .map(|(_, y)| *y)
-        .fold(0.0f32, f32::max)
-        .max(1e-12)
-        * 1.1;
-
-    let mut chart_d = ChartBuilder::on(&panels[3])
+    // Panel D: C_density (non-negative). Same pixels-per-unit scale as Panel C.
+    let mut chart_d = ChartBuilder::on(&panel_d)
         .caption("D: Consonance density C_density(f)", ("sans-serif", 48))
         .margin(12)
+        .margin_right(25)
         .x_label_area_size(90)
         .y_label_area_size(110)
-        .build_cartesian_2d(x_min..x_max, 0.0f32..d_max)?;
+        .build_cartesian_2d(x_min..x_max, d_y_min..d_y_max)?;
 
     chart_d
         .configure_mesh()
         .disable_mesh()
         .x_desc("log2(f / f_anchor)")
         .y_desc("C_density")
-        .y_labels(6)
+        .y_labels(3)
         .label_style(("sans-serif", 42).into_font())
         .axis_desc_style(("sans-serif", 46).into_font())
         .draw()?;
 
     for &x in &x_grid {
         chart_d.draw_series(std::iter::once(PathElement::new(
-            vec![(x, 0.0), (x, d_max)],
+            vec![(x, d_y_min), (x, d_y_max)],
             BLACK.mix(0.10),
         )))?;
     }
     for &x in &ratio_guides_log2 {
         if x >= x_min && x <= x_max {
             chart_d.draw_series(std::iter::once(DashedPathElement::new(
-                vec![(x, 0.0), (x, d_max)].into_iter(),
+                vec![(x, d_y_min), (x, d_y_max)].into_iter(),
                 8, 6, ratio_guide_style,
             )))?;
         }
     }
     for &y in &y_guides {
-        if y >= 0.0 && y <= d_max {
+        if y >= d_y_min && y <= d_y_max {
             chart_d.draw_series(std::iter::once(PathElement::new(
                 vec![(x_min, y), (x_max, y)],
                 BLACK.mix(0.12),
@@ -20875,12 +20904,12 @@ fn render_e2_figure1(
     trajectories: &[Vec<f32>],
     phase_mode: E2PhaseMode,
 ) -> Result<(), Box<dyn Error>> {
-    let root = bitmap_root(out_path, (1800, 600)).into_drawing_area();
+    let root = bitmap_root(out_path, (1800, 510)).into_drawing_area();
     root.fill(&WHITE)?;
     // 3-column layout: a (wide) | b+b-alt (narrow, stacked) | c (wide)
     let (panel_a, rest) = root.split_horizontally(700);
     let (panel_mid, panel_c) = rest.split_horizontally(400);
-    let (panel_b, panel_balt) = panel_mid.split_vertically(300);
+    let (panel_b, panel_balt) = panel_mid.split_vertically(255);
 
     let len = baseline_stats
         .mean_c_score_loo
