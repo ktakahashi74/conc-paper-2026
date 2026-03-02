@@ -16,7 +16,7 @@ let anchor_spec = derive(harmonic)
     .amp(0.3)
     .pitch_mode("lock")
     .sustain_drive(0.02)
-    .pitch_smooth(0.3)
+    .pitch_smooth(0.05)
     .adsr(0.5, 0.2, 0.9, 1.5);
 
 let agent_random = derive(harmonic)
@@ -26,11 +26,9 @@ let agent_random = derive(harmonic)
     .pitch_core("hill_climb")
     .exploration(0.8)
     .persistence(0.2)
-    .anneal_temp(0.5)
-    .proposal_interval(0.3)
     .amp(0.15)
     .sustain_drive(0.02)
-    .pitch_smooth(0.3)
+    .pitch_smooth(0.05)
     .adsr(0.3, 0.3, 0.7, 1.2);
 
 let agent_hereditary = derive(harmonic)
@@ -40,11 +38,9 @@ let agent_hereditary = derive(harmonic)
     .pitch_core("hill_climb")
     .exploration(0.8)
     .persistence(0.2)
-    .anneal_temp(0.5)
-    .proposal_interval(0.3)
     .amp(0.15)
     .sustain_drive(0.02)
-    .pitch_smooth(0.3)
+    .pitch_smooth(0.05)
     .adsr(0.3, 0.3, 0.7, 1.2);
 
 // ── Segment 1: E2 Baseline (seed 0) ────────────────────────────
