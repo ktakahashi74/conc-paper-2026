@@ -7,7 +7,7 @@ use conchordal::core::log2space::Log2Space;
 use conchordal::core::modulation::{NeuralRhythms, RhythmBand};
 use conchordal::core::roughness_kernel::{KernelParams, RoughnessKernel};
 use conchordal::core::timebase::Timebase;
-use conchordal::life::articulation_core::AnyArticulationCore;
+use conchordal::life::articulation_core::{AnyArticulationCore, ArticulationState};
 use conchordal::life::control::{AgentControl, PhonationType, PitchCoreKind, PitchMode};
 use conchordal::life::individual::SoundBody;
 use conchordal::life::lifecycle::LifecycleConfig;
@@ -177,6 +177,8 @@ struct E3LifeState {
     sum_c_level_firstk: f32,
     firstk_count: u32,
     c_level_birth: f32,
+    sum_c_level_attack: f32,
+    attack_tick_count: u32,
     pending_birth: bool,
     was_alive: bool,
 }
@@ -192,6 +194,8 @@ impl E3LifeState {
             sum_c_level_firstk: 0.0,
             firstk_count: 0,
             c_level_birth: 0.0,
+            sum_c_level_attack: 0.0,
+            attack_tick_count: 0,
             pending_birth: true,
             was_alive: true,
         }
@@ -206,6 +210,8 @@ impl E3LifeState {
         self.sum_c_level_firstk = 0.0;
         self.firstk_count = 0;
         self.c_level_birth = 0.0;
+        self.sum_c_level_attack = 0.0;
+        self.attack_tick_count = 0;
         self.pending_birth = true;
         self.was_alive = false;
     }
@@ -256,7 +262,7 @@ impl E4SimConfig {
             baseline_mirror_weight: 0.5,
             burn_in_steps: 600,
             roughness_weight_scale: 1.0,
-            env_partials: E4_ENV_PARTIALS_DEFAULT,
+            env_partials: 1, // SineBody: single partial per agent
             env_partial_decay: E4_ENV_PARTIAL_DECAY_DEFAULT,
         };
         let overrides = get_e4_runtime_overrides();
@@ -286,6 +292,7 @@ impl E4SimConfig {
             voice_count: 6,
             steps: 420,
             burn_in_steps: 180,
+            env_partials: E4_ENV_PARTIALS_DEFAULT,
             ..Self::paper_defaults()
         }
     }
@@ -424,6 +431,14 @@ pub fn run_e3_collect_deaths(cfg: &E3RunConfig) -> Vec<E3DeathRecord> {
                     state.sum_c_level_firstk += c_level;
                     state.firstk_count += 1;
                 }
+
+                // Attack-time consonance
+                if let AnyArticulationCore::Entrain(ref core) = agent.articulation.core {
+                    if core.state == ArticulationState::Attack {
+                        state.sum_c_level_attack += c_level;
+                        state.attack_tick_count += 1;
+                    }
+                }
             }
 
             if state.was_alive && !alive {
@@ -445,10 +460,12 @@ pub fn run_e3_collect_deaths(cfg: &E3RunConfig) -> Vec<E3DeathRecord> {
                 } else {
                     0.0
                 };
-                // Attack-specific telemetry was removed upstream; use per-tick
-                // consonance as a proxy so downstream CSV/plot code is unchanged.
-                let avg_c_level_attack = avg_c_level_tick;
-                let attack_tick_count = ticks;
+                let avg_c_level_attack = if state.attack_tick_count > 0 {
+                    state.sum_c_level_attack / state.attack_tick_count as f32
+                } else {
+                    avg_c_level_tick // fallback
+                };
+                let attack_tick_count = state.attack_tick_count;
 
                 deaths.push(E3DeathRecord {
                     condition: cfg.condition.label().to_string(),
@@ -639,6 +656,14 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                     state.sum_c_level_firstk += c_level;
                     state.firstk_count += 1;
                 }
+
+                // Attack-time consonance
+                if let AnyArticulationCore::Entrain(ref core) = agent.articulation.core {
+                    if core.state == ArticulationState::Attack {
+                        state.sum_c_level_attack += c_level;
+                        state.attack_tick_count += 1;
+                    }
+                }
             }
 
             if state.was_alive && !alive {
@@ -660,8 +685,12 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                 } else {
                     0.0
                 };
-                let avg_c_level_attack = avg_c_level_tick;
-                let attack_tick_count = ticks;
+                let avg_c_level_attack = if state.attack_tick_count > 0 {
+                    state.sum_c_level_attack / state.attack_tick_count as f32
+                } else {
+                    avg_c_level_tick // fallback
+                };
+                let attack_tick_count = state.attack_tick_count;
 
                 out.deaths.push(E3DeathRecord {
                     condition: cfg.condition.label().to_string(),

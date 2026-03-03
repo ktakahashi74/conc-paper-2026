@@ -1185,7 +1185,6 @@ fn plot_e1_landscape_scan(
 
     let roughness_kernel = RoughnessKernel::new(KernelParams::default(), 0.005);
     let mut h_params_base = HarmonicityParams::default();
-    h_params_base.rho_common_overtone = h_params_base.rho_common_root;
     h_params_base.gamma_root = 1.0;
     h_params_base.gamma_overtone = 1.0;
     let harmonicity_kernel = HarmonicityKernel::new(space, h_params_base);
@@ -1248,11 +1247,7 @@ fn plot_e1_landscape_scan(
         &mut perc_r_state01_scan,
     );
 
-    let h_ref_max = perc_h_pot_scan
-        .iter()
-        .copied()
-        .fold(0.0f32, f32::max)
-        .max(1e-12);
+    let h_ref_max = 1.0f32;
     let mut perc_h_state01_scan = vec![0.0f32; space.n_bins()];
     psycho_state::h_pot_scan_to_h_state01_scan(
         &perc_h_pot_scan,
@@ -6321,11 +6316,9 @@ fn simulate_e5_stratified(
         };
         // Phase update (couple each agent to external kick only)
         for i in 0..E5_N_AGENTS {
-            let coupling_term = k_effs[i] * (theta_kick - phases[i]).sin();
-            let d_phase = omegas[i] + coupling_term;
-            phases[i] = wrap_to_pi(phases[i] + d_phase * E5_DT);
+            phases[i] = kuramoto_phase_step(phases[i], omegas[i], theta_kick, k_effs[i], 0.0, E5_DT);
         }
-        theta_kick = wrap_to_pi(theta_kick + E5_KICK_OMEGA * E5_DT);
+        theta_kick += E5_KICK_OMEGA * E5_DT;
         // PLV tracking
         let mut plv_sum = 0.0f32;
         let mut plv_count = 0usize;
@@ -16604,11 +16597,7 @@ fn compute_c_score_level_scans(
     }
     let r_state_stats = r_state01_stats(&perc_r_state01_scan);
 
-    let h_ref_max = perc_h_pot_scan
-        .iter()
-        .copied()
-        .fold(0.0f32, f32::max)
-        .max(1e-12);
+    let h_ref_max = 1.0f32;
     let mut perc_h_state01_scan = vec![0.0f32; space.n_bins()];
     psycho_state::h_pot_scan_to_h_state01_scan(
         &perc_h_pot_scan,
