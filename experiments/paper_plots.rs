@@ -244,7 +244,7 @@ const E3_SEEDS: [u64; 20] = [
 const E5_KICK_OMEGA: f32 = 2.0 * PI * 2.0;
 const E5_AGENT_OMEGA_MEAN: f32 = 2.0 * PI * 1.8;
 const E5_AGENT_JITTER: f32 = 0.02;
-const E5_K_TIME: f32 = 1.5; // = ω_eff × k_global (matches k_time in articulation_core)
+const E5_K_TIME: f32 = 3.0; // base coupling (= old K_BASE)
 const E5_LAMBDA_V: f32 = 1.0; // vitality sensitivity in coupling_multiplier
 const E5_V_FLOOR: f32 = 0.0; // vitality floor (0 = full range)
 const E5_VITALITY_EXPONENT: f32 = 0.5; // = sqrt (matches main)
@@ -6166,7 +6166,7 @@ impl E5Condition {
 fn e5_coupling_multiplier(vitality: f32, lambda_v: f32, v_floor: f32) -> f32 {
     let denom = (1.0 - v_floor).max(1e-6);
     let g = ((vitality - v_floor) / denom).clamp(0.0, 1.0);
-    (1.0 + lambda_v * g).clamp(0.0, 5.0)
+    (lambda_v * g).clamp(0.0, 2.0) // MAX_COUPLING_MULT = 2.0 in main
 }
 
 // ── E5 result structs ────────────────────────────────────────────

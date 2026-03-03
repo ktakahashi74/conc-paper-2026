@@ -58,14 +58,14 @@
 
 \subsection{S1.3 Kuramoto Phase Coupling (Experiment 3)}
 
-\noindent\textbf{Parameters:} $k_{\text{time}}\!=\!1.5$, $\lambda_v\!=\!1.0$, $v_{\text{floor}}\!=\!0.0$, $E_{\text{cap}}\!=\!1.0$, kick at 2\,Hz.
+\noindent\textbf{Parameters:} $k_{\text{time}}\!=\!3.0$, $\lambda_v\!=\!1.0$, $v_{\text{floor}}\!=\!0.0$, $E_{\text{cap}}\!=\!1.0$, kick at 2\,Hz.
 
 \smallskip
 \noindent\texttt{for} each time step $dt$:\\
 \hspace*{1em}\texttt{for} each agent $a_i$:\\
 \hspace*{2em}$v_i \gets (E_i / E_{\text{cap}})^{0.5}$ \hfill\textit{(vitality)}\\
 \hspace*{2em}$g_i \gets \mathrm{clamp}\!\bigl((v_i - v_{\text{floor}})/(1 - v_{\text{floor}}),\;0,\;1\bigr)$\\
-\hspace*{2em}$k_{\text{eff},i} \gets k_{\text{time}} \cdot (1 + \lambda_v \cdot g_i)$\\
+\hspace*{2em}$k_{\text{eff},i} \gets k_{\text{time}} \cdot \lambda_v \cdot g_i$\\
 \hspace*{2em}$\dot{\phi}_i \gets \omega_i + (k_{\text{eff},i}/N)\sum_j \sin(\phi_j - \phi_i) + F(t)$\\
 \hspace*{2em}$\phi_i \gets \phi_i + \dot{\phi}_i \cdot dt$\\
 \hspace*{1em}$R(t) = (1/N)\bigl|\sum_j e^{i\phi_j}\bigr|$ \hfill\textit{(order parameter)}
@@ -159,7 +159,7 @@ Time step & $\Delta t$ & --- & 512/48k\,s & 0.02\,s & 512/48k\,s \\
 Termination & & --- & 200 deaths & 40\,s & 4000 deaths \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{Temporal coupling}} \\
-Base coupling & $k_{\text{time}}$ & --- & --- & 1.5 & --- \\
+Base coupling & $k_{\text{time}}$ & --- & --- & 3.0 & --- \\
 Vitality sensitivity & $\lambda_v$ & --- & --- & 1.0 & --- \\
 Vitality floor & $v_{\text{floor}}$ & --- & --- & 0.0 & --- \\
 External kick & $f_{\text{kick}}$ & --- & --- & 2\,Hz & --- \\
