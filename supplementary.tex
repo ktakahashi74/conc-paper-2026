@@ -28,16 +28,16 @@
 \subsection{S1.1 Pitch Adaptation (Experiment 1)}
 
 \noindent\textbf{Input:} agents $\{a_1,\ldots,a_N\}$ with pitches $x_i$ in $\log_2$-freq space.\\
-\textbf{Parameters:} step size $\lambda\!=\!0.15$\,st, repulsion kernel $\sigma_r\!=\!0.06$\,st, $T_0\!=\!0.05$, $\tau\!=\!30$.
+\textbf{Parameters:} step size $\lambda\!=\!0.15$\,st, crowding weight $\lambda_C$, $T_0\!=\!0.05$, $\tau\!=\!30$.
 
 \smallskip
 \noindent\texttt{for} round $t = 1$ \texttt{to} $100$:\\
 \hspace*{1em}$T_t \gets T_0 \cdot \exp(-t/\tau)$\\
 \hspace*{1em}\texttt{for} each agent $a_i$:\\
 \hspace*{2em}$\delta \sim \mathrm{Uniform}(-\lambda,\,+\lambda)$; \quad $x' \gets x_i + \delta$\\
-\hspace*{2em}$\mathrm{Rep}(x) = \sum_{j \neq i} \exp\!\bigl({-}(x{-}x_j)^2 / 2\sigma_r^2\bigr)$\\
-\hspace*{2em}$S_{\text{old}} \gets s(t) \cdot C_{\text{field}}(x_i) - \mathrm{Rep}(x_i)$\\
-\hspace*{2em}$S_{\text{new}} \gets s(t) \cdot C_{\text{field}}(x') - \mathrm{Rep}(x')$\\
+\hspace*{2em}$P(x) = \lambda_C \sum_{j \neq i} K_{\text{crowd}}(\Delta_{\text{erb}}(x,x_j))$\\
+\hspace*{2em}$S_{\text{old}} \gets s(t) \cdot C_{\text{field}}(x_i) - P(x_i)$\\
+\hspace*{2em}$S_{\text{new}} \gets s(t) \cdot C_{\text{field}}(x') - P(x')$\\
 \hspace*{2em}\texttt{if} $U(0,1) < \min\!\bigl(1,\,\exp\bigl((S_{\text{new}} - S_{\text{old}})/T_t\bigr)\bigr)$ \texttt{then} $x_i \gets x'$
 
 \smallskip
@@ -58,13 +58,14 @@
 
 \subsection{S1.3 Kuramoto Phase Coupling (Experiment 3)}
 
-\noindent\textbf{Parameters:} $K_{\text{base}}\!=\!3.0$, $E_{\text{cap}}\!=\!1.0$, kick at 2\,Hz.
+\noindent\textbf{Parameters:} $k_{\text{time}}\!=\!1.5$, $\lambda_v\!=\!1.0$, $v_{\text{floor}}\!=\!0.0$, $E_{\text{cap}}\!=\!1.0$, kick at 2\,Hz.
 
 \smallskip
 \noindent\texttt{for} each time step $dt$:\\
 \hspace*{1em}\texttt{for} each agent $a_i$:\\
-\hspace*{2em}$v_i \gets \sqrt{E_i / E_{\text{cap}}}$ \hfill\textit{(vitality)}\\
-\hspace*{2em}$k_{\text{eff},i} \gets K_{\text{base}} \cdot v_i$\\
+\hspace*{2em}$v_i \gets (E_i / E_{\text{cap}})^{0.5}$ \hfill\textit{(vitality)}\\
+\hspace*{2em}$g_i \gets \mathrm{clamp}\!\bigl((v_i - v_{\text{floor}})/(1 - v_{\text{floor}}),\;0,\;1\bigr)$\\
+\hspace*{2em}$k_{\text{eff},i} \gets k_{\text{time}} \cdot (1 + \lambda_v \cdot g_i)$\\
 \hspace*{2em}$\dot{\phi}_i \gets \omega_i + (k_{\text{eff},i}/N)\sum_j \sin(\phi_j - \phi_i) + F(t)$\\
 \hspace*{2em}$\phi_i \gets \phi_i + \dot{\phi}_i \cdot dt$\\
 \hspace*{1em}$R(t) = (1/N)\bigl|\sum_j e^{i\phi_j}\bigr|$ \hfill\textit{(order parameter)}
@@ -74,7 +75,7 @@
 
 \subsection{S1.4 Hereditary Respawn (Experiment 4)}
 
-\noindent\textbf{Parameters:} mutation $\sigma\!=\!0.003\,\log_2$, repulsion $\sigma_r\!=\!0.06$\,st.
+\noindent\textbf{Parameters:} mutation $\sigma\!=\!0.003\,\log_2$, crowding weight $\lambda_C$.
 
 \smallskip
 \noindent\texttt{for} each time step:\\
@@ -142,7 +143,7 @@ Sigmoid $(\beta,\theta)$ & & --- & $(2,0)$ & --- & $(2,0)$ \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{Pitch adaptation}} \\
 Step size & $\lambda$ & 0.15\,st & --- & --- & --- \\
-Repulsion kernel & $\sigma_r$ & 0.06\,st & --- & --- & 0.06\,st \\
+Crowding weight & $\lambda_C$ & 0.15 & --- & --- & 0.15 \\
 Initial temperature & $T_0$ & 0.05 & --- & --- & --- \\
 Annealing time constant & $\tau$ & 30 steps & --- & --- & --- \\
 Duration & & 100 rounds & --- & --- & --- \\
@@ -158,7 +159,9 @@ Time step & $\Delta t$ & --- & 512/48k\,s & 0.02\,s & 512/48k\,s \\
 Termination & & --- & 200 deaths & 40\,s & 4000 deaths \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{Temporal coupling}} \\
-Coupling strength & $K$ & --- & --- & 3.0 & --- \\
+Base coupling & $k_{\text{time}}$ & --- & --- & 1.5 & --- \\
+Vitality sensitivity & $\lambda_v$ & --- & --- & 1.0 & --- \\
+Vitality floor & $v_{\text{floor}}$ & --- & --- & 0.0 & --- \\
 External kick & $f_{\text{kick}}$ & --- & --- & 2\,Hz & --- \\
 Intrinsic frequency & $\omega_0$ & --- & --- & $1.8 \cdot 2\pi$ & --- \\
 Frequency jitter & & --- & --- & $\pm 2\%$ & --- \\
@@ -265,7 +268,7 @@ Interval entropy & $3.93 \pm 0.16$ & $3.53 \pm 0.32$ & $-5.0$ \\
 \end{tabular}
 \end{table}
 
-The consonance-only condition still produces structured polyphony (14.8 unique pitch bins, well above the collapse level of $\approx$13 observed without repulsion in the main text) and achieves \emph{higher} mean consonance ($C_{\text{score}} = 0.54$ vs.\ $0.47$), confirming that consonant structure emerges from the landscape--repulsion interaction alone. However, the curriculum significantly improves diversity: more unique pitch bins ($19.2$ vs.\ $14.8$), wider nearest-neighbour spacing ($0.57$ vs.\ $0.35$\,st), and higher interval entropy ($3.93$ vs.\ $3.53$\,nats). The dissonance-seeking phase thus serves as an initialisation strategy that broadens the starting distribution, but the self-organised polyphony reported in the main text is not an artefact of the curriculum schedule.
+The consonance-only condition still produces structured polyphony (14.8 unique pitch bins, well above the collapse level of $\approx$13 observed without crowding in the main text) and achieves \emph{higher} mean consonance ($C_{\text{score}} = 0.54$ vs.\ $0.47$), confirming that consonant structure emerges from the landscape--penalty interaction alone. However, the curriculum significantly improves diversity: more unique pitch bins ($19.2$ vs.\ $14.8$), wider nearest-neighbour spacing ($0.57$ vs.\ $0.35$\,st), and higher interval entropy ($3.93$ vs.\ $3.53$\,nats). The dissonance-seeking phase thus serves as an initialisation strategy that broadens the starting distribution, but the self-organised polyphony reported in the main text is not an artefact of the curriculum schedule.
 
 \section{S7. Terrain Control and Robustness Analysis}
 
@@ -295,7 +298,7 @@ $C_{\text{score}}$ (ref) & $0.474 \pm 0.040$ & $0.388 \pm 0.031$ & $-7.6^{***}$ 
 \end{table}
 
 $C_{\text{score}}$ (ref) denotes the consonance score of each final configuration evaluated on the \emph{original} (unshuffled) landscape, enabling a fair cross-condition comparison.
-Without coherent spatial gradients, agents still spread across the register (similar unique-bin count and nearest-neighbour spacing) thanks to the repulsion term, but the interval structure degrades sharply: entropy rises from $3.93$ to $4.65$\,nats ($p < 0.0001$), approaching the uniform distribution.
+Without coherent spatial gradients, agents still spread across the register (similar unique-bin count and nearest-neighbour spacing) thanks to the crowding penalty, but the interval structure degrades sharply: entropy rises from $3.93$ to $4.65$\,nats ($p < 0.0001$), approaching the uniform distribution.
 The coherent psychoacoustic landscape is therefore necessary for agents to self-organise into musically structured pitch configurations.
 
 \subsection{S7.2 Harmonicity--Roughness Misalignment Control}
@@ -333,7 +336,7 @@ The shuffled-landscape control (S7.1) remains the stronger test, demonstrating t
 
 The consonance kernel $C = a\,H_{01} + b\,R_{01} + c\,H_{01}\,R_{01} + d$ has four coefficients; the default is $(a,b,c,d) = (1.0, {-}1.35, 1.0, 0.0)$.
 We sweep $b \in \{-2.0, {-}1.35, {-}0.7, 0.0\}$ and $c \in \{0.0, 0.5, 1.0, 1.5\}$ with $a=1$, $d=0$ fixed (16 conditions, 20 seeds each).
-Table~\ref{tab:coeff} shows all conditions produce unique-bin counts of $\geq 19$, well above the collapse level of $\approx$13 observed without repulsion.
+Table~\ref{tab:coeff} shows all conditions produce unique-bin counts of $\geq 19$, well above the collapse level of $\approx$13 observed without crowding.
 
 \begin{table}[h]
 \centering

@@ -27,7 +27,9 @@ use conchordal::core::harmonicity_kernel::{HarmonicityKernel, HarmonicityParams}
 use conchordal::core::landscape::{LandscapeParams, RoughnessScalarMode};
 use conchordal::core::log2space::{Log2Space, sample_scan_linear_log2};
 use conchordal::core::psycho_state;
-use conchordal::core::roughness_kernel::{KernelParams, RoughnessKernel};
+use conchordal::core::roughness_kernel::{
+    KernelParams, RoughnessKernel, crowding_runtime_delta_erb,
+};
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -47,8 +49,7 @@ const E2_STEP_SEMITONES: f32 = 0.25;
 const E2_ANCHOR_BIN_ST: f32 = 0.5;
 const E2_PAIRWISE_BIN_ST: f32 = 0.05;
 const E2_N_AGENTS: usize = 24;
-const E2_LAMBDA: f32 = 0.15;
-const E2_SIGMA: f32 = 0.06;
+const E2_CROWDING_WEIGHT: f32 = 0.15;
 const E2_INIT_CONSONANT_EXCLUSION_ST: f32 = 0.35;
 const E2_INIT_MAX_TRIES: usize = 5000;
 const E2_C_LEVEL_BETA: f32 = 2.0;
@@ -203,8 +204,7 @@ const E4_WR_PEAKLIST_TOP_N: usize = 64;
 const E4_ORACLE_TOP_N: usize = 64;
 const E4_ORACLE_SAMPLE_TRIALS: usize = 256;
 const E4_DYNAMICS_PROBE_STEPS: u32 = 80;
-const E4_DYNAMICS_BASE_LAMBDA: f32 = E2_LAMBDA;
-const E4_DYNAMICS_REPULSION_SIGMA: f32 = E2_SIGMA;
+const E4_DYNAMICS_CROWDING_WEIGHT: f32 = E2_CROWDING_WEIGHT;
 const E4_DYNAMICS_STEP_SEMITONES: f32 = E2_STEP_SEMITONES;
 const E4_DYNAMICS_PEAK_TOP_N: usize = 64;
 const E4_ABCD_TRACE_STEPS: u32 = E4_DYNAMICS_PROBE_STEPS;
@@ -244,7 +244,10 @@ const E3_SEEDS: [u64; 20] = [
 const E5_KICK_OMEGA: f32 = 2.0 * PI * 2.0;
 const E5_AGENT_OMEGA_MEAN: f32 = 2.0 * PI * 1.8;
 const E5_AGENT_JITTER: f32 = 0.02;
-const E5_K_BASE: f32 = 3.0;
+const E5_K_TIME: f32 = 1.5; // = ω_eff × k_global (matches k_time in articulation_core)
+const E5_LAMBDA_V: f32 = 1.0; // vitality sensitivity in coupling_multiplier
+const E5_V_FLOOR: f32 = 0.0; // vitality floor (0 = full range)
+const E5_VITALITY_EXPONENT: f32 = 0.5; // = sqrt (matches main)
 const E5_N_AGENTS: usize = 32;
 const E5_DT: f32 = 0.02;
 const E5_STEPS: usize = 2000;
@@ -669,6 +672,10 @@ fn parse_experiments(args: &[String]) -> Result<Vec<Experiment>, String> {
             i += 1;
             continue;
         }
+        if arg == "--e2-replay" {
+            i += 1;
+            continue;
+        }
         if arg == "-e" || arg == "--exp" || arg == "--experiment" {
             if i + 1 >= args.len() {
                 return Err(format!("Missing value after {arg}\n{}", usage()));
@@ -1021,6 +1028,14 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
         println!("{}", usage());
         return Ok(());
     }
+
+    // Handle --e2-replay: generate WAV with pure sine replay and exit
+    if args.iter().any(|arg| arg == "--e2-replay") {
+        let out_path = PathBuf::from("supplementary_audio/audio/15_exp1_replay.wav");
+        generate_e2_replay_wav(&out_path)?;
+        return Ok(());
+    }
+
     let e4_hist_enabled = parse_e4_hist(&args).map_err(io::Error::other)?;
     let e4_kernel_gate_enabled = parse_e4_kernel_gate(&args).map_err(io::Error::other)?;
     let e4_wr_enabled = parse_e4_wr(&args).map_err(io::Error::other)?;
@@ -1506,7 +1521,7 @@ fn plot_e2_emergent_harmony(
                 e2_seed_sweep(
                     space,
                     anchor_hz,
-                    E2Condition::NoRepulsion,
+                    E2Condition::NoCrowding,
                     E2_STEP_SEMITONES,
                     phase_mode,
                     None,
@@ -1607,8 +1622,8 @@ fn plot_e2_emergent_harmony(
         series_csv("step,mean_score", &baseline_run.mean_score_series),
     )?;
     write_with_log(
-        out_dir.join("paper_e2_repulsion_timeseries.csv"),
-        series_csv("step,mean_repulsion", &baseline_run.mean_repulsion_series),
+        out_dir.join("paper_e2_crowding_timeseries.csv"),
+        series_csv("step,mean_crowding", &baseline_run.mean_crowding_series),
     )?;
     write_with_log(
         out_dir.join("paper_e2_moved_frac_timeseries.csv"),
@@ -1719,17 +1734,17 @@ fn plot_e2_emergent_harmony(
     render_series_plot_with_markers(
         &mean_score_path,
         &format!("Mean Score Over Time ({caption_suffix})"),
-        "mean score (C - λ·repulsion)",
+        "mean score (C - λ_R·R - λ_C·K)",
         &series_pairs(&baseline_run.mean_score_series),
         &marker_steps,
     )?;
 
-    let mean_repulsion_path = out_dir.join("paper_e2_mean_repulsion_over_time.svg");
+    let mean_crowding_path = out_dir.join("paper_e2_mean_crowding_over_time.svg");
     render_series_plot_with_markers(
-        &mean_repulsion_path,
-        &format!("Mean Repulsion Over Time ({caption_suffix})"),
-        "mean repulsion",
-        &series_pairs(&baseline_run.mean_repulsion_series),
+        &mean_crowding_path,
+        &format!("Mean Crowding Over Time ({caption_suffix})"),
+        "mean crowding",
+        &series_pairs(&baseline_run.mean_crowding_series),
         &marker_steps,
     )?;
 
@@ -1793,7 +1808,7 @@ fn plot_e2_emergent_harmony(
     )?;
     emit_pairwise_interval_dumps_for_condition(out_dir, "baseline", &baseline_runs)?;
     emit_pairwise_interval_dumps_for_condition(out_dir, "nohill", &nohill_runs)?;
-    emit_pairwise_interval_dumps_for_condition(out_dir, "norep", &norep_runs)?;
+    emit_pairwise_interval_dumps_for_condition(out_dir, "nocrowd", &norep_runs)?;
     let pairwise_hist_path = out_dir.join("paper_e2_pairwise_interval_histogram.svg");
     render_interval_histogram(
         &pairwise_hist_path,
@@ -1850,7 +1865,7 @@ fn plot_e2_emergent_harmony(
     for (cond, runs) in [
         ("baseline", &baseline_runs),
         ("nohill", &nohill_runs),
-        ("norep", &norep_runs),
+        ("nocrowd", &norep_runs),
     ] {
         for run in runs.iter() {
             for (segment, start, end) in &flutter_segments {
@@ -1920,11 +1935,11 @@ fn plot_e2_emergent_harmony(
         ),
     )?;
     write_with_log(
-        out_dir.join("paper_e2_seed_sweep_mean_repulsion.csv"),
+        out_dir.join("paper_e2_seed_sweep_mean_crowding.csv"),
         sweep_csv(
             "step,mean,std,n",
-            &baseline_stats.mean_repulsion,
-            &baseline_stats.std_repulsion,
+            &baseline_stats.mean_crowding,
+            &baseline_stats.std_crowding,
             baseline_stats.n,
         ),
     )?;
@@ -1983,13 +1998,13 @@ fn plot_e2_emergent_harmony(
         &marker_steps,
     )?;
 
-    let sweep_rep_path = out_dir.join("paper_e2_mean_repulsion_over_time_seeds.svg");
+    let sweep_crowding_path = out_dir.join("paper_e2_mean_crowding_over_time_seeds.svg");
     render_series_plot_with_band(
-        &sweep_rep_path,
-        "Mean Repulsion (seed sweep)",
-        "mean repulsion",
-        &baseline_stats.mean_repulsion,
-        &baseline_stats.std_repulsion,
+        &sweep_crowding_path,
+        "Mean Crowding (seed sweep)",
+        "mean crowding",
+        &baseline_stats.mean_crowding,
+        &baseline_stats.std_crowding,
         &marker_steps,
     )?;
 
@@ -2010,7 +2025,7 @@ fn plot_e2_emergent_harmony(
         &[
             ("baseline", &baseline_stats.mean_c_level, PAL_H),
             ("no hill-climb", &nohill_stats.mean_c_level, PAL_R),
-            ("no repulsion", &norep_stats.mean_c_level, PAL_CD),
+            ("no crowding", &norep_stats.mean_c_level, PAL_CD),
         ],
         &marker_steps,
     )?;
@@ -2034,7 +2049,7 @@ fn plot_e2_emergent_harmony(
                 PAL_R,
             ),
             (
-                "no repulsion",
+                "no crowding",
                 &norep_stats.mean_c,
                 &norep_stats.std_c,
                 PAL_CD,
@@ -2063,7 +2078,7 @@ fn plot_e2_emergent_harmony(
                 PAL_R,
             ),
             (
-                "no repulsion",
+                "no crowding",
                 &norep_stats.mean_c_score_loo,
                 &norep_stats.std_c_score_loo,
                 PAL_CD,
@@ -2088,7 +2103,7 @@ fn plot_e2_emergent_harmony(
     let mut diversity_rows_vec = Vec::new();
     diversity_rows_vec.extend(diversity_rows("baseline", &baseline_runs));
     diversity_rows_vec.extend(diversity_rows("nohill", &nohill_runs));
-    diversity_rows_vec.extend(diversity_rows("norep", &norep_runs));
+    diversity_rows_vec.extend(diversity_rows("nocrowd", &norep_runs));
     write_with_log(
         out_dir.join("paper_e2_diversity_by_seed.csv"),
         diversity_by_seed_csv(&diversity_rows_vec),
@@ -2122,7 +2137,7 @@ fn plot_e2_emergent_harmony(
     let mut hist_rows = Vec::new();
     hist_rows.extend(hist_structure_rows("baseline", &baseline_runs));
     hist_rows.extend(hist_structure_rows("nohill", &nohill_runs));
-    hist_rows.extend(hist_structure_rows("norep", &norep_runs));
+    hist_rows.extend(hist_structure_rows("nocrowd", &norep_runs));
     write_with_log(
         out_dir.join("paper_e2_hist_structure_by_seed.csv"),
         hist_structure_by_seed_csv(&hist_rows),
@@ -2282,7 +2297,7 @@ fn plot_e2_emergent_harmony(
         &baseline_runs,
     ));
     consonant_rows.extend(consonant_mass_rows_for_condition("nohill", &nohill_runs));
-    consonant_rows.extend(consonant_mass_rows_for_condition("norep", &norep_runs));
+    consonant_rows.extend(consonant_mass_rows_for_condition("nocrowd", &norep_runs));
     write_with_log(
         out_dir.join("paper_e2_consonant_mass_by_seed.csv"),
         consonant_mass_by_seed_csv(&consonant_rows),
@@ -2349,7 +2364,7 @@ fn plot_e2_emergent_harmony(
         &[
             ("baseline", &hist_stats_05.mean_frac, PAL_H),
             ("no hill-climb", &nohill_hist_05.mean_frac, PAL_R),
-            ("no repulsion", &norep_hist_05.mean_frac, PAL_CD),
+            ("no crowding", &norep_hist_05.mean_frac, PAL_CD),
         ],
     )?;
 
@@ -2371,7 +2386,7 @@ fn plot_e2_emergent_harmony(
     for (label, runs) in [
         ("baseline", &baseline_runs),
         ("nohill", &nohill_runs),
-        ("norep", &norep_runs),
+        ("nocrowd", &norep_runs),
     ] {
         let mut init_vals = Vec::new();
         let mut pre_vals = Vec::new();
@@ -2419,7 +2434,7 @@ fn plot_e2_emergent_harmony(
         let conditions: Vec<(&str, &[E2Run])> = vec![
             ("baseline", &baseline_runs),
             ("no_hill_climb", &nohill_runs),
-            ("no_repulsion", &norep_runs),
+            ("no_crowding", &norep_runs),
         ];
 
         let mut eval_text = String::from(
@@ -3258,7 +3273,8 @@ fn run_e2_once(
         }
     };
 
-    let (_erb_scan, du_scan) = erb_grid_for_space(space);
+    let (erb_scan, du_scan) = erb_grid_for_space(space);
+    let kernel_params = KernelParams::default();
     let mut workspace = build_consonance_workspace(space);
     if let Some(k) = kernel {
         workspace.params.consonance_kernel = k;
@@ -3271,7 +3287,7 @@ fn run_e2_once(
     let mut mean_c_score_loo_series = Vec::with_capacity(E2_SWEEPS);
     let mut mean_c_score_chosen_loo_series = Vec::with_capacity(E2_SWEEPS);
     let mut mean_score_series = Vec::with_capacity(E2_SWEEPS);
-    let mut mean_repulsion_series = Vec::with_capacity(E2_SWEEPS);
+    let mut mean_crowding_series = Vec::with_capacity(E2_SWEEPS);
     let mut moved_frac_series = Vec::with_capacity(E2_SWEEPS);
     let mut accepted_worse_frac_series = Vec::with_capacity(E2_SWEEPS);
     let mut attempted_update_frac_series = Vec::with_capacity(E2_SWEEPS);
@@ -3402,13 +3418,14 @@ fn run_e2_once(
                 &env_scan,
                 &density_scan,
                 &du_scan,
+                &erb_scan,
                 &log2_ratio_scan,
                 min_idx,
                 max_idx,
                 k_bins,
                 score_sign,
-                E2_LAMBDA,
-                E2_SIGMA,
+                E2_CROWDING_WEIGHT,
+                &kernel_params,
                 temperature,
                 sweep,
                 block_backtrack,
@@ -3419,7 +3436,7 @@ fn run_e2_once(
                 },
                 &mut rng,
             ),
-            E2Condition::NoRepulsion => update_e2_sweep_scored_loo(
+            E2Condition::NoCrowding => update_e2_sweep_scored_loo(
                 E2_UPDATE_SCHEDULE,
                 &mut agent_indices,
                 &positions_before_update,
@@ -3428,13 +3445,14 @@ fn run_e2_once(
                 &env_scan,
                 &density_scan,
                 &du_scan,
+                &erb_scan,
                 &log2_ratio_scan,
                 min_idx,
                 max_idx,
                 k_bins,
                 score_sign,
                 0.0,
-                E2_SIGMA,
+                &kernel_params,
                 temperature,
                 sweep,
                 block_backtrack,
@@ -3460,10 +3478,10 @@ fn run_e2_once(
                 let mut stats = score_stats_at_indices(
                     &agent_indices,
                     &c_score_scan,
-                    &log2_ratio_scan,
+                    &erb_scan,
                     score_sign,
-                    E2_LAMBDA,
-                    E2_SIGMA,
+                    E2_CROWDING_WEIGHT,
+                    &kernel_params,
                 );
                 if !agent_indices.is_empty() {
                     stats.moved_frac = moved as f32 / agent_indices.len() as f32;
@@ -3487,13 +3505,14 @@ fn run_e2_once(
                     &mut agent_indices,
                     &positions_before_update,
                     &shuffled_scores,
+                    &erb_scan,
                     &log2_ratio_scan,
                     min_idx,
                     max_idx,
                     k_bins,
                     score_sign,
-                    E2_LAMBDA,
-                    E2_SIGMA,
+                    E2_CROWDING_WEIGHT,
+                    &kernel_params,
                     temperature,
                     sweep,
                     block_backtrack,
@@ -3530,7 +3549,7 @@ fn run_e2_once(
         }
         let condition_label = match condition {
             E2Condition::Baseline => "baseline",
-            E2Condition::NoRepulsion => "norep",
+            E2Condition::NoCrowding => "nocrowd",
             E2Condition::NoHillClimb => "nohill",
             E2Condition::ShuffledLandscape => "shuffled",
         };
@@ -3547,7 +3566,7 @@ fn run_e2_once(
         mean_c_score_loo_series.push(stats.mean_c_score_current_loo);
         mean_c_score_chosen_loo_series.push(stats.mean_c_score_chosen_loo);
         mean_score_series.push(stats.mean_score);
-        mean_repulsion_series.push(stats.mean_repulsion);
+        mean_crowding_series.push(stats.mean_crowding);
         moved_frac_series.push(stats.moved_frac);
         accepted_worse_frac_series.push(stats.accepted_worse_frac);
         attempted_update_frac_series.push(stats.attempted_update_frac);
@@ -3603,7 +3622,7 @@ fn run_e2_once(
         mean_c_score_loo_series,
         mean_c_score_chosen_loo_series,
         mean_score_series,
-        mean_repulsion_series,
+        mean_crowding_series,
         moved_frac_series,
         accepted_worse_frac_series,
         attempted_update_frac_series,
@@ -3718,9 +3737,9 @@ fn e2_seed_sweep(
             .map(|r| &r.mean_score_series)
             .collect::<Vec<_>>(),
     );
-    let mean_repulsion = mean_std_series(
+    let mean_crowding = mean_std_series(
         runs.iter()
-            .map(|r| &r.mean_repulsion_series)
+            .map(|r| &r.mean_crowding_series)
             .collect::<Vec<_>>(),
     );
 
@@ -3735,8 +3754,8 @@ fn e2_seed_sweep(
             std_c_score_loo: mean_c_score_loo.1,
             mean_score: mean_score.0,
             std_score: mean_score.1,
-            mean_repulsion: mean_repulsion.0,
-            std_repulsion: mean_repulsion.1,
+            mean_crowding: mean_crowding.0,
+            std_crowding: mean_crowding.1,
             n,
         },
     )
@@ -6141,6 +6160,15 @@ impl E5Condition {
     }
 }
 
+/// Coupling multiplier matching `coupling_multiplier_from_mode()` in articulation_core.rs.
+/// Maps vitality → multiplicative factor on k_time via `TemporalTimesVitality` logic.
+#[inline]
+fn e5_coupling_multiplier(vitality: f32, lambda_v: f32, v_floor: f32) -> f32 {
+    let denom = (1.0 - v_floor).max(1e-6);
+    let g = ((vitality - v_floor) / denom).clamp(0.0, 1.0);
+    (1.0 + lambda_v * g).clamp(0.0, 5.0)
+}
+
 // ── E5 result structs ────────────────────────────────────────────
 struct E5VitalityResult {
     /// Per-step group mean PLV
@@ -6274,13 +6302,21 @@ fn simulate_e5_stratified(
         // Vitality
         let vitalities: Vec<f32> = energies
             .iter()
-            .map(|&e| (e / E5_E_CAP).clamp(0.0, 1.0).sqrt())
+            .map(|&e| (e / E5_E_CAP).clamp(0.0, 1.0).powf(E5_VITALITY_EXPONENT))
             .collect();
         let mean_v: f32 = vitalities.iter().sum::<f32>() / E5_N_AGENTS as f32;
-        // Coupling
+        // Coupling (matches articulation_core coupling_multiplier_from_mode)
         let k_effs: Vec<f32> = match condition {
-            E5Condition::Vitality => vitalities.iter().map(|&v| E5_K_BASE * v).collect(),
-            E5Condition::Uniform => vec![E5_K_BASE * mean_v; E5_N_AGENTS],
+            E5Condition::Vitality => vitalities
+                .iter()
+                .map(|&v| {
+                    E5_K_TIME * e5_coupling_multiplier(v, E5_LAMBDA_V, E5_V_FLOOR)
+                })
+                .collect(),
+            E5Condition::Uniform => {
+                let cm = e5_coupling_multiplier(mean_v, E5_LAMBDA_V, E5_V_FLOOR);
+                vec![E5_K_TIME * cm; E5_N_AGENTS]
+            }
             E5Condition::Control => vec![0.0; E5_N_AGENTS],
         };
         // Phase update (couple each agent to external kick only)
@@ -6399,10 +6435,10 @@ fn simulate_e5_vitality(
         // Compute vitality per agent
         let vitalities: Vec<f32> = energies
             .iter()
-            .map(|&e| (e / E5_E_CAP).clamp(0.0, 1.0).sqrt())
+            .map(|&e| (e / E5_E_CAP).clamp(0.0, 1.0).powf(E5_VITALITY_EXPONENT))
             .collect();
 
-        // Compute per-agent coupling
+        // Compute per-agent coupling (matches articulation_core coupling_multiplier_from_mode)
         let mean_vitality: f32 =
             vitalities.iter().copied().sum::<f32>() / E5_N_AGENTS as f32;
 
@@ -6412,8 +6448,14 @@ fn simulate_e5_vitality(
         // Phase update per agent
         for i in 0..E5_N_AGENTS {
             let k_eff_i = match condition {
-                E5Condition::Vitality => E5_K_BASE * vitalities[i],
-                E5Condition::Uniform => E5_K_BASE * mean_vitality,
+                E5Condition::Vitality => {
+                    let cm = e5_coupling_multiplier(vitalities[i], E5_LAMBDA_V, E5_V_FLOOR);
+                    E5_K_TIME * cm
+                }
+                E5Condition::Uniform => {
+                    let cm = e5_coupling_multiplier(mean_vitality, E5_LAMBDA_V, E5_V_FLOOR);
+                    E5_K_TIME * cm
+                }
                 E5Condition::Control => 0.0,
             };
             phases[i] =
@@ -7168,7 +7210,7 @@ struct ConsonanceWorkspace {
 enum E2Condition {
     Baseline,
     NoHillClimb,
-    NoRepulsion,
+    NoCrowding,
     ShuffledLandscape,
 }
 
@@ -7188,7 +7230,7 @@ struct E2Run {
     mean_c_score_loo_series: Vec<f32>,
     mean_c_score_chosen_loo_series: Vec<f32>,
     mean_score_series: Vec<f32>,
-    mean_repulsion_series: Vec<f32>,
+    mean_crowding_series: Vec<f32>,
     moved_frac_series: Vec<f32>,
     accepted_worse_frac_series: Vec<f32>,
     attempted_update_frac_series: Vec<f32>,
@@ -7225,8 +7267,8 @@ struct E2SweepStats {
     std_c_score_loo: Vec<f32>,
     mean_score: Vec<f32>,
     std_score: Vec<f32>,
-    mean_repulsion: Vec<f32>,
-    std_repulsion: Vec<f32>,
+    mean_crowding: Vec<f32>,
+    std_crowding: Vec<f32>,
     n: usize,
 }
 
@@ -7704,7 +7746,7 @@ struct E4WrDynamicsProbeRow {
     mean_c01: f32,
     mean_h01: f32,
     mean_r01: f32,
-    mean_repulsion: f32,
+    mean_crowding: f32,
     root_affinity: f32,
     overtone_affinity: f32,
     harmonic_tilt: f32,
@@ -7721,7 +7763,7 @@ struct E4WrDynamicsProbeSummaryRow {
     mean_c01: f32,
     mean_h01: f32,
     mean_r01: f32,
-    mean_repulsion: f32,
+    mean_crowding: f32,
     root_affinity_mean: f32,
     overtone_affinity_mean: f32,
     harmonic_tilt_mean: f32,
@@ -8176,10 +8218,10 @@ impl E4DynamicsProbeMode {
         }
     }
 
-    fn lambda(self) -> f32 {
+    fn crowding_weight(self) -> f32 {
         match self {
             Self::LambdaZeroSequential => 0.0,
-            _ => E4_DYNAMICS_BASE_LAMBDA,
+            _ => E4_DYNAMICS_CROWDING_WEIGHT,
         }
     }
 
@@ -11041,33 +11083,41 @@ fn mean_scan_at_indices(scan: &[f32], indices: &[usize]) -> f32 {
     if count == 0 { 0.0 } else { sum / count as f32 }
 }
 
-fn mean_repulsion_from_indices(indices: &[usize], log2_ratio_scan: &[f32], sigma: f32) -> f32 {
+fn mean_crowding_from_indices(
+    indices: &[usize],
+    erb_scan: &[f32],
+    kernel_params: &KernelParams,
+) -> f32 {
     if indices.is_empty() {
         return 0.0;
     }
-    let sigma = sigma.max(1e-6);
-    let mut sum = 0.0f32;
+    let mut crowd_sum = 0.0f32;
     let mut count = 0u32;
     for (i, &idx) in indices.iter().enumerate() {
-        let Some(&x) = log2_ratio_scan.get(idx) else {
+        let Some(&x_erb) = erb_scan.get(idx) else {
             continue;
         };
-        let mut rep = 0.0f32;
+        let mut c = 0.0f32;
         for (j, &other_idx) in indices.iter().enumerate() {
             if i == j {
                 continue;
             }
-            let Some(&y) = log2_ratio_scan.get(other_idx) else {
+            let Some(&y_erb) = erb_scan.get(other_idx) else {
                 continue;
             };
-            rep += (-(x - y).abs() / sigma).exp();
+            let d_erb = x_erb - y_erb;
+            c += crowding_runtime_delta_erb(kernel_params, d_erb);
         }
-        if rep.is_finite() {
-            sum += rep;
-            count += 1;
+        if c.is_finite() {
+            crowd_sum += c;
         }
+        count += 1;
     }
-    if count == 0 { 0.0 } else { sum / count as f32 }
+    if count == 0 {
+        0.0
+    } else {
+        crowd_sum / count as f32
+    }
 }
 
 fn pitch_diversity_st_from_indices(semitones_scan: &[f32], indices: &[usize]) -> f32 {
@@ -11104,17 +11154,16 @@ fn e4_wr_probe_best_index(
     agent_i: usize,
     current_indices: &[usize],
     c_scan: &[f32],
-    log2_ratio_scan: &[f32],
+    erb_scan: &[f32],
     min_idx: usize,
     max_idx: usize,
     k: i32,
-    lambda: f32,
-    sigma: f32,
+    crowding_weight: f32,
+    kernel_params: &KernelParams,
     peak_bins: Option<&[usize]>,
 ) -> usize {
     let current_idx = current_indices[agent_i].clamp(min_idx, max_idx);
-    let sigma = sigma.max(1e-6);
-    let skip_repulsion = lambda <= 0.0;
+    let skip_penalty = crowding_weight <= 0.0;
     let mut best_idx = current_idx;
     let mut best_score = f32::NEG_INFINITY;
 
@@ -11122,22 +11171,23 @@ fn e4_wr_probe_best_index(
         if cand_idx < min_idx || cand_idx > max_idx || cand_idx >= c_scan.len() {
             return;
         }
-        let Some(&cand_log2) = log2_ratio_scan.get(cand_idx) else {
+        let Some(&cand_erb) = erb_scan.get(cand_idx) else {
             return;
         };
-        let mut repulsion = 0.0f32;
-        if !skip_repulsion {
+        let mut crowding = 0.0f32;
+        if !skip_penalty {
             for (j, &other_idx) in current_indices.iter().enumerate() {
                 if j == agent_i {
                     continue;
                 }
-                let Some(&other_log2) = log2_ratio_scan.get(other_idx) else {
+                let Some(&other_erb) = erb_scan.get(other_idx) else {
                     continue;
                 };
-                repulsion += (-(cand_log2 - other_log2).abs() / sigma).exp();
+                let d_erb = cand_erb - other_erb;
+                crowding += crowding_runtime_delta_erb(kernel_params, d_erb);
             }
         }
-        let score = c_scan[cand_idx] - lambda * repulsion;
+        let score = c_scan[cand_idx] - crowding_weight * crowding;
         if score > *best_score {
             *best_score = score;
             *best_idx = cand_idx;
@@ -11163,12 +11213,12 @@ fn e4_wr_probe_best_index(
 fn e4_wr_probe_update_indices(
     indices: &mut [usize],
     c_scan: &[f32],
-    log2_ratio_scan: &[f32],
+    erb_scan: &[f32],
     min_idx: usize,
     max_idx: usize,
     k: i32,
-    lambda: f32,
-    sigma: f32,
+    crowding_weight: f32,
+    kernel_params: &KernelParams,
     peak_bins: Option<&[usize]>,
     synchronous: bool,
 ) {
@@ -11183,12 +11233,12 @@ fn e4_wr_probe_update_indices(
                 agent_i,
                 &prev,
                 c_scan,
-                log2_ratio_scan,
+                erb_scan,
                 min_idx,
                 max_idx,
                 k,
-                lambda,
-                sigma,
+                crowding_weight,
+                kernel_params,
                 peak_bins,
             );
         }
@@ -11199,12 +11249,12 @@ fn e4_wr_probe_update_indices(
                 agent_i,
                 indices,
                 c_scan,
-                log2_ratio_scan,
+                erb_scan,
                 min_idx,
                 max_idx,
                 k,
-                lambda,
-                sigma,
+                crowding_weight,
+                kernel_params,
                 peak_bins,
             );
             indices[agent_i] = best;
@@ -11222,7 +11272,8 @@ fn e4_wr_dynamics_probe_rows(
     let center_log2 = meta.center_cents / 1200.0;
     let half_range = 0.5 * meta.range_oct.max(0.0);
     let k = k_from_semitones(E4_DYNAMICS_STEP_SEMITONES.max(1e-3));
-    let sigma = E4_DYNAMICS_REPULSION_SIGMA.max(1e-6);
+    let kernel_params = KernelParams::default();
+    let (erb_scan, _du) = erb_grid_for_space(space);
 
     let mut rows = Vec::new();
     let mut keys: Vec<(i32, i32, u64)> = grouped_freqs.keys().copied().collect();
@@ -11275,6 +11326,7 @@ fn e4_wr_dynamics_probe_rows(
             let mut indices = initial_indices.clone();
             for step in 0..=E4_DYNAMICS_PROBE_STEPS {
                 let eval = bind_eval_from_indices(anchor_hz, &scan.log2_ratio, &indices);
+                let pen_c = mean_crowding_from_indices(&indices, &erb_scan, &kernel_params);
                 rows.push(E4WrDynamicsProbeRow {
                     wr,
                     mirror_weight,
@@ -11285,7 +11337,7 @@ fn e4_wr_dynamics_probe_rows(
                     mean_c01: mean_scan_at_indices(&scan.c, &indices),
                     mean_h01: mean_scan_at_indices(&scan.h, &indices),
                     mean_r01: mean_scan_at_indices(&scan.r, &indices),
-                    mean_repulsion: mean_repulsion_from_indices(&indices, &scan.log2_ratio, sigma),
+                    mean_crowding: pen_c,
                     root_affinity: eval.root_affinity,
                     overtone_affinity: eval.overtone_affinity,
                     harmonic_tilt: eval.harmonic_tilt,
@@ -11303,12 +11355,12 @@ fn e4_wr_dynamics_probe_rows(
                 e4_wr_probe_update_indices(
                     &mut indices,
                     &scan.c,
-                    &scan.log2_ratio,
+                    &erb_scan,
                     min_idx,
                     max_idx,
                     k,
-                    mode.lambda(),
-                    sigma,
+                    mode.crowding_weight(),
+                    &kernel_params,
                     peak_pool,
                     mode.synchronous(),
                 );
@@ -11333,7 +11385,7 @@ fn e4_wr_dynamics_probe_rows(
 
 fn e4_wr_dynamics_probe_timeseries_csv(rows: &[E4WrDynamicsProbeRow]) -> String {
     let mut out = String::from(
-        "wr,mirror_weight,seed,mode,step,n_agents,mean_c01,mean_h01,mean_r01,mean_repulsion,root_affinity,overtone_affinity,harmonic_tilt,pitch_diversity_st\n",
+        "wr,mirror_weight,seed,mode,step,n_agents,mean_c01,mean_h01,mean_r01,mean_crowding,root_affinity,overtone_affinity,harmonic_tilt,pitch_diversity_st\n",
     );
     for row in rows {
         out.push_str(&format!(
@@ -11347,7 +11399,7 @@ fn e4_wr_dynamics_probe_timeseries_csv(rows: &[E4WrDynamicsProbeRow]) -> String 
             row.mean_c01,
             row.mean_h01,
             row.mean_r01,
-            row.mean_repulsion,
+            row.mean_crowding,
             row.root_affinity,
             row.overtone_affinity,
             row.harmonic_tilt,
@@ -11380,7 +11432,7 @@ fn e4_wr_dynamics_probe_summary_rows(
         let c_vals: Vec<f32> = group.iter().map(|r| r.mean_c01).collect();
         let h_vals: Vec<f32> = group.iter().map(|r| r.mean_h01).collect();
         let r_vals: Vec<f32> = group.iter().map(|r| r.mean_r01).collect();
-        let rep_vals: Vec<f32> = group.iter().map(|r| r.mean_repulsion).collect();
+        let crowd_vals: Vec<f32> = group.iter().map(|r| r.mean_crowding).collect();
         let root_vals: Vec<f32> = group.iter().map(|r| r.root_affinity).collect();
         let ceiling_vals: Vec<f32> = group.iter().map(|r| r.overtone_affinity).collect();
         let delta_vals: Vec<f32> = group.iter().map(|r| r.harmonic_tilt).collect();
@@ -11401,7 +11453,7 @@ fn e4_wr_dynamics_probe_summary_rows(
             mean_c01: mean_std_scalar(&c_vals).0,
             mean_h01: mean_std_scalar(&h_vals).0,
             mean_r01: mean_std_scalar(&r_vals).0,
-            mean_repulsion: mean_std_scalar(&rep_vals).0,
+            mean_crowding: mean_std_scalar(&crowd_vals).0,
             root_affinity_mean: mean_std_scalar(&root_vals).0,
             overtone_affinity_mean: mean_std_scalar(&ceiling_vals).0,
             harmonic_tilt_mean,
@@ -11426,7 +11478,7 @@ fn e4_wr_dynamics_probe_summary_rows(
 
 fn e4_wr_dynamics_probe_summary_csv(rows: &[E4WrDynamicsProbeSummaryRow]) -> String {
     let mut out = String::from(
-        "wr,mirror_weight,mode,step,n_seeds,mean_c01,mean_h01,mean_r01,mean_repulsion,root_affinity_mean,overtone_affinity_mean,harmonic_tilt_mean,harmonic_tilt_ci_lo,harmonic_tilt_ci_hi,pitch_diversity_st_mean,error_kind\n",
+        "wr,mirror_weight,mode,step,n_seeds,mean_c01,mean_h01,mean_r01,mean_crowding,root_affinity_mean,overtone_affinity_mean,harmonic_tilt_mean,harmonic_tilt_ci_lo,harmonic_tilt_ci_hi,pitch_diversity_st_mean,error_kind\n",
     );
     for row in rows {
         out.push_str(&format!(
@@ -11439,7 +11491,7 @@ fn e4_wr_dynamics_probe_summary_csv(rows: &[E4WrDynamicsProbeSummaryRow]) -> Str
             row.mean_c01,
             row.mean_h01,
             row.mean_r01,
-            row.mean_repulsion,
+            row.mean_crowding,
             row.root_affinity_mean,
             row.overtone_affinity_mean,
             row.harmonic_tilt_mean,
@@ -11457,28 +11509,26 @@ fn e4_diag_candidate_score(
     current_indices: &[usize],
     cand_idx: usize,
     c_scan: &[f32],
-    log2_ratio_scan: &[f32],
-    lambda: f32,
-    sigma: f32,
+    erb_scan: &[f32],
+    crowding_weight: f32,
+    kernel_params: &KernelParams,
 ) -> Option<f32> {
     if cand_idx >= c_scan.len() {
         return None;
     }
-    let cand_log2 = *log2_ratio_scan.get(cand_idx)?;
-    let mut repulsion = 0.0f32;
-    if lambda > 0.0 {
-        let sigma = sigma.max(1e-6);
-        for (j, &other_idx) in current_indices.iter().enumerate() {
-            if j == agent_i {
-                continue;
-            }
-            let Some(&other_log2) = log2_ratio_scan.get(other_idx) else {
-                continue;
-            };
-            repulsion += (-(cand_log2 - other_log2).abs() / sigma).exp();
+    let cand_erb = *erb_scan.get(cand_idx)?;
+    let mut crowding_sum = 0.0f32;
+    for (j, &other_idx) in current_indices.iter().enumerate() {
+        if j == agent_i {
+            continue;
         }
+        let Some(&other_erb) = erb_scan.get(other_idx) else {
+            continue;
+        };
+        let d_erb = cand_erb - other_erb;
+        crowding_sum += crowding_runtime_delta_erb(kernel_params, d_erb);
     }
-    Some(c_scan[cand_idx] - lambda * repulsion)
+    Some(c_scan[cand_idx] - crowding_weight * crowding_sum)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -11487,12 +11537,12 @@ fn e4_diag_best_index_and_score(
     agent_i: usize,
     current_indices: &[usize],
     c_scan: &[f32],
-    log2_ratio_scan: &[f32],
+    erb_scan: &[f32],
     min_idx: usize,
     max_idx: usize,
     k: i32,
-    lambda: f32,
-    sigma: f32,
+    crowding_weight: f32,
+    kernel_params: &KernelParams,
     global: bool,
 ) -> (usize, f32) {
     let current_idx = current_indices[agent_i].clamp(min_idx, max_idx);
@@ -11512,9 +11562,9 @@ fn e4_diag_best_index_and_score(
             current_indices,
             cand_idx,
             c_scan,
-            log2_ratio_scan,
-            lambda,
-            sigma,
+            erb_scan,
+            crowding_weight,
+            kernel_params,
         ) else {
             continue;
         };
@@ -11616,8 +11666,9 @@ fn e4_abcd_trace_rows(
     let center_log2 = meta.center_cents / 1200.0;
     let half_range = 0.5 * meta.range_oct.max(0.0);
     let k = k_from_semitones(E4_DYNAMICS_STEP_SEMITONES.max(1e-3));
-    let sigma = E4_DYNAMICS_REPULSION_SIGMA.max(1e-6);
-    let lambda = E4_DYNAMICS_BASE_LAMBDA.max(0.0);
+    let kernel_params = KernelParams::default();
+    let (erb_scan, _du) = erb_grid_for_space(space);
+    let crowding_weight = E4_DYNAMICS_CROWDING_WEIGHT;
 
     let mut rows = Vec::new();
     let mut keys: Vec<(i32, i32, u64)> = grouped_freqs.keys().copied().collect();
@@ -11676,12 +11727,12 @@ fn e4_abcd_trace_rows(
                     agent_i,
                     &indices,
                     &scan.c,
-                    &scan.log2_ratio,
+                    &erb_scan,
                     min_idx,
                     max_idx,
                     k,
-                    lambda,
-                    sigma,
+                    crowding_weight,
+                    &kernel_params,
                     None,
                 );
             }
@@ -11724,12 +11775,12 @@ fn e4_abcd_trace_rows(
             e4_wr_probe_update_indices(
                 &mut indices,
                 &scan.c,
-                &scan.log2_ratio,
+                &erb_scan,
                 min_idx,
                 max_idx,
                 k,
-                lambda,
-                sigma,
+                crowding_weight,
+                &kernel_params,
                 None,
                 false,
             );
@@ -11824,9 +11875,10 @@ fn e4_diag_rows_from_final_freqs(
     space: &Log2Space,
     anchor_hz: f32,
     du_scan: &[f32],
+    erb_scan: &[f32],
     steps: u32,
-    lambda: f32,
-    sigma: f32,
+    crowding_weight: f32,
+    kernel_params: &KernelParams,
     k: i32,
 ) -> (Vec<E4DiagStepRow>, Vec<E4DiagPeakRow>) {
     let meta = e4_paper_meta();
@@ -11895,33 +11947,33 @@ fn e4_diag_rows_from_final_freqs(
                     &indices,
                     agent_idx,
                     &scan.c,
-                    &scan.log2_ratio,
-                    lambda,
-                    sigma,
+                    erb_scan,
+                    crowding_weight,
+                    kernel_params,
                 )
                 .unwrap_or(0.0);
                 let (oracle_global_idx, oracle_global_score) = e4_diag_best_index_and_score(
                     agent_i,
                     &indices,
                     &scan.c,
-                    &scan.log2_ratio,
+                    erb_scan,
                     min_idx,
                     max_idx,
                     k,
-                    lambda,
-                    sigma,
+                    crowding_weight,
+                    kernel_params,
                     true,
                 );
                 let (oracle_reachable_idx, oracle_reachable_score) = e4_diag_best_index_and_score(
                     agent_i,
                     &indices,
                     &scan.c,
-                    &scan.log2_ratio,
+                    erb_scan,
                     min_idx,
                     max_idx,
                     k,
-                    lambda,
-                    sigma,
+                    crowding_weight,
+                    kernel_params,
                     false,
                 );
                 let agent_st = scan.semitones.get(agent_idx).copied().unwrap_or(0.0);
@@ -11960,12 +12012,12 @@ fn e4_diag_rows_from_final_freqs(
             e4_wr_probe_update_indices(
                 &mut indices,
                 &scan.c,
-                &scan.log2_ratio,
+                erb_scan,
                 min_idx,
                 max_idx,
                 k,
-                lambda,
-                sigma,
+                crowding_weight,
+                kernel_params,
                 None,
                 false,
             );
@@ -16582,7 +16634,7 @@ struct UpdateStats {
     mean_c_score_current_loo: f32,
     mean_c_score_chosen_loo: f32,
     mean_score: f32,
-    mean_repulsion: f32,
+    mean_crowding: f32,
     moved_frac: f32,
     accepted_worse_frac: f32,
     attempted_update_frac: f32,
@@ -16599,7 +16651,7 @@ struct OneUpdateStats {
     c_score_current: f32,
     c_score_chosen: f32,
     chosen_score: f32,
-    chosen_repulsion: f32,
+    chosen_crowding: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -16650,23 +16702,23 @@ fn shift_indices_by_ratio(
 fn update_agent_indices_scored_stats(
     indices: &mut [usize],
     c_score_scan: &[f32],
-    log2_ratio_scan: &[f32],
+    erb_scan: &[f32],
     min_idx: usize,
     max_idx: usize,
     k: i32,
-    lambda: f32,
-    sigma: f32,
+    crowding_weight: f32,
+    kernel_params: &KernelParams,
 ) -> UpdateStats {
     let order: Vec<usize> = (0..indices.len()).collect();
     update_agent_indices_scored_stats_with_order(
         indices,
         c_score_scan,
-        log2_ratio_scan,
+        erb_scan,
         min_idx,
         max_idx,
         k,
-        lambda,
-        sigma,
+        crowding_weight,
+        kernel_params,
         &order,
     )
 }
@@ -16676,12 +16728,12 @@ fn update_agent_indices_scored_stats(
 fn update_agent_indices_scored_stats_with_order(
     indices: &mut [usize],
     c_score_scan: &[f32],
-    log2_ratio_scan: &[f32],
+    erb_scan: &[f32],
     min_idx: usize,
     max_idx: usize,
     k: i32,
-    lambda: f32,
-    sigma: f32,
+    crowding_weight: f32,
+    kernel_params: &KernelParams,
     order: &[usize],
 ) -> UpdateStats {
     if indices.is_empty() {
@@ -16689,7 +16741,7 @@ fn update_agent_indices_scored_stats_with_order(
             mean_c_score_current_loo: 0.0,
             mean_c_score_chosen_loo: 0.0,
             mean_score: 0.0,
-            mean_repulsion: 0.0,
+            mean_crowding: 0.0,
             moved_frac: 0.0,
             accepted_worse_frac: 0.0,
             attempted_update_frac: 0.0,
@@ -16698,18 +16750,17 @@ fn update_agent_indices_scored_stats_with_order(
             mean_abs_delta_semitones_moved: 0.0,
         };
     }
-    let sigma = sigma.max(1e-6);
-    let skip_repulsion = lambda <= 0.0;
+    let skip_penalty = crowding_weight <= 0.0;
     let prev_indices = indices.to_vec();
-    let prev_log2: Vec<f32> = prev_indices
+    let prev_erb: Vec<f32> = prev_indices
         .iter()
-        .map(|&idx| log2_ratio_scan[idx])
+        .map(|&idx| erb_scan[idx])
         .collect();
     let mut next_indices = prev_indices.clone();
     let mut score_sum = 0.0f32;
     let mut score_count = 0u32;
-    let mut repulsion_sum = 0.0f32;
-    let mut repulsion_count = 0u32;
+    let mut crowding_sum = 0.0f32;
+    let mut crowding_count = 0u32;
     let mut moved_count = 0usize;
     let mut count = 0usize;
 
@@ -16722,25 +16773,26 @@ fn update_agent_indices_scored_stats_with_order(
         let end = (current_idx as isize + k as isize).min(max_idx as isize) as usize;
         let mut best_idx = current_idx;
         let mut best_score = f32::NEG_INFINITY;
-        let mut best_repulsion = 0.0f32;
+        let mut best_crowding = 0.0f32;
         for cand in start..=end {
-            let cand_log2 = log2_ratio_scan[cand];
-            let mut repulsion = 0.0f32;
-            if !skip_repulsion {
-                for (j, &other_log2) in prev_log2.iter().enumerate() {
+            let cand_erb = erb_scan[cand];
+            let mut crowding = 0.0f32;
+            if !skip_penalty {
+                for (j, &other_erb) in prev_erb.iter().enumerate() {
                     if j == agent_i {
                         continue;
                     }
-                    let dist = (cand_log2 - other_log2).abs();
-                    repulsion += (-dist / sigma).exp();
+                    let d_erb = cand_erb - other_erb;
+
+                    crowding += crowding_runtime_delta_erb(kernel_params, d_erb);
                 }
             }
             let c_score = c_score_scan[cand];
-            let score = c_score - lambda * repulsion;
+            let score = c_score - crowding_weight * crowding;
             if score > best_score {
                 best_score = score;
                 best_idx = cand;
-                best_repulsion = repulsion;
+                best_crowding = crowding;
             }
         }
         next_indices[agent_i] = best_idx;
@@ -16751,9 +16803,9 @@ fn update_agent_indices_scored_stats_with_order(
             score_sum += best_score;
             score_count += 1;
         }
-        if best_repulsion.is_finite() {
-            repulsion_sum += best_repulsion;
-            repulsion_count += 1;
+        if best_crowding.is_finite() {
+            crowding_sum += best_crowding;
+            crowding_count += 1;
         }
         count += 1;
     }
@@ -16764,7 +16816,7 @@ fn update_agent_indices_scored_stats_with_order(
             mean_c_score_current_loo: 0.0,
             mean_c_score_chosen_loo: 0.0,
             mean_score: 0.0,
-            mean_repulsion: 0.0,
+            mean_crowding: 0.0,
             moved_frac: 0.0,
             accepted_worse_frac: 0.0,
             attempted_update_frac: 0.0,
@@ -16778,8 +16830,8 @@ fn update_agent_indices_scored_stats_with_order(
     } else {
         0.0
     };
-    let mean_repulsion = if repulsion_count > 0 {
-        repulsion_sum / repulsion_count as f32
+    let mean_crowding = if crowding_count > 0 {
+        crowding_sum / crowding_count as f32
     } else {
         0.0
     };
@@ -16788,7 +16840,7 @@ fn update_agent_indices_scored_stats_with_order(
         mean_c_score_current_loo: f32::NAN,
         mean_c_score_chosen_loo: f32::NAN,
         mean_score,
-        mean_repulsion,
+        mean_crowding,
         moved_frac: moved_count as f32 * inv,
         accepted_worse_frac: 0.0,
         attempted_update_frac: 1.0,
@@ -16821,19 +16873,20 @@ fn update_one_agent_scored_loo(
     agent_i: usize,
     indices: &mut [usize],
     prev_indices: &[usize],
-    prev_log2: &[f32],
+    prev_erb: &[f32],
     space: &Log2Space,
     workspace: &ConsonanceWorkspace,
     env_total: &[f32],
     density_total: &[f32],
     du_scan: &[f32],
+    erb_scan: &[f32],
     log2_ratio_scan: &[f32],
     min_idx: usize,
     max_idx: usize,
     k: i32,
     score_sign: f32,
-    lambda: f32,
-    sigma: f32,
+    crowding_weight: f32,
+    kernel_params: &KernelParams,
     temperature: f32,
     update_allowed: bool,
     block_backtrack: bool,
@@ -16851,20 +16904,21 @@ fn update_one_agent_scored_loo(
     let (c_score_scan, _, _, _) =
         compute_c_score_level_scans(space, workspace, env_loo, density_loo, du_scan);
 
-    let current_log2 = log2_ratio_scan[agent_idx];
-    let skip_repulsion = lambda <= 0.0;
-    let mut current_repulsion = 0.0f32;
-    if !skip_repulsion {
-        for (j, &other_log2) in prev_log2.iter().enumerate() {
+    let current_erb = erb_scan[agent_idx];
+    let skip_penalty = crowding_weight <= 0.0;
+    let mut current_crowding = 0.0f32;
+    if !skip_penalty {
+        for (j, &other_erb) in prev_erb.iter().enumerate() {
             if j == agent_i {
                 continue;
             }
-            let dist = (current_log2 - other_log2).abs();
-            current_repulsion += (-dist / sigma).exp();
+            let d_erb = current_erb - other_erb;
+            current_crowding += crowding_runtime_delta_erb(kernel_params, d_erb);
         }
     }
     let c_score_current = c_score_scan[agent_idx];
-    let current_score = score_sign * c_score_current - lambda * current_repulsion;
+    let current_score = score_sign * c_score_current
+        - crowding_weight * current_crowding;
 
     let backtrack_target = if block_backtrack {
         backtrack_targets.and_then(|prev| prev.get(agent_i).copied())
@@ -16872,30 +16926,32 @@ fn update_one_agent_scored_loo(
         None
     };
 
-    let (chosen_idx, chosen_score, chosen_repulsion, accepted_worse) = if update_allowed {
+    let (chosen_idx, chosen_score, chosen_crowding, accepted_worse) = if update_allowed {
         let start = (agent_idx as isize - k as isize).max(min_idx as isize) as usize;
         let end = (agent_idx as isize + k as isize).min(max_idx as isize) as usize;
         let mut best_idx = agent_idx;
         let mut best_score = f32::NEG_INFINITY;
-        let mut best_repulsion = 0.0f32;
+        let mut best_crowding = 0.0f32;
         let mut found_candidate = false;
         for cand in start..=end {
             if cand == agent_idx {
                 continue;
             }
-            let cand_log2 = log2_ratio_scan[cand];
-            let mut repulsion = 0.0f32;
-            if !skip_repulsion {
-                for (j, &other_log2) in prev_log2.iter().enumerate() {
+            let cand_erb = erb_scan[cand];
+            let mut crowding = 0.0f32;
+            if !skip_penalty {
+                for (j, &other_erb) in prev_erb.iter().enumerate() {
                     if j == agent_i {
                         continue;
                     }
-                    let dist = (cand_log2 - other_log2).abs();
-                    repulsion += (-dist / sigma).exp();
+                    let d_erb = cand_erb - other_erb;
+
+                    crowding += crowding_runtime_delta_erb(kernel_params, d_erb);
                 }
             }
             let c_score = c_score_scan[cand];
-            let score = score_sign * c_score - lambda * repulsion;
+            let score = score_sign * c_score
+                - crowding_weight * crowding;
             if let Some(prev_idx) = backtrack_target
                 && cand == prev_idx
                 && (score - current_score) <= E2_BACKTRACK_ALLOW_EPS
@@ -16905,29 +16961,29 @@ fn update_one_agent_scored_loo(
             if score > best_score {
                 best_score = score;
                 best_idx = cand;
-                best_repulsion = repulsion;
+                best_crowding = crowding;
                 found_candidate = true;
             }
         }
         if found_candidate {
             let delta = best_score - current_score;
             if delta > E2_SCORE_IMPROVE_EPS {
-                (best_idx, best_score, best_repulsion, false)
+                (best_idx, best_score, best_crowding, false)
             } else if delta < 0.0 {
                 let (accept, accepted_worse) = metropolis_accept(delta, temperature, u01);
                 if accept {
-                    (best_idx, best_score, best_repulsion, accepted_worse)
+                    (best_idx, best_score, best_crowding, accepted_worse)
                 } else {
-                    (agent_idx, current_score, current_repulsion, false)
+                    (agent_idx, current_score, current_crowding, false)
                 }
             } else {
-                (agent_idx, current_score, current_repulsion, false)
+                (agent_idx, current_score, current_crowding, false)
             }
         } else {
-            (agent_idx, current_score, current_repulsion, false)
+            (agent_idx, current_score, current_crowding, false)
         }
     } else {
-        (agent_idx, current_score, current_repulsion, false)
+        (agent_idx, current_score, current_crowding, false)
     };
 
     indices[agent_i] = chosen_idx;
@@ -16945,7 +17001,7 @@ fn update_one_agent_scored_loo(
         c_score_current,
         c_score_chosen,
         chosen_score,
-        chosen_repulsion,
+        chosen_crowding,
     }
 }
 
@@ -16959,13 +17015,14 @@ fn update_e2_sweep_scored_loo(
     env_total: &[f32],
     density_total: &[f32],
     du_scan: &[f32],
+    erb_scan: &[f32],
     log2_ratio_scan: &[f32],
     min_idx: usize,
     max_idx: usize,
     k: i32,
     score_sign: f32,
-    lambda: f32,
-    sigma: f32,
+    crowding_weight: f32,
+    kernel_params: &KernelParams,
     temperature: f32,
     sweep: usize,
     block_backtrack: bool,
@@ -16977,7 +17034,7 @@ fn update_e2_sweep_scored_loo(
             mean_c_score_current_loo: 0.0,
             mean_c_score_chosen_loo: 0.0,
             mean_score: 0.0,
-            mean_repulsion: 0.0,
+            mean_crowding: 0.0,
             moved_frac: 0.0,
             accepted_worse_frac: 0.0,
             attempted_update_frac: 0.0,
@@ -16989,7 +17046,6 @@ fn update_e2_sweep_scored_loo(
     space.assert_scan_len_named(env_total, "env_total");
     space.assert_scan_len_named(density_total, "density_total");
     space.assert_scan_len_named(du_scan, "du_scan");
-    let sigma = sigma.max(1e-6);
     let mut order: Vec<usize> = (0..indices.len()).collect();
     if matches!(schedule, E2UpdateSchedule::RandomSingle) {
         order.shuffle(rng);
@@ -17000,9 +17056,9 @@ fn update_e2_sweep_scored_loo(
     } else {
         vec![0.0; indices.len()]
     };
-    let prev_log2: Vec<f32> = prev_indices
+    let prev_erb: Vec<f32> = prev_indices
         .iter()
-        .map(|&idx| log2_ratio_scan[idx])
+        .map(|&idx| erb_scan[idx])
         .collect();
     let mut env_loo = vec![0.0f32; env_total.len()];
     let mut density_loo = vec![0.0f32; density_total.len()];
@@ -17012,8 +17068,8 @@ fn update_e2_sweep_scored_loo(
     let mut c_score_chosen_count = 0u32;
     let mut score_sum = 0.0f32;
     let mut score_count = 0u32;
-    let mut repulsion_sum = 0.0f32;
-    let mut repulsion_count = 0u32;
+    let mut crowding_sum = 0.0f32;
+    let mut crowding_count = 0u32;
     let mut abs_delta_sum = 0.0f32;
     let mut abs_delta_moved_sum = 0.0f32;
     let mut attempt_count = 0usize;
@@ -17033,19 +17089,20 @@ fn update_e2_sweep_scored_loo(
             agent_i,
             indices,
             prev_indices,
-            &prev_log2,
+            &prev_erb,
             space,
             workspace,
             env_total,
             density_total,
             du_scan,
+            erb_scan,
             log2_ratio_scan,
             min_idx,
             max_idx,
             k,
             score_sign,
-            lambda,
-            sigma,
+            crowding_weight,
+            kernel_params,
             temperature,
             update_allowed,
             block_backtrack,
@@ -17076,9 +17133,9 @@ fn update_e2_sweep_scored_loo(
             score_sum += stats.chosen_score;
             score_count += 1;
         }
-        if stats.chosen_repulsion.is_finite() {
-            repulsion_sum += stats.chosen_repulsion;
-            repulsion_count += 1;
+        if stats.chosen_crowding.is_finite() {
+            crowding_sum += stats.chosen_crowding;
+            crowding_count += 1;
         }
     }
 
@@ -17098,8 +17155,8 @@ fn update_e2_sweep_scored_loo(
     } else {
         0.0
     };
-    let mean_repulsion = if repulsion_count > 0 {
-        repulsion_sum / repulsion_count as f32
+    let mean_crowding = if crowding_count > 0 {
+        crowding_sum / crowding_count as f32
     } else {
         0.0
     };
@@ -17113,7 +17170,7 @@ fn update_e2_sweep_scored_loo(
         mean_c_score_current_loo,
         mean_c_score_chosen_loo,
         mean_score,
-        mean_repulsion,
+        mean_crowding,
         moved_frac: moved_count as f32 / n,
         accepted_worse_frac: accepted_worse_count as f32 / n,
         attempted_update_frac: attempt_count as f32 / n,
@@ -17133,13 +17190,14 @@ fn update_e2_sweep_prescored(
     indices: &mut [usize],
     prev_indices: &[usize],
     prescored_c_score_scan: &[f32],
+    erb_scan: &[f32],
     log2_ratio_scan: &[f32],
     min_idx: usize,
     max_idx: usize,
     k: i32,
     score_sign: f32,
-    lambda: f32,
-    sigma: f32,
+    crowding_weight: f32,
+    kernel_params: &KernelParams,
     temperature: f32,
     sweep: usize,
     block_backtrack: bool,
@@ -17151,7 +17209,7 @@ fn update_e2_sweep_prescored(
             mean_c_score_current_loo: 0.0,
             mean_c_score_chosen_loo: 0.0,
             mean_score: 0.0,
-            mean_repulsion: 0.0,
+            mean_crowding: 0.0,
             moved_frac: 0.0,
             accepted_worse_frac: 0.0,
             attempted_update_frac: 0.0,
@@ -17160,8 +17218,7 @@ fn update_e2_sweep_prescored(
             mean_abs_delta_semitones_moved: 0.0,
         };
     }
-    let sigma = sigma.max(1e-6);
-    let skip_repulsion = lambda <= 0.0;
+    let skip_penalty = crowding_weight <= 0.0;
     let mut order: Vec<usize> = (0..indices.len()).collect();
     if matches!(schedule, E2UpdateSchedule::RandomSingle) {
         order.shuffle(rng);
@@ -17172,9 +17229,9 @@ fn update_e2_sweep_prescored(
     } else {
         vec![0.0; indices.len()]
     };
-    let prev_log2: Vec<f32> = prev_indices
+    let prev_erb: Vec<f32> = prev_indices
         .iter()
-        .map(|&idx| log2_ratio_scan[idx])
+        .map(|&idx| erb_scan[idx])
         .collect();
     let mut c_score_current_sum = 0.0f32;
     let mut c_score_current_count = 0u32;
@@ -17182,8 +17239,8 @@ fn update_e2_sweep_prescored(
     let mut c_score_chosen_count = 0u32;
     let mut score_sum = 0.0f32;
     let mut score_count = 0u32;
-    let mut repulsion_sum = 0.0f32;
-    let mut repulsion_count = 0u32;
+    let mut crowding_sum = 0.0f32;
+    let mut crowding_count = 0u32;
     let mut abs_delta_sum = 0.0f32;
     let mut abs_delta_moved_sum = 0.0f32;
     let mut attempt_count = 0usize;
@@ -17200,16 +17257,19 @@ fn update_e2_sweep_prescored(
             attempt_count += 1;
         }
         let agent_idx = prev_indices[agent_i];
-        let current_log2 = log2_ratio_scan[agent_idx];
-        let mut current_repulsion = 0.0f32;
-        if !skip_repulsion {
-            for (j, &other_log2) in prev_log2.iter().enumerate() {
+        let current_erb = erb_scan[agent_idx];
+        let mut current_crowding = 0.0f32;
+        if !skip_penalty {
+            for (j, &other_erb) in prev_erb.iter().enumerate() {
                 if j == agent_i { continue; }
-                current_repulsion += (-(current_log2 - other_log2).abs() / sigma).exp();
+                let d_erb = current_erb - other_erb;
+
+                current_crowding += crowding_runtime_delta_erb(kernel_params, d_erb);
             }
         }
         let c_score_current = prescored_c_score_scan[agent_idx];
-        let current_score = score_sign * c_score_current - lambda * current_repulsion;
+        let current_score = score_sign * c_score_current
+            - crowding_weight * current_crowding;
 
         let backtrack_target = if block_backtrack {
             backtrack_targets.and_then(|prev| prev.get(agent_i).copied())
@@ -17217,25 +17277,28 @@ fn update_e2_sweep_prescored(
             None
         };
 
-        let (chosen_idx, chosen_score_val, chosen_repulsion_val, accepted_worse) = if update_allowed {
+        let (chosen_idx, chosen_score_val, chosen_crowding_val, accepted_worse) = if update_allowed {
             let start = (agent_idx as isize - k as isize).max(min_idx as isize) as usize;
             let end = (agent_idx as isize + k as isize).min(max_idx as isize) as usize;
             let mut best_idx = agent_idx;
             let mut best_score = f32::NEG_INFINITY;
-            let mut best_repulsion = 0.0f32;
+            let mut best_crowding = 0.0f32;
             let mut found_candidate = false;
             for cand in start..=end {
                 if cand == agent_idx { continue; }
-                let cand_log2 = log2_ratio_scan[cand];
-                let mut repulsion = 0.0f32;
-                if !skip_repulsion {
-                    for (j, &other_log2) in prev_log2.iter().enumerate() {
+                let cand_erb = erb_scan[cand];
+                let mut crowding = 0.0f32;
+                if !skip_penalty {
+                    for (j, &other_erb) in prev_erb.iter().enumerate() {
                         if j == agent_i { continue; }
-                        repulsion += (-(cand_log2 - other_log2).abs() / sigma).exp();
+                        let d_erb = cand_erb - other_erb;
+
+                        crowding += crowding_runtime_delta_erb(kernel_params, d_erb);
                     }
                 }
                 let c_score = prescored_c_score_scan[cand];
-                let score = score_sign * c_score - lambda * repulsion;
+                let score = score_sign * c_score
+                    - crowding_weight * crowding;
                 if let Some(prev_idx) = backtrack_target
                     && cand == prev_idx
                     && (score - current_score) <= E2_BACKTRACK_ALLOW_EPS
@@ -17245,29 +17308,29 @@ fn update_e2_sweep_prescored(
                 if score > best_score {
                     best_score = score;
                     best_idx = cand;
-                    best_repulsion = repulsion;
+                    best_crowding = crowding;
                     found_candidate = true;
                 }
             }
             if found_candidate {
                 let delta = best_score - current_score;
                 if delta > E2_SCORE_IMPROVE_EPS {
-                    (best_idx, best_score, best_repulsion, false)
+                    (best_idx, best_score, best_crowding, false)
                 } else if delta < 0.0 {
                     let (accept, acc_worse) = metropolis_accept(delta, temperature, u01_by_agent[agent_i]);
                     if accept {
-                        (best_idx, best_score, best_repulsion, acc_worse)
+                        (best_idx, best_score, best_crowding, acc_worse)
                     } else {
-                        (agent_idx, current_score, current_repulsion, false)
+                        (agent_idx, current_score, current_crowding, false)
                     }
                 } else {
-                    (agent_idx, current_score, current_repulsion, false)
+                    (agent_idx, current_score, current_crowding, false)
                 }
             } else {
-                (agent_idx, current_score, current_repulsion, false)
+                (agent_idx, current_score, current_crowding, false)
             }
         } else {
-            (agent_idx, current_score, current_repulsion, false)
+            (agent_idx, current_score, current_crowding, false)
         };
 
         indices[agent_i] = chosen_idx;
@@ -17284,19 +17347,19 @@ fn update_e2_sweep_prescored(
         if c_score_current.is_finite() { c_score_current_sum += c_score_current; c_score_current_count += 1; }
         if c_score_chosen.is_finite() { c_score_chosen_sum += c_score_chosen; c_score_chosen_count += 1; }
         if chosen_score_val.is_finite() { score_sum += chosen_score_val; score_count += 1; }
-        if chosen_repulsion_val.is_finite() { repulsion_sum += chosen_repulsion_val; repulsion_count += 1; }
+        if chosen_crowding_val.is_finite() { crowding_sum += chosen_crowding_val; crowding_count += 1; }
     }
 
     let n = indices.len() as f32;
     let mean_c_score_current_loo = if c_score_current_count > 0 { c_score_current_sum / c_score_current_count as f32 } else { 0.0 };
     let mean_c_score_chosen_loo = if c_score_chosen_count > 0 { c_score_chosen_sum / c_score_chosen_count as f32 } else { 0.0 };
     let mean_score = if score_count > 0 { score_sum / score_count as f32 } else { 0.0 };
-    let mean_repulsion = if repulsion_count > 0 { repulsion_sum / repulsion_count as f32 } else { 0.0 };
+    let mean_crowding = if crowding_count > 0 { crowding_sum / crowding_count as f32 } else { 0.0 };
     UpdateStats {
         mean_c_score_current_loo,
         mean_c_score_chosen_loo,
         mean_score,
-        mean_repulsion,
+        mean_crowding,
         moved_frac: moved_count as f32 / n,
         accepted_worse_frac: accepted_worse_count as f32 / n,
         attempted_update_frac: attempt_count as f32 / n,
@@ -17378,13 +17441,14 @@ fn update_agent_indices_scored_stats_with_order_loo(
     env_total: &[f32],
     density_total: &[f32],
     du_scan: &[f32],
+    erb_scan: &[f32],
     log2_ratio_scan: &[f32],
     min_idx: usize,
     max_idx: usize,
     k: i32,
     score_sign: f32,
-    lambda: f32,
-    sigma: f32,
+    crowding_weight: f32,
+    kernel_params: &KernelParams,
     temperature: f32,
     step: usize,
     block_backtrack: bool,
@@ -17397,7 +17461,7 @@ fn update_agent_indices_scored_stats_with_order_loo(
             mean_c_score_current_loo: 0.0,
             mean_c_score_chosen_loo: 0.0,
             mean_score: 0.0,
-            mean_repulsion: 0.0,
+            mean_crowding: 0.0,
             moved_frac: 0.0,
             accepted_worse_frac: 0.0,
             attempted_update_frac: 0.0,
@@ -17409,12 +17473,11 @@ fn update_agent_indices_scored_stats_with_order_loo(
     space.assert_scan_len_named(env_total, "env_total");
     space.assert_scan_len_named(density_total, "density_total");
     space.assert_scan_len_named(du_scan, "du_scan");
-    let sigma = sigma.max(1e-6);
-    let skip_repulsion = lambda <= 0.0;
+    let skip_penalty = crowding_weight <= 0.0;
     let prev_indices = indices.to_vec();
-    let prev_log2: Vec<f32> = prev_indices
+    let prev_erb: Vec<f32> = prev_indices
         .iter()
-        .map(|&idx| log2_ratio_scan[idx])
+        .map(|&idx| erb_scan[idx])
         .collect();
     let u01_by_agent: Vec<f32> = (0..prev_indices.len())
         .map(|_| rng.random::<f32>())
@@ -17435,8 +17498,8 @@ fn update_agent_indices_scored_stats_with_order_loo(
     let mut c_score_chosen_count = 0u32;
     let mut score_sum = 0.0f32;
     let mut score_count = 0u32;
-    let mut repulsion_sum = 0.0f32;
-    let mut repulsion_count = 0u32;
+    let mut crowding_sum = 0.0f32;
+    let mut crowding_count = 0u32;
     let mut abs_delta_sum = 0.0f32;
     let mut abs_delta_moved_sum = 0.0f32;
     let mut attempt_count = 0usize;
@@ -17458,15 +17521,16 @@ fn update_agent_indices_scored_stats_with_order_loo(
             compute_c_score_level_scans(space, workspace, &env_loo, &density_loo, du_scan);
 
         let current_idx = prev_indices[agent_i];
-        let current_log2 = log2_ratio_scan[current_idx];
-        let mut current_repulsion = 0.0f32;
-        if !skip_repulsion {
-            for (j, &other_log2) in prev_log2.iter().enumerate() {
+        let current_erb = erb_scan[current_idx];
+        let mut current_crowding = 0.0f32;
+        if !skip_penalty {
+            for (j, &other_erb) in prev_erb.iter().enumerate() {
                 if j == agent_i {
                     continue;
                 }
-                let dist = (current_log2 - other_log2).abs();
-                current_repulsion += (-dist / sigma).exp();
+                let d_erb = current_erb - other_erb;
+
+                current_crowding += crowding_runtime_delta_erb(kernel_params, d_erb);
             }
         }
         let c_score_current = c_score_scan[current_idx];
@@ -17474,7 +17538,8 @@ fn update_agent_indices_scored_stats_with_order_loo(
             c_score_current_sum += c_score_current;
             c_score_current_count += 1;
         }
-        let current_score = score_sign * c_score_current - lambda * current_repulsion;
+        let current_score = score_sign * c_score_current
+            - crowding_weight * current_crowding;
         let update_allowed = e2_should_attempt_update(agent_i, step, u_move_by_agent[agent_i]);
         if update_allowed {
             attempt_count += 1;
@@ -17484,30 +17549,32 @@ fn update_agent_indices_scored_stats_with_order_loo(
         } else {
             None
         };
-        let (chosen_idx, chosen_score, chosen_repulsion, accepted_worse) = if update_allowed {
+        let (chosen_idx, chosen_score, chosen_crowding, accepted_worse) = if update_allowed {
             let start = (current_idx as isize - k as isize).max(min_idx as isize) as usize;
             let end = (current_idx as isize + k as isize).min(max_idx as isize) as usize;
             let mut best_idx = current_idx;
             let mut best_score = f32::NEG_INFINITY;
-            let mut best_repulsion = 0.0f32;
+            let mut best_crowding = 0.0f32;
             let mut found_candidate = false;
             for cand in start..=end {
                 if cand == current_idx {
                     continue;
                 }
-                let cand_log2 = log2_ratio_scan[cand];
-                let mut repulsion = 0.0f32;
-                if !skip_repulsion {
-                    for (j, &other_log2) in prev_log2.iter().enumerate() {
+                let cand_erb = erb_scan[cand];
+                let mut crowding = 0.0f32;
+                if !skip_penalty {
+                    for (j, &other_erb) in prev_erb.iter().enumerate() {
                         if j == agent_i {
                             continue;
                         }
-                        let dist = (cand_log2 - other_log2).abs();
-                        repulsion += (-dist / sigma).exp();
+                        let d_erb = cand_erb - other_erb;
+
+                        crowding += crowding_runtime_delta_erb(kernel_params, d_erb);
                     }
                 }
                 let c_score = c_score_scan[cand];
-                let score = score_sign * c_score - lambda * repulsion;
+                let score = score_sign * c_score
+                    - crowding_weight * crowding;
                 if let Some(prev_idx) = backtrack_target {
                     if cand == prev_idx && (score - current_score) <= E2_BACKTRACK_ALLOW_EPS {
                         continue;
@@ -17516,30 +17583,30 @@ fn update_agent_indices_scored_stats_with_order_loo(
                 if score > best_score {
                     best_score = score;
                     best_idx = cand;
-                    best_repulsion = repulsion;
+                    best_crowding = crowding;
                     found_candidate = true;
                 }
             }
             if found_candidate {
                 let delta = best_score - current_score;
                 if delta > E2_SCORE_IMPROVE_EPS {
-                    (best_idx, best_score, best_repulsion, false)
+                    (best_idx, best_score, best_crowding, false)
                 } else if delta < 0.0 {
                     let u01 = u01_by_agent[agent_i];
                     let (accept, accepted_worse) = metropolis_accept(delta, temperature, u01);
                     if accept {
-                        (best_idx, best_score, best_repulsion, accepted_worse)
+                        (best_idx, best_score, best_crowding, accepted_worse)
                     } else {
-                        (current_idx, current_score, current_repulsion, false)
+                        (current_idx, current_score, current_crowding, false)
                     }
                 } else {
-                    (current_idx, current_score, current_repulsion, false)
+                    (current_idx, current_score, current_crowding, false)
                 }
             } else {
-                (current_idx, current_score, current_repulsion, false)
+                (current_idx, current_score, current_crowding, false)
             }
         } else {
-            (current_idx, current_score, current_repulsion, false)
+            (current_idx, current_score, current_crowding, false)
         };
 
         next_indices[agent_i] = chosen_idx;
@@ -17558,9 +17625,9 @@ fn update_agent_indices_scored_stats_with_order_loo(
             score_sum += chosen_score;
             score_count += 1;
         }
-        if chosen_repulsion.is_finite() {
-            repulsion_sum += chosen_repulsion;
-            repulsion_count += 1;
+        if chosen_crowding.is_finite() {
+            crowding_sum += chosen_crowding;
+            crowding_count += 1;
         }
         let c_score_chosen = c_score_scan[chosen_idx];
         if c_score_chosen.is_finite() {
@@ -17579,7 +17646,7 @@ fn update_agent_indices_scored_stats_with_order_loo(
             mean_c_score_current_loo: 0.0,
             mean_c_score_chosen_loo: 0.0,
             mean_score: 0.0,
-            mean_repulsion: 0.0,
+            mean_crowding: 0.0,
             moved_frac: 0.0,
             accepted_worse_frac: 0.0,
             attempted_update_frac: 0.0,
@@ -17603,8 +17670,8 @@ fn update_agent_indices_scored_stats_with_order_loo(
     } else {
         0.0
     };
-    let mean_repulsion = if repulsion_count > 0 {
-        repulsion_sum / repulsion_count as f32
+    let mean_crowding = if crowding_count > 0 {
+        crowding_sum / crowding_count as f32
     } else {
         0.0
     };
@@ -17619,7 +17686,7 @@ fn update_agent_indices_scored_stats_with_order_loo(
         mean_c_score_current_loo,
         mean_c_score_chosen_loo,
         mean_score,
-        mean_repulsion,
+        mean_crowding,
         moved_frac: moved_count as f32 * inv,
         accepted_worse_frac: accepted_worse_count as f32 * inv,
         attempted_update_frac: attempt_count as f32 * inv,
@@ -17636,17 +17703,17 @@ fn update_agent_indices_scored_stats_with_order_loo(
 fn score_stats_at_indices(
     indices: &[usize],
     c_score_scan: &[f32],
-    log2_ratio_scan: &[f32],
+    erb_scan: &[f32],
     score_sign: f32,
-    lambda: f32,
-    sigma: f32,
+    crowding_weight: f32,
+    kernel_params: &KernelParams,
 ) -> UpdateStats {
     if indices.is_empty() {
         return UpdateStats {
             mean_c_score_current_loo: 0.0,
             mean_c_score_chosen_loo: 0.0,
             mean_score: 0.0,
-            mean_repulsion: 0.0,
+            mean_crowding: 0.0,
             moved_frac: 0.0,
             accepted_worse_frac: 0.0,
             attempted_update_frac: 0.0,
@@ -17655,30 +17722,30 @@ fn score_stats_at_indices(
             mean_abs_delta_semitones_moved: 0.0,
         };
     }
-    let sigma = sigma.max(1e-6);
-    let log2_vals: Vec<f32> = indices.iter().map(|&idx| log2_ratio_scan[idx]).collect();
+    let erb_vals: Vec<f32> = indices.iter().map(|&idx| erb_scan[idx]).collect();
     let mut score_sum = 0.0f32;
     let mut score_count = 0u32;
-    let mut repulsion_sum = 0.0f32;
-    let mut repulsion_count = 0u32;
+    let mut crowding_sum = 0.0f32;
+    let mut crowding_count = 0u32;
     for (i, &idx) in indices.iter().enumerate() {
-        let cand_log2 = log2_ratio_scan[idx];
-        let mut repulsion = 0.0f32;
-        for (j, &other_log2) in log2_vals.iter().enumerate() {
+        let cand_erb = erb_scan[idx];
+        let mut crowding = 0.0f32;
+        for (j, &other_erb) in erb_vals.iter().enumerate() {
             if i == j {
                 continue;
             }
-            let dist = (cand_log2 - other_log2).abs();
-            repulsion += (-dist / sigma).exp();
+            let d_erb = cand_erb - other_erb;
+            crowding += crowding_runtime_delta_erb(kernel_params, d_erb);
         }
-        let score = score_sign * c_score_scan[idx] - lambda * repulsion;
+        let score = score_sign * c_score_scan[idx]
+            - crowding_weight * crowding;
         if score.is_finite() {
             score_sum += score;
             score_count += 1;
         }
-        if repulsion.is_finite() {
-            repulsion_sum += repulsion;
-            repulsion_count += 1;
+        if crowding.is_finite() {
+            crowding_sum += crowding;
+            crowding_count += 1;
         }
     }
     let mean_score = if score_count > 0 {
@@ -17686,8 +17753,8 @@ fn score_stats_at_indices(
     } else {
         0.0
     };
-    let mean_repulsion = if repulsion_count > 0 {
-        repulsion_sum / repulsion_count as f32
+    let mean_crowding = if crowding_count > 0 {
+        crowding_sum / crowding_count as f32
     } else {
         0.0
     };
@@ -17695,7 +17762,7 @@ fn score_stats_at_indices(
         mean_c_score_current_loo: f32::NAN,
         mean_c_score_chosen_loo: f32::NAN,
         mean_score,
-        mean_repulsion,
+        mean_crowding,
         moved_frac: 0.0,
         accepted_worse_frac: 0.0,
         attempted_update_frac: 0.0,
@@ -18199,7 +18266,7 @@ fn flutter_summary_csv(rows: &[FlutterRow], segments: &[(&'static str, usize, us
     let mut out = String::from(
         "cond,segment,mean_pingpong_rate_moves,std_pingpong_rate_moves,mean_reversal_rate_moves,std_reversal_rate_moves,mean_move_rate_stepwise,std_move_rate_stepwise,mean_abs_delta_moved,std_abs_delta_moved,n\n",
     );
-    for &cond in ["baseline", "nohill", "norep"].iter() {
+    for &cond in ["baseline", "nohill", "nocrowd"].iter() {
         for (segment, _, _) in segments {
             let mut pingpong_vals = Vec::new();
             let mut reversal_vals = Vec::new();
@@ -18275,8 +18342,7 @@ fn e2_meta_text(
     out.push_str(&format!("E2_STEP_SEMITONES={:.3}\n", E2_STEP_SEMITONES));
     out.push_str(&format!("E2_N_AGENTS={}\n", n_agents));
     out.push_str(&format!("E2_K_BINS={}\n", k_bins));
-    out.push_str(&format!("E2_LAMBDA={:.3}\n", E2_LAMBDA));
-    out.push_str(&format!("E2_SIGMA={:.3}\n", E2_SIGMA));
+    out.push_str(&format!("E2_CROWDING_WEIGHT={:.3}\n", E2_CROWDING_WEIGHT));
     out.push_str(&format!("E2_ACCEPT_ENABLED={}\n", E2_ACCEPT_ENABLED));
     out.push_str(&format!("E2_ACCEPT_T0={:.3}\n", E2_ACCEPT_T0));
     out.push_str(&format!("E2_ACCEPT_TAU_STEPS={:.3}\n", E2_ACCEPT_TAU_STEPS));
@@ -18596,7 +18662,7 @@ fn hist_structure_summary_csv(rows: &[HistStructureRow]) -> String {
     out.push_str(
         "cond,mean_entropy,std_entropy,mean_gini,std_gini,mean_peakiness,std_peakiness,mean_kl_uniform,std_kl_uniform,n\n",
     );
-    for cond in ["baseline", "nohill", "norep"] {
+    for cond in ["baseline", "nohill", "nocrowd"] {
         let rows = by_cond.get(cond).cloned().unwrap_or_default();
         let entropy: Vec<f32> = rows.iter().map(|r| r.metrics.entropy).collect();
         let gini: Vec<f32> = rows.iter().map(|r| r.metrics.gini).collect();
@@ -18631,7 +18697,7 @@ fn render_hist_structure_summary_plot(
     for row in rows {
         by_cond.entry(row.condition).or_default().push(row);
     }
-    let conds = ["baseline", "nohill", "norep"];
+    let conds = ["baseline", "nohill", "nocrowd"];
     let colors = [&PAL_H, &PAL_R, &PAL_CD];
 
     let mut means_entropy = [0.0f32; 3];
@@ -18844,7 +18910,7 @@ fn diversity_summary_csv(rows: &[DiversityRow]) -> String {
     out.push_str(
         "cond,mean_unique_bins,std_unique_bins,mean_nn,stdev_nn,mean_semitone_var,std_semitone_var,mean_semitone_mad,std_semitone_mad,n\n",
     );
-    for cond in ["baseline", "nohill", "norep"] {
+    for cond in ["baseline", "nohill", "nocrowd"] {
         let rows = by_cond.get(cond).cloned().unwrap_or_default();
         let unique_bins: Vec<f32> = rows.iter().map(|r| r.metrics.unique_bins as f32).collect();
         let nn_mean: Vec<f32> = rows.iter().map(|r| r.metrics.nn_mean).collect();
@@ -18879,7 +18945,7 @@ fn render_diversity_summary_plot(
     for row in rows {
         by_cond.entry(row.condition).or_default().push(row);
     }
-    let conds = ["baseline", "nohill", "norep"];
+    let conds = ["baseline", "nohill", "nocrowd"];
     let colors = [&PAL_H, &PAL_R, &PAL_CD];
 
     let mut mean_bins = [0.0f32; 3];
@@ -19384,7 +19450,7 @@ fn diversity_summary_ci95_csv(rows: &[DiversityRow]) -> String {
         by_cond.entry(row.condition).or_default().push(row);
     }
     let mut out = String::from("cond,metric,mean,std,ci95,n\n");
-    for cond in ["baseline", "nohill", "norep"] {
+    for cond in ["baseline", "nohill", "nocrowd"] {
         let rows = by_cond.get(cond).cloned().unwrap_or_default();
         let unique_bins: Vec<f32> = rows.iter().map(|r| r.metrics.unique_bins as f32).collect();
         let nn_mean: Vec<f32> = rows.iter().map(|r| r.metrics.nn_mean).collect();
@@ -19716,7 +19782,7 @@ fn consonant_mass_summary_csv(rows: &[ConsonantMassRow]) -> String {
             consonant_mass_extended as fn(&ConsonantMassRow) -> f32,
         ),
     ] {
-        for cond in ["baseline", "nohill", "norep"] {
+        for cond in ["baseline", "nohill", "nocrowd"] {
             let values = consonant_mass_values(rows, cond, select);
             let (mean, std) = mean_std_scalar(&values);
             out.push_str(&format!(
@@ -19749,7 +19815,7 @@ fn consonant_mass_stats_csv(rows: &[ConsonantMassRow]) -> String {
         let baseline = consonant_mass_values(rows, "baseline", select);
         for (comp_idx, (comp_label, comp_cond)) in [
             ("baseline_vs_nohill", "nohill"),
-            ("baseline_vs_norep", "norep"),
+            ("baseline_vs_norep", "nocrowd"),
         ]
         .into_iter()
         .enumerate()
@@ -19873,7 +19939,7 @@ fn e2_condition_display(condition: &str) -> &'static str {
     match condition {
         "baseline" => "base",
         "nohill" => "no-hill",
-        "norep" => "no-rep",
+        "nocrowd" => "no-crowd",
         _ => "unknown",
     }
 }
@@ -19882,7 +19948,7 @@ fn e2_condition_color(condition: &str) -> RGBColor {
     match condition {
         "baseline" => PAL_H,
         "nohill" => PAL_R,
-        "norep" => PAL_CD,
+        "nocrowd" => PAL_CD,
         _ => PAL_C,
     }
 }
@@ -20072,7 +20138,7 @@ fn render_pairwise_histogram_controls_overlay(
     for (label, values, color) in [
         ("baseline", baseline, PAL_H),
         ("no hill-climb", nohill, PAL_R),
-        ("no repulsion", norep, PAL_CD),
+        ("no crowding", norep, PAL_CD),
     ] {
         let line = centers
             .iter()
@@ -20258,7 +20324,7 @@ fn draw_diversity_metric_panel_impl(
     label_size: u32,
     axis_desc_size: u32,
 ) -> Result<(), Box<dyn Error>> {
-    let conditions = ["baseline", "nohill", "norep"];
+    let conditions = ["baseline", "nohill", "nocrowd"];
     let mut means = [0.0f32; 3];
     let mut ci95 = [0.0f32; 3];
     for (i, cond) in conditions.iter().enumerate() {
@@ -20410,10 +20476,10 @@ fn draw_e2_timeseries_controls_panel(
             e2_condition_color("nohill"),
         ),
         (
-            "no repulsion",
+            "no crowding",
             norep_mean,
             norep_std,
-            e2_condition_color("norep"),
+            e2_condition_color("nocrowd"),
         ),
     ] {
         let len = mean.len().min(std.len());
@@ -20603,7 +20669,7 @@ fn draw_consonant_mass_panel_impl(
     label_size: u32,
     axis_desc_size: u32,
 ) -> Result<(), Box<dyn Error>> {
-    let conditions = ["baseline", "nohill", "norep"];
+    let conditions = ["baseline", "nohill", "nocrowd"];
     let mut means = [0.0f32; 3];
     let mut ci95 = [0.0f32; 3];
     for (i, cond) in conditions.iter().enumerate() {
@@ -20675,7 +20741,7 @@ fn draw_entropy_panel(
     label_size: u32,
     axis_desc_size: u32,
 ) -> Result<(), Box<dyn Error>> {
-    let conditions = ["baseline", "nohill", "norep"];
+    let conditions = ["baseline", "nohill", "nocrowd"];
     let mut means = [0.0f32; 3];
     let mut ci95 = [0.0f32; 3];
     for (i, cond) in conditions.iter().enumerate() {
@@ -20744,7 +20810,7 @@ fn draw_polyphony_panel(
     label_size: u32,
     axis_desc_size: u32,
 ) -> Result<(), Box<dyn Error>> {
-    let conditions = ["baseline", "nohill", "norep"];
+    let conditions = ["baseline", "nohill", "nocrowd"];
     let mut means = [0.0f32; 3];
     let mut ci95 = [0.0f32; 3];
     for (i, cond) in conditions.iter().enumerate() {
@@ -21128,7 +21194,7 @@ fn render_e2_figure2(
         for (label, values, color) in [
             ("baseline", pairwise_baseline_mean, PAL_H),
             ("no hill-climb", pairwise_nohill_mean, PAL_R),
-            ("no repulsion", pairwise_norep_mean, PAL_CD),
+            ("no crowding", pairwise_norep_mean, PAL_CD),
         ] {
             let line = pairwise_centers
                 .iter()
@@ -21780,7 +21846,7 @@ fn render_e2_control_histograms(
             vec![(min, y_max * 0.99), (min + 0.3, y_max * 0.99)],
             PAL_CD,
         )))?
-        .label("no repulsion")
+        .label("no crowding")
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_CD));
 
     chart
@@ -23358,7 +23424,7 @@ mod tests {
             mean_c_score_loo_series: vec![metric],
             mean_c_score_chosen_loo_series: vec![metric],
             mean_score_series: vec![0.0],
-            mean_repulsion_series: vec![0.0],
+            mean_crowding_series: vec![0.0],
             moved_frac_series: vec![0.0],
             accepted_worse_frac_series: vec![0.0],
             attempted_update_frac_series: vec![0.0],
@@ -23417,7 +23483,7 @@ mod tests {
         let label = match condition {
             E2Condition::Baseline => "baseline",
             E2Condition::NoHillClimb => "nohill",
-            E2Condition::NoRepulsion => "norep",
+            E2Condition::NoCrowding => "nocrowd",
             E2Condition::ShuffledLandscape => "shuffled",
         };
         assert!(
@@ -24130,7 +24196,7 @@ mod tests {
     fn oracle_chord_delta_is_stable_under_noop_update() {
         let meta = e4_paper_meta();
         let space = Log2Space::new(meta.fmin, meta.fmax, meta.bins_per_oct);
-        let (_erb_scan, du_scan) = erb_grid_for_space(&space);
+        let (erb_scan, du_scan) = erb_grid_for_space(&space);
         let freqs = [
             meta.anchor_hz,
             meta.anchor_hz * (5.0 / 4.0),
@@ -24146,17 +24212,18 @@ mod tests {
                     .unwrap_or_else(|| nearest_bin(&space, *f))
             })
             .collect();
+        let kernel_params = KernelParams::default();
         let before =
             bind_eval_from_indices(meta.anchor_hz, &scan.log2_ratio, &indices).harmonic_tilt;
         e4_wr_probe_update_indices(
             &mut indices,
             &scan.c,
-            &scan.log2_ratio,
+            &erb_scan,
             0,
             scan.c.len().saturating_sub(1),
             0,
             0.0,
-            E4_DYNAMICS_REPULSION_SIGMA,
+            &kernel_params,
             None,
             true,
         );
@@ -24401,30 +24468,31 @@ mod tests {
     #[test]
     fn oracle_global_score_is_not_lower_than_reachable() {
         let c_scan = vec![0.1f32, 0.3, 0.9, 0.2, 0.4];
-        let log2_ratio_scan = vec![0.0f32, 0.1, 0.2, 0.3, 0.4];
+        let erb_scan = vec![0.0f32, 0.5, 1.0, 1.5, 2.0];
         let indices = vec![1usize, 3usize];
+        let kernel_params = KernelParams::default();
         let (global_idx, global_score) = e4_diag_best_index_and_score(
             0,
             &indices,
             &c_scan,
-            &log2_ratio_scan,
+            &erb_scan,
             0,
             c_scan.len() - 1,
             1,
-            0.2,
-            0.1,
+            0.15,
+            &kernel_params,
             true,
         );
         let (reachable_idx, reachable_score) = e4_diag_best_index_and_score(
             0,
             &indices,
             &c_scan,
-            &log2_ratio_scan,
+            &erb_scan,
             0,
             c_scan.len() - 1,
             1,
-            0.2,
-            0.1,
+            0.15,
+            &kernel_params,
             false,
         );
         assert!(global_score + 1e-6 >= reachable_score);
@@ -24435,22 +24503,23 @@ mod tests {
     #[test]
     fn gap_reach_is_zero_when_agent_matches_reachable_oracle() {
         let c_scan = vec![0.1f32, 0.2, 0.95, 0.4, 0.1];
-        let log2_ratio_scan = vec![0.0f32, 0.1, 0.2, 0.3, 0.4];
+        let erb_scan = vec![0.0f32, 0.5, 1.0, 1.5, 2.0];
         let indices = vec![2usize, 4usize];
+        let kernel_params = KernelParams::default();
         let (oracle_reach_idx, oracle_reach_score) = e4_diag_best_index_and_score(
             0,
             &indices,
             &c_scan,
-            &log2_ratio_scan,
+            &erb_scan,
             0,
             c_scan.len() - 1,
             1,
             0.0,
-            0.1,
+            &kernel_params,
             false,
         );
         let agent_score =
-            e4_diag_candidate_score(0, &indices, indices[0], &c_scan, &log2_ratio_scan, 0.0, 0.1)
+            e4_diag_candidate_score(0, &indices, indices[0], &c_scan, &erb_scan, 0.0, &kernel_params)
                 .unwrap_or(0.0);
         if oracle_reach_idx == indices[0] {
             assert!((oracle_reach_score - agent_score).abs() < 1e-6);
@@ -24582,16 +24651,17 @@ mod tests {
     fn update_agent_indices_stays_in_bounds() {
         let mut indices = vec![1usize, 2, 3];
         let c_score_scan = vec![0.1f32, 0.2, 0.3, 0.4, 0.5];
-        let log2_ratio_scan = vec![0.0f32, 0.1, 0.2, 0.3, 0.4];
+        let erb_scan = vec![0.0f32, 0.5, 1.0, 1.5, 2.0];
+        let kernel_params = KernelParams::default();
         let _ = update_agent_indices_scored_stats(
             &mut indices,
             &c_score_scan,
-            &log2_ratio_scan,
+            &erb_scan,
             1,
             3,
             1,
-            0.05,
-            0.1,
+            0.15,
+            &kernel_params,
         );
         assert!(indices.iter().all(|&idx| idx >= 1 && idx <= 3));
     }
@@ -24600,10 +24670,11 @@ mod tests {
     fn update_agent_indices_is_order_independent() {
         let space = Log2Space::new(200.0, 400.0, 12);
         let workspace = build_consonance_workspace(&space);
-        let (_erb_scan, du_scan) = erb_grid_for_space(&space);
+        let (erb_scan, du_scan) = erb_grid_for_space(&space);
         let anchor_idx = space.n_bins() / 2;
         let anchor_hz = space.centers_hz[anchor_idx];
         let log2_ratio_scan = build_log2_ratio_scan(&space, anchor_hz);
+        let kernel_params = KernelParams::default();
         let mut indices_fwd = vec![1usize, 3, 4];
         let mut indices_rev = indices_fwd.clone();
         let (env_scan, density_scan) = build_env_scans(&space, anchor_idx, &indices_fwd, &du_scan);
@@ -24618,13 +24689,14 @@ mod tests {
             &env_scan,
             &density_scan,
             &du_scan,
+            &erb_scan,
             &log2_ratio_scan,
             0,
             space.n_bins() - 1,
             1,
             1.0,
-            0.2,
-            0.1,
+            0.15,
+            &kernel_params,
             0.05,
             3,
             false,
@@ -24639,13 +24711,14 @@ mod tests {
             &env_scan,
             &density_scan,
             &du_scan,
+            &erb_scan,
             &log2_ratio_scan,
             0,
             space.n_bins() - 1,
             1,
             1.0,
-            0.2,
-            0.1,
+            0.15,
+            &kernel_params,
             0.05,
             3,
             false,
@@ -24759,10 +24832,11 @@ mod tests {
         workspace.params.consonance_kernel.b = 0.0;
         workspace.params.consonance_kernel.c = 0.0;
 
-        let (_erb_scan, du_scan) = erb_grid_for_space(&space);
+        let (erb_scan, du_scan) = erb_grid_for_space(&space);
         let anchor_idx = space.n_bins() / 2;
         let anchor_hz = space.centers_hz[anchor_idx];
         let log2_ratio_scan = build_log2_ratio_scan(&space, anchor_hz);
+        let kernel_params = KernelParams::default();
         let mut indices = vec![anchor_idx];
         let (env_scan, density_scan) = build_env_scans(&space, anchor_idx, &indices, &du_scan);
         let order = vec![0usize];
@@ -24774,13 +24848,14 @@ mod tests {
             &env_scan,
             &density_scan,
             &du_scan,
+            &erb_scan,
             &log2_ratio_scan,
             0,
             space.n_bins() - 1,
             1,
             1.0,
             0.0,
-            0.1,
+            &kernel_params,
             f32::INFINITY,
             0,
             false,
@@ -24799,10 +24874,11 @@ mod tests {
     fn anti_backtrack_blocks_backtrack_candidate() {
         let space = Log2Space::new(200.0, 400.0, 12);
         let workspace = build_consonance_workspace(&space);
-        let (_erb_scan, du_scan) = erb_grid_for_space(&space);
+        let (erb_scan, du_scan) = erb_grid_for_space(&space);
         let anchor_idx = space.n_bins() / 2;
         let anchor_hz = space.centers_hz[anchor_idx];
         let log2_ratio_scan = build_log2_ratio_scan(&space, anchor_hz);
+        let kernel_params = KernelParams::default();
 
         let (env_anchor, density_anchor) = build_env_scans(&space, anchor_idx, &[], &du_scan);
         let (c_score_scan, _, _, _) =
@@ -24847,13 +24923,14 @@ mod tests {
             &env_total,
             &density_total,
             &du_scan,
+            &erb_scan,
             &log2_ratio_scan,
             backtrack_idx,
             backtrack_idx,
             k,
             1.0,
             0.0,
-            0.1,
+            &kernel_params,
             f32::INFINITY,
             0,
             false,
@@ -24876,13 +24953,14 @@ mod tests {
             &env_total,
             &density_total,
             &du_scan,
+            &erb_scan,
             &log2_ratio_scan,
             backtrack_idx,
             backtrack_idx,
             k,
             1.0,
             0.0,
-            0.1,
+            &kernel_params,
             f32::INFINITY,
             0,
             true,
@@ -24929,10 +25007,11 @@ mod tests {
     fn update_stats_identity_relations_hold() {
         let space = Log2Space::new(200.0, 400.0, 12);
         let workspace = build_consonance_workspace(&space);
-        let (_erb_scan, du_scan) = erb_grid_for_space(&space);
+        let (erb_scan, du_scan) = erb_grid_for_space(&space);
         let anchor_idx = space.n_bins() / 2;
         let anchor_hz = space.centers_hz[anchor_idx];
         let log2_ratio_scan = build_log2_ratio_scan(&space, anchor_hz);
+        let kernel_params = KernelParams::default();
         let mut indices = vec![1usize, 3, 4];
         let (env_scan, density_scan) = build_env_scans(&space, anchor_idx, &indices, &du_scan);
         let prev_indices = indices.clone();
@@ -24946,13 +25025,14 @@ mod tests {
             &env_scan,
             &density_scan,
             &du_scan,
+            &erb_scan,
             &log2_ratio_scan,
             0,
             space.n_bins() - 1,
             1,
             1.0,
-            0.2,
-            0.1,
+            0.15,
+            &kernel_params,
             0.05,
             0,
             false,
@@ -24979,10 +25059,11 @@ mod tests {
     fn e2_update_schedule_random_single_attempts_all_agents() {
         let space = Log2Space::new(200.0, 400.0, 12);
         let workspace = build_consonance_workspace(&space);
-        let (_erb_scan, du_scan) = erb_grid_for_space(&space);
+        let (erb_scan, du_scan) = erb_grid_for_space(&space);
         let anchor_idx = space.n_bins() / 2;
         let anchor_hz = space.centers_hz[anchor_idx];
         let log2_ratio_scan = build_log2_ratio_scan(&space, anchor_hz);
+        let kernel_params = KernelParams::default();
         let mut indices = vec![1usize, 3, 4];
         let prev_indices = indices.clone();
         let (env_scan, density_scan) = build_env_scans(&space, anchor_idx, &indices, &du_scan);
@@ -24996,13 +25077,14 @@ mod tests {
             &env_scan,
             &density_scan,
             &du_scan,
+            &erb_scan,
             &log2_ratio_scan,
             0,
             space.n_bins() - 1,
             1,
             1.0,
-            0.2,
-            0.1,
+            0.15,
+            &kernel_params,
             0.05,
             0,
             false,
@@ -25238,7 +25320,7 @@ mod tests {
     #[test]
     fn norep_mean_c_score_loo_series_is_finite() {
         assert_mean_c_score_loo_series_finite(
-            E2Condition::NoRepulsion,
+            E2Condition::NoCrowding,
             E2PhaseMode::DissonanceThenConsonance,
             E2_STEP_SEMITONES,
             0xC0FFEE_u64 + 2,
@@ -25250,7 +25332,7 @@ mod tests {
         for (idx, condition) in [
             E2Condition::Baseline,
             E2Condition::NoHillClimb,
-            E2Condition::NoRepulsion,
+            E2Condition::NoCrowding,
         ]
         .iter()
         .enumerate()
@@ -25610,6 +25692,143 @@ fn ji_population_score(freqs_hz: &[f32], anchor_hz: f32) -> f32 {
     } else {
         0.0
     }
+}
+
+// ── E2 trajectory replay ── direct WAV synthesis ────────────────────────────
+
+/// Generate a WAV file that replays E2 simulation trajectories as pure sine
+/// tones.  Each sweep step is rendered as a chord impulse (attack + decay),
+/// producing a rhythmic sequence that makes pitch convergence audible.
+pub fn generate_e2_replay_wav(output_path: &Path) -> io::Result<()> {
+    use std::f32::consts::TAU;
+
+    let space = Log2Space::new(20.0, 8000.0, SPACE_BINS_PER_OCT);
+    let anchor_hz: f32 = E4_ANCHOR_HZ; // 220.0
+    let phase_mode = E2PhaseMode::DissonanceThenConsonance;
+    let sample_rate: u32 = 48000;
+    let sr = sample_rate as f32;
+
+    let segments: &[(u64, E2Condition, &str)] = &[
+        (E2_SEEDS[0], E2Condition::Baseline, "seed0_baseline"),
+        (E2_SEEDS[0], E2Condition::NoHillClimb, "seed0_nohill"),
+        (E2_SEEDS[0], E2Condition::NoCrowding, "seed0_norep"),
+        (E2_SEEDS[10], E2Condition::Baseline, "seed10_baseline"),
+        (E2_SEEDS[10], E2Condition::NoHillClimb, "seed10_nohill"),
+        (E2_SEEDS[10], E2Condition::NoCrowding, "seed10_norep"),
+    ];
+
+    // Timing
+    let step_sec: f32 = 0.12;           // per sweep step
+    let attack_sec: f32 = 0.005;        // sharp attack
+    let sustain_sec: f32 = 0.06;        // sustain plateau
+    let _release_sec: f32 = 0.055;      // fade to silence before next step
+    let gap_sec: f32 = 1.0;             // silence between segments
+    let agent_amp: f32 = 0.12;          // per-agent amplitude
+
+    let step_samples = (step_sec * sr) as usize;
+    let attack_samples = (attack_sec * sr) as usize;
+    let sustain_samples = (sustain_sec * sr) as usize;
+    let release_start = attack_samples + sustain_samples;
+    let release_samples = step_samples.saturating_sub(release_start);
+    let gap_samples = (gap_sec * sr) as usize;
+
+    // Select 8 agents evenly from 24
+    let n_select = 8usize;
+    let selected: Vec<usize> = (0..n_select)
+        .map(|k| k * E2_N_AGENTS / n_select)
+        .collect();
+
+    // Collect all samples
+    let mut all_samples: Vec<f32> = Vec::new();
+
+    for (seg_idx, &(seed, condition, label)) in segments.iter().enumerate() {
+        eprintln!(
+            "  [e2-replay-wav] segment {}/{}: {}",
+            seg_idx + 1,
+            segments.len(),
+            label
+        );
+
+        let run = run_e2_once(
+            &space, anchor_hz, seed, condition,
+            E2_STEP_SEMITONES, phase_mode, None, 0,
+        );
+
+        let n_steps = run.trajectory_semitones[0].len();
+        // Track oscillator phases across steps for phase continuity
+        let mut phases = vec![0.0f32; n_select];
+
+        for step in 0..n_steps {
+            // Frequencies for this step
+            let freqs: Vec<f32> = selected.iter().map(|&g| {
+                let st = run.trajectory_semitones[g][step];
+                anchor_hz * 2.0_f32.powf(st / 12.0)
+            }).collect();
+
+            // Render step_samples of audio
+            for s in 0..step_samples {
+                // Envelope: attack → sustain → release
+                let env = if s < attack_samples {
+                    s as f32 / attack_samples as f32
+                } else if s < release_start {
+                    1.0
+                } else {
+                    let t = (s - release_start) as f32 / release_samples.max(1) as f32;
+                    (1.0 - t).max(0.0)
+                };
+
+                // Additive sine synthesis
+                let mut sample = 0.0f32;
+                for (i, &freq) in freqs.iter().enumerate() {
+                    phases[i] += freq * TAU / sr;
+                    if phases[i] > TAU { phases[i] -= TAU; }
+                    sample += phases[i].sin() * agent_amp * env;
+                }
+                all_samples.push(sample);
+            }
+        }
+
+        // Gap between segments
+        if seg_idx + 1 < segments.len() {
+            all_samples.extend(std::iter::repeat(0.0f32).take(gap_samples));
+        }
+    }
+
+    // Normalize to avoid clipping
+    let peak = all_samples.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+    if peak > 0.95 {
+        let scale = 0.9 / peak;
+        for s in &mut all_samples {
+            *s *= scale;
+        }
+    }
+
+    // Write WAV
+    if let Some(parent) = output_path.parent() {
+        create_dir_all(parent)?;
+    }
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(output_path, spec)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    for &s in &all_samples {
+        let i16_val = (s * 32767.0).clamp(-32768.0, 32767.0) as i16;
+        writer.write_sample(i16_val)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    }
+    writer.finalize()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
+    let duration_sec = all_samples.len() as f32 / sr;
+    eprintln!(
+        "Wrote {} ({:.1}s, {} samples, peak={:.3})",
+        output_path.display(), duration_sec, all_samples.len(), peak
+    );
+    Ok(())
 }
 
 
