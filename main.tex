@@ -218,6 +218,7 @@ For bounded metabolic control, $C_{\text{field}}$ is passed through a sigmoid: $
 Each agent proposes local pitch perturbations of magnitude $\lambda=0.15$\,st sampled within a bounded neighborhood in log-frequency space. A hill-climbing acceptance rule evaluates candidate positions via $C_{\text{field}}$ and a crowding penalty computed in ERB space. The crowding kernel $K_{\text{crowd}}(\Delta_{\text{erb}})$ is a compact-support function that penalizes near-unison proximity (peak at 0\,ERB), complementing the roughness already captured in the landscape. Inter-agent roughness need not be penalized separately because the leave-one-out $C_{\text{field}}$ evaluation already incorporates Plomp--Levelt interference between agents through the landscape itself. The combined score is $S = C_{\text{field}} - \lambda_C \sum_{j \neq i} K_{\text{crowd}}(\Delta_{ij})$. Proposals are accepted with probability $\min\!\bigl(1,\,\exp\bigl(\Delta S/T\bigr)\bigr)$ where $\Delta S = S_{\text{new}} - S_{\text{old}}$ and $T$ decays exponentially ($T_0=0.05$, $\tau=30$\,steps), annealing toward greedy hill-climbing.
 
 Ablation conditions remove either the hill-climbing mechanism or the crowding penalty.
+The pitch-adaptation experiment uses a discrete log-frequency grid (0.005\,oct bins) and evaluates leave-one-out consonance by removing each agent's spectral contribution from the shared environment before rescoring—an exact LOO that the real-time instrument approximates with a lighter-weight harmonic-projection subtraction.
 
 \subsection{Metabolic Policy}
 

@@ -21,6 +21,7 @@ use crate::sim::{
     set_e4_runtime_overrides,
 };
 use conchordal::core::consonance_kernel::{ConsonanceKernel, ConsonanceRepresentationParams};
+use conchordal::core::phase::wrap_pm_pi;
 use conchordal::life::articulation_core::kuramoto_phase_step;
 use conchordal::core::erb::hz_to_erb;
 use conchordal::core::harmonicity_kernel::{HarmonicityKernel, HarmonicityParams};
@@ -6323,7 +6324,7 @@ fn simulate_e5_stratified(
         let mut plv_sum = 0.0f32;
         let mut plv_count = 0usize;
         for i in 0..E5_N_AGENTS {
-            let dp = wrap_to_pi(phases[i] - theta_kick);
+            let dp = wrap_pm_pi(phases[i] - theta_kick);
             plv_buffers[i].push(dp);
             if plv_buffers[i].is_full() {
                 let p = plv_buffers[i].plv();
@@ -6459,7 +6460,7 @@ fn simulate_e5_vitality(
         let mut plv_sum = 0.0f32;
         let mut plv_count = 0usize;
         for i in 0..E5_N_AGENTS {
-            let d_i = wrap_to_pi(phases[i] - theta_kick);
+            let d_i = wrap_pm_pi(phases[i] - theta_kick);
             plv_buffers[i].push(d_i);
             if plv_buffers[i].is_full() {
                 let p = plv_buffers[i].plv();
@@ -23355,15 +23356,6 @@ impl SlidingPlv {
     }
 }
 
-fn wrap_to_pi(theta: f32) -> f32 {
-    let two_pi = 2.0 * PI;
-    let mut x = theta.rem_euclid(two_pi);
-    if x > PI {
-        x -= two_pi;
-    }
-    x
-}
-
 fn pairwise_interval_samples(semitones: &[f32]) -> Vec<f32> {
     let mut out = Vec::new();
     let eps = 1e-6f32;
@@ -23534,28 +23526,6 @@ mod tests {
         assert!(stats.min >= 0.0 && stats.min <= 1.0);
         assert!(stats.mean >= 0.0 && stats.mean <= 1.0);
         assert!(stats.max >= 0.0 && stats.max <= 1.0);
-    }
-
-    #[test]
-    fn wrap_to_pi_clamps_range() {
-        let samples = [
-            -10.0 * PI,
-            -3.5 * PI,
-            -PI,
-            -0.5 * PI,
-            0.0,
-            0.5 * PI,
-            PI,
-            3.0 * PI,
-            9.0 * PI,
-        ];
-        for &theta in &samples {
-            let wrapped = wrap_to_pi(theta);
-            assert!(
-                wrapped >= -PI - 1e-6 && wrapped <= PI + 1e-6,
-                "wrapped={wrapped} out of range for theta={theta}"
-            );
-        }
     }
 
     #[test]
