@@ -295,7 +295,6 @@ C_level01_attack
 <circle cx="627" cy="218" r="3" opacity="0.5" fill="#3A6A78" stroke="none" stroke-width="1"/>
 <circle cx="650" cy="159" r="3" opacity="0.5" fill="#3A6A78" stroke="none" stroke-width="1"/>
 <circle cx="638" cy="86" r="3" opacity="0.5" fill="#3A6A78" stroke="none" stroke-width="1"/>
-<circle cx="645" cy="208" r="3" opacity="0.5" fill="#3A6A78" stroke="none" stroke-width="1"/>
 <circle cx="690" cy="145" r="3" opacity="0.5" fill="#3A6A78" stroke="none" stroke-width="1"/>
 <circle cx="650" cy="218" r="3" opacity="0.5" fill="#3A6A78" stroke="none" stroke-width="1"/>
 <circle cx="659" cy="69" r="3" opacity="0.5" fill="#3A6A78" stroke="none" stroke-width="1"/>
@@ -449,12 +448,12 @@ C_level01_attack
 <circle cx="641" cy="218" r="3" opacity="0.5" fill="#3A6A78" stroke="none" stroke-width="1"/>
 <polyline fill="none" opacity="0.3" stroke="#000000" stroke-width="1" points="624,654 624,34 "/>
 <text x="83" y="65" dy="0.76em" text-anchor="start" font-family="sans-serif" font-size="11.290322580645162" opacity="1" fill="#000000">
-N=200
+N=199
 </text>
 <text x="83" y="81" dy="0.76em" text-anchor="start" font-family="sans-serif" font-size="11.290322580645162" opacity="1" fill="#000000">
-Pearson r=0.050 (p=0.494)
+Pearson r=0.048 (p=0.492)
 </text>
 <text x="83" y="97" dy="0.76em" text-anchor="start" font-family="sans-serif" font-size="11.290322580645162" opacity="1" fill="#000000">
-Spearman ρ=0.069 (p=0.322)
+Spearman ρ=0.068 (p=0.327)
 </text>
 </svg>

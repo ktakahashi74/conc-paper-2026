@@ -13,3 +13,4 @@ path = "experiments/main.rs"
 conchordal = { path = "../conchordal" }
 plotters = "0.3"
 rand = "0.9"
+hound = "3.5"

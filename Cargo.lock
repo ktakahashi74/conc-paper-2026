@@ -482,6 +482,7 @@ name = "conc-paper-tools"
 version = "0.1.0"
 dependencies = [
  "conchordal",
+ "hound",
  "plotters",
  "rand",
 ]
