@@ -1,6 +1,6 @@
 E2 Independent Consonance Evaluation (JI ratio-complexity metric)
 ================================================================
 
-baseline: JI_score mean=0.1095 sd=0.0061 (n=20)
+baseline: JI_score mean=0.1056 sd=0.0095 (n=20)
 no_hill_climb: JI_score mean=0.1203 sd=0.0142 (n=20)
 no_crowding: JI_score mean=0.1582 sd=0.0236 (n=20)

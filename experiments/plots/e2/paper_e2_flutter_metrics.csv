@@ -1,3 +1,3 @@
 segment,start_step,end_step,pingpong_rate_moves,reversal_rate_moves,move_rate_stepwise,mean_abs_delta_moved,step_count,moved_step_count,move_count,pingpong_count_moves,reversal_count_moves
-pre,10,49,0.025229,0.555046,0.491228,0.150326,912,448,460,11,242
-post,50,99,0.686747,0.807229,0.077257,0.144058,1152,89,101,57,67
+pre,10,49,0.022727,0.597727,0.495614,0.159763,912,452,464,10,263
+post,50,99,0.819048,0.876190,0.097222,0.056560,1152,112,122,86,92
