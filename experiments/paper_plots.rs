@@ -673,7 +673,7 @@ fn parse_experiments(args: &[String]) -> Result<Vec<Experiment>, String> {
             i += 1;
             continue;
         }
-        if arg == "--e2-replay" {
+        if arg == "--e2-replay" || arg == "--e2-quick" {
             i += 1;
             continue;
         }
@@ -1047,6 +1047,7 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
     let e4_dyn_persistence = parse_e4_dyn_persistence(&args).map_err(io::Error::other)?;
     let e4_dyn_step_cents = parse_e4_dyn_step_cents(&args).map_err(io::Error::other)?;
     let e2_phase_mode = E2PhaseMode::DissonanceThenConsonance;
+    let e2_quick = args.iter().any(|a| a == "--e2-quick");
     let clean_all = parse_clean(&args).map_err(io::Error::other)?;
     let experiments = parse_experiments(&args).map_err(io::Error::other)?;
     let experiments = if experiments.is_empty() {
@@ -1096,8 +1097,8 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
                     handles.push((exp.label(), h));
                 }
                 Experiment::E2 => {
-                    let h = s.spawn(|| {
-                        plot_e2_emergent_harmony(out_dir, space_ref, anchor_hz, e2_phase_mode)
+                    let h = s.spawn(move || {
+                        plot_e2_emergent_harmony(out_dir, space_ref, anchor_hz, e2_phase_mode, e2_quick)
                             .map_err(|err| io::Error::other(err.to_string()))
                     });
                     handles.push((exp.label(), h));
@@ -1488,6 +1489,7 @@ fn plot_e2_emergent_harmony(
     space: &Log2Space,
     anchor_hz: f32,
     phase_mode: E2PhaseMode,
+    quick: bool,
 ) -> Result<(), Box<dyn Error>> {
     let (baseline_runs, baseline_stats, nohill_runs, nohill_stats, norep_runs, norep_stats, shuffled_runs) =
         std::thread::scope(|scope| {
@@ -2468,7 +2470,7 @@ fn plot_e2_emergent_harmony(
     }
 
     // ── Consonance-only control (supplementary) ──
-    if phase_mode == E2PhaseMode::DissonanceThenConsonance {
+    if !quick && phase_mode == E2PhaseMode::DissonanceThenConsonance {
         eprintln!("  Running consonance-only control (baseline × {} seeds)...", E2_SEEDS.len());
         let (co_runs, co_stats) = e2_seed_sweep(
             space,
@@ -2815,10 +2817,25 @@ fn plot_e2_emergent_harmony(
     }
 
     // ── Terrain controls + coefficient sweep (supplementary) ──
-    eprintln!("  Running terrain controls...");
-    plot_e2_terrain_controls(out_dir, space, anchor_hz, &baseline_runs)?;
-    eprintln!("  Running coefficient sweep...");
-    plot_e2_coefficient_sweep(out_dir, space, anchor_hz)?;
+    if !quick {
+        eprintln!("  Running terrain controls + coefficient sweep (parallel)...");
+        let (tc_result, cs_result) = std::thread::scope(|scope| {
+            let tc_handle = scope.spawn(|| {
+                plot_e2_terrain_controls(out_dir, space, anchor_hz, &baseline_runs)
+                    .map_err(|e| e.to_string())
+            });
+            let cs_handle = scope.spawn(|| {
+                plot_e2_coefficient_sweep(out_dir, space, anchor_hz)
+                    .map_err(|e| e.to_string())
+            });
+            (
+                tc_handle.join().expect("terrain controls thread panicked"),
+                cs_handle.join().expect("coefficient sweep thread panicked"),
+            )
+        });
+        tc_result.map_err(|s| -> Box<dyn Error> { s.into() })?;
+        cs_result.map_err(|s| -> Box<dyn Error> { s.into() })?;
+    }
 
     Ok(())
 }
@@ -2956,39 +2973,57 @@ fn plot_e2_terrain_controls(
         base_bins_m, base_bins_s, base_nn_m, base_nn_s, base_ent_m, base_ent_s, base_c_m, base_c_s,
     );
 
+    // Run all 4 misalignment shifts in parallel
+    struct MisResult {
+        cents: f32,
+        shift: i32,
+        bins_v: Vec<f32>,
+        nn_v: Vec<f32>,
+        ent_v: Vec<f32>,
+        c_v: Vec<f32>,
+    }
+    let mis_results: Vec<MisResult> = std::thread::scope(|scope| {
+        let handles: Vec<_> = misalign_cents.iter().zip(shifts.iter()).map(|(&cents, &shift)| {
+            scope.spawn(move || {
+                eprintln!("    Misalignment Δ={} cents (shift={} bins)...", cents, shift);
+                let (mis_runs, _) = e2_seed_sweep(
+                    space, anchor_hz, E2Condition::Baseline, E2_STEP_SEMITONES, phase_mode, None, shift,
+                );
+                let mis_div: Vec<DiversityRow> = diversity_rows("misaligned", &mis_runs);
+                let bins_v: Vec<f32> = mis_div.iter().map(|r| r.metrics.unique_bins as f32).collect();
+                let nn_v: Vec<f32> = mis_div.iter().map(|r| r.metrics.nn_mean).collect();
+                let ent_v = entropy_from_runs_tc(&mis_runs);
+                let c_v = post_mean_c_tc(&mis_runs, half, burn);
+                MisResult { cents, shift, bins_v, nn_v, ent_v, c_v }
+            })
+        }).collect();
+        handles.into_iter().map(|h| h.join().expect("misalignment thread panicked")).collect()
+    });
+
     let mut all_mis_bins: Vec<f32> = Vec::new();
     let mut all_mis_nns: Vec<f32> = Vec::new();
     let mut all_mis_ent: Vec<f32> = Vec::new();
     let mut all_mis_c: Vec<f32> = Vec::new();
 
-    for (i, (&cents, &shift)) in misalign_cents.iter().zip(shifts.iter()).enumerate() {
-        eprintln!("    Misalignment Δ={} cents (shift={} bins)...", cents, shift);
-        let (mis_runs, _) = e2_seed_sweep(
-            space, anchor_hz, E2Condition::Baseline, E2_STEP_SEMITONES, phase_mode, None, shift,
-        );
-        let mis_div: Vec<DiversityRow> = diversity_rows("misaligned", &mis_runs);
-        let mis_bins_v: Vec<f32> = mis_div.iter().map(|r| r.metrics.unique_bins as f32).collect();
-        let mis_nn_v: Vec<f32> = mis_div.iter().map(|r| r.metrics.nn_mean).collect();
-        let mis_ent_v = entropy_from_runs_tc(&mis_runs);
-        let mis_c_v = post_mean_c_tc(&mis_runs, half, burn);
-        let (mb, sb) = mean_std_scalar(&mis_bins_v);
-        let (mn, sn) = mean_std_scalar(&mis_nn_v);
-        let (me, se) = mean_std_scalar(&mis_ent_v);
-        let (mc, sc) = mean_std_scalar(&mis_c_v);
+    for (i, mr) in mis_results.iter().enumerate() {
+        let (mb, sb) = mean_std_scalar(&mr.bins_v);
+        let (mn, sn) = mean_std_scalar(&mr.nn_v);
+        let (me, se) = mean_std_scalar(&mr.ent_v);
+        let (mc, sc) = mean_std_scalar(&mr.c_v);
 
-        let (t_bins, p_bins) = welch_t_tc(&mis_bins_v, &base_bins);
-        let (t_nn, p_nn) = welch_t_tc(&mis_nn_v, &base_nns);
-        let (t_ent, p_ent) = welch_t_tc(&mis_ent_v, &base_ent);
+        let (t_bins, p_bins) = welch_t_tc(&mr.bins_v, &base_bins);
+        let (t_nn, p_nn) = welch_t_tc(&mr.nn_v, &base_nns);
+        let (t_ent, p_ent) = welch_t_tc(&mr.ent_v, &base_ent);
 
         report.push_str(&format!(
             "Misaligned[{}]   {:<11.0}  {:<10}  {:.1} ± {:.1}     {:.3} ± {:.3}     {:.3} ± {:.3}     {:.3} ± {:.3}  t_bins={:.2} p={:.4} t_nn={:.2} p={:.4} t_ent={:.2} p={:.4}\n",
-            i, cents, shift, mb, sb, mn, sn, me, se, mc, sc, t_bins, p_bins, t_nn, p_nn, t_ent, p_ent,
+            i, mr.cents, mr.shift, mb, sb, mn, sn, me, se, mc, sc, t_bins, p_bins, t_nn, p_nn, t_ent, p_ent,
         ));
 
-        all_mis_bins.extend_from_slice(&mis_bins_v);
-        all_mis_nns.extend_from_slice(&mis_nn_v);
-        all_mis_ent.extend_from_slice(&mis_ent_v);
-        all_mis_c.extend_from_slice(&mis_c_v);
+        all_mis_bins.extend_from_slice(&mr.bins_v);
+        all_mis_nns.extend_from_slice(&mr.nn_v);
+        all_mis_ent.extend_from_slice(&mr.ent_v);
+        all_mis_c.extend_from_slice(&mr.c_v);
     }
 
     let (grand_bins_m, grand_bins_s) = mean_std_scalar(&all_mis_bins);
@@ -3058,34 +3093,52 @@ fn plot_e2_coefficient_sweep(
          b\tc\tunique_bins_m\tunique_bins_s\tnn_mean_m\tnn_mean_s\tentropy_m\tentropy_s\tc_score_m\tc_score_s\n",
     );
 
-    for &b in &b_values {
-        for &c in &c_values {
-            eprintln!("    Coefficient sweep b={:.2}, c={:.2}...", b, c);
-            let kernel = ConsonanceKernel { a: 1.0, b, c, d: 0.0 };
-            let (runs, _) = e2_seed_sweep(
-                space, anchor_hz, E2Condition::Baseline, E2_STEP_SEMITONES, phase_mode,
-                Some(kernel), 0,
-            );
-            let div: Vec<DiversityRow> = diversity_rows("sweep", &runs);
-            let bins_v: Vec<f32> = div.iter().map(|r| r.metrics.unique_bins as f32).collect();
-            let nn_v: Vec<f32> = div.iter().map(|r| r.metrics.nn_mean).collect();
-            let ent_v = entropy_from_runs_cs(&runs);
-            let c_scores: Vec<f32> = runs.iter()
-                .map(|r| {
-                    let from = half + burn;
-                    let slice = &r.mean_c_score_chosen_loo_series[from..];
-                    if slice.is_empty() { 0.0 } else { slice.iter().sum::<f32>() / slice.len() as f32 }
-                })
-                .collect();
-            let (bm, bs) = mean_std_scalar(&bins_v);
-            let (nm, ns) = mean_std_scalar(&nn_v);
-            let (em, es) = mean_std_scalar(&ent_v);
-            let (cm, cs) = mean_std_scalar(&c_scores);
-            report.push_str(&format!(
-                "{:.2}\t{:.2}\t{:.1}\t{:.1}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\n",
-                b, c, bm, bs, nm, ns, em, es, cm, cs,
-            ));
-        }
+    // Run all 16 (b,c) combos in parallel
+    let combos: Vec<(f32, f32)> = b_values.iter()
+        .flat_map(|&b| c_values.iter().map(move |&c| (b, c)))
+        .collect();
+    struct CoeffResult {
+        b: f32,
+        c: f32,
+        bins_m: f32, bins_s: f32,
+        nn_m: f32, nn_s: f32,
+        ent_m: f32, ent_s: f32,
+        c_m: f32, c_s: f32,
+    }
+    let results: Vec<CoeffResult> = std::thread::scope(|scope| {
+        let handles: Vec<_> = combos.iter().map(|&(b, c)| {
+            scope.spawn(move || {
+                eprintln!("    Coefficient sweep b={:.2}, c={:.2}...", b, c);
+                let kernel = ConsonanceKernel { a: 1.0, b, c, d: 0.0 };
+                let (runs, _) = e2_seed_sweep(
+                    space, anchor_hz, E2Condition::Baseline, E2_STEP_SEMITONES, phase_mode,
+                    Some(kernel), 0,
+                );
+                let div: Vec<DiversityRow> = diversity_rows("sweep", &runs);
+                let bins_v: Vec<f32> = div.iter().map(|r| r.metrics.unique_bins as f32).collect();
+                let nn_v: Vec<f32> = div.iter().map(|r| r.metrics.nn_mean).collect();
+                let ent_v = entropy_from_runs_cs(&runs);
+                let c_scores: Vec<f32> = runs.iter()
+                    .map(|r| {
+                        let from = half + burn;
+                        let slice = &r.mean_c_score_chosen_loo_series[from..];
+                        if slice.is_empty() { 0.0 } else { slice.iter().sum::<f32>() / slice.len() as f32 }
+                    })
+                    .collect();
+                let (bm, bs) = mean_std_scalar(&bins_v);
+                let (nm, ns) = mean_std_scalar(&nn_v);
+                let (em, es) = mean_std_scalar(&ent_v);
+                let (cm, cs) = mean_std_scalar(&c_scores);
+                CoeffResult { b, c, bins_m: bm, bins_s: bs, nn_m: nm, nn_s: ns, ent_m: em, ent_s: es, c_m: cm, c_s: cs }
+            })
+        }).collect();
+        handles.into_iter().map(|h| h.join().expect("coeff sweep thread panicked")).collect()
+    });
+    for cr in &results {
+        report.push_str(&format!(
+            "{:.2}\t{:.2}\t{:.1}\t{:.1}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\n",
+            cr.b, cr.c, cr.bins_m, cr.bins_s, cr.nn_m, cr.nn_s, cr.ent_m, cr.ent_s, cr.c_m, cr.c_s,
+        ));
     }
 
     write_with_log(out_dir.join("paper_e2_coefficient_sweep.txt"), report)?;
@@ -3656,12 +3709,26 @@ fn e2_seed_sweep(
     kernel: Option<ConsonanceKernel>,
     r_shift_bins: i32,
 ) -> (Vec<E2Run>, E2SweepStats) {
+    e2_seed_sweep_with_threads(space, anchor_hz, condition, step_semitones, phase_mode, kernel, r_shift_bins, None)
+}
+
+fn e2_seed_sweep_with_threads(
+    space: &Log2Space,
+    anchor_hz: f32,
+    condition: E2Condition,
+    step_semitones: f32,
+    phase_mode: E2PhaseMode,
+    kernel: Option<ConsonanceKernel>,
+    r_shift_bins: i32,
+    max_worker_threads: Option<usize>,
+) -> (Vec<E2Run>, E2SweepStats) {
     let seeds = &E2_SEEDS;
-    let max_threads = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1);
-    let per_condition_max_threads = (max_threads / 3).max(1);
-    let worker_count = per_condition_max_threads.min(seeds.len()).max(1);
+    let max_threads = max_worker_threads.unwrap_or_else(|| {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+    });
+    let worker_count = max_threads.min(seeds.len()).max(1);
     let runs = if worker_count <= 1 || seeds.len() <= 1 {
         let mut runs = Vec::with_capacity(seeds.len());
         for &seed in seeds {
