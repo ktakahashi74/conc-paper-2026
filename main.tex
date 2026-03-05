@@ -207,13 +207,6 @@ Each agent proposes local pitch perturbations of magnitude $\lambda=15$\,ct samp
 Ablation conditions remove either the hill-climbing mechanism or the crowding penalty.
 The pitch-adaptation experiment uses a discrete log-frequency grid (0.005\,oct bins) and evaluates leave-one-out consonance by removing each agent's spectral contribution from the shared environment before rescoring—an exact LOO that the real-time instrument approximates with a lighter-weight harmonic-projection subtraction. The leave-one-out mean of $C_{\text{field}}$ across all agents defines $C_{\text{score}}$, the primary outcome metric.
 
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\textwidth]{experiments/plots/e2/paper_e2_figure_e2_1.pdf}
-\caption{Population dynamics and diversity. (A) Leave-one-out mean consonance ($C_{\text{score}}$) over time (95\% CI); the vertical marker indicates the switch from dissonance-seeking to consonance-seeking at step~50. (B) Unique pitch bins at end of run (95\% CI). (B') Mean nearest-neighbor distance (ct, 95\% CI), revealing pronounced collapse when crowding penalty is removed. (C) Representative seed trajectories in cents.}
-\label{fig:e2-dynamics}
-\end{figure*}
-
 \subsection{Metabolic Policy}
 
 Agents possess energy $E$. Dynamics follow:
@@ -230,14 +223,24 @@ Each agent contains a phase oscillator $\dot{\phi_i} = \omega_i + (K/N)\sum_j \s
 
 The Kuramoto model realizes the temporal axis of DCC: cortical oscillations entrain to periodic auditory stimuli \citep{lakatos2008,doelling2015}, and agent timing shares the coupling law hypothesized for cortical beat tracking \citep{large1999}.
 
-\begin{figure*}[t]
+
+\section{Results}
+
+\begin{figure*}[p]
+\vspace*{-1.5em}
 \centering
+\includegraphics[width=\textwidth]{experiments/plots/e2/paper_e2_figure_e2_1.pdf}
+\caption{Population dynamics and diversity. (A) Leave-one-out mean consonance ($C_{\text{score}}$) over time (95\% CI); the vertical marker indicates the switch from dissonance-seeking to consonance-seeking at step~50. (B) Unique pitch bins at end of run (95\% CI). (B') Mean nearest-neighbor distance (ct, 95\% CI), revealing pronounced collapse when crowding penalty is removed. (C) Representative seed trajectories in cents.}
+\label{fig:e2-dynamics}
+\vspace{1em}
 \includegraphics[width=\textwidth]{experiments/plots/e2/paper_e2_figure_e2_2.pdf}
 \caption{Emergent interval structure. (A) Pairwise interval histogram, baseline (mean, 95\% CI). (B) Overlay with ablations: hill-climbing and crowding redistribute interval mass. (C) Shannon entropy (95\% CI): \emph{no hill} raises entropy toward uniform; \emph{no crowd} lowers it through collapse. (D) Distinct pitches at run end (95\% CI; 25\,ct): \emph{no crowd} collapses from $\approx$19 to $\approx$13.}
 \label{fig:e2-intervals}
+\vspace{1em}
+\includegraphics[width=\textwidth]{experiments/plots/e3/paper_e3_figure4.pdf}
+\caption{Consonance as selection pressure (pooled, $n\!\approx\!4{,}000$). (A,\,B) Kaplan--Meier survival by $C_{\mathrm{firstK}}$ median split. (A) Baseline: survival advantage for high-consonance agents. (B) No recharge: effect vanishes. (C,\,D) $C_{\mathrm{firstK}}$ vs.\ lifetime scatter. (C) Baseline: strong association. (D) No recharge: none.}
+\label{fig:e3-selection}
 \end{figure*}
-
-\section{Results}
 
 Four experiments each isolate a different mechanism subset (Table~\ref{tab:conditions}).
 
@@ -281,21 +284,6 @@ When recharge was disabled, seed-level mean $r = 0.003 \pm 0.08$, not significan
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\textwidth]{experiments/plots/e3/paper_e3_figure4.pdf}
-\caption{Consonance as selection pressure (pooled, $n\!\approx\!4{,}000$). (A,\,B) Kaplan--Meier survival by $C_{\mathrm{firstK}}$ median split. (A) Baseline: survival advantage for high-consonance agents. (B) No recharge: effect vanishes. (C,\,D) $C_{\mathrm{firstK}}$ vs.\ lifetime scatter. (C) Baseline: strong association. (D) No recharge: none.}
-\label{fig:e3-selection}
-\end{figure*}
-
-\subsection{Experiment~3: Consonance-Gated Entrainment}
-
-In Conchordal, consonance modulates metabolic energy, which determines vitality, which can scale the strength of Kuramoto phase coupling. This chain predicts---by design---that agents at consonant pitch positions should synchronize more readily to an external rhythm than those at dissonant positions. The following controlled assay validates that this consonance$\to$vitality$\to$coupling pathway operates as intended and isolates it from confounding dynamics.
-
-Agent pitches are assigned by stratified consonance sampling within $\pm 1$ octave of the anchor (one pitch per equal-width consonance stratum). To isolate the consonance$\to$vitality$\to$coupling pathway, we use a simplified continuous energy model (omitting the attack-gated dynamics of the Metabolic Policy section): $dE/dt = -c_b + r_E \cdot C_i$ ($c_b\!=\!0.05$/s, $r_E\!=\!0.1$/s---note the continuous-time units, distinct from the per-attack $r_E$ in the Metabolic Policy section---, $E_{\mathrm{cap}}\!=\!1.0$). Vitality $v$ scales coupling to a 2\,Hz external kick ($K_{\mathrm{base}}\!=\!3.0$; intrinsic frequency $1.8\!\cdot\!2\pi$\,rad/s, $\pm 2\%$ jitter). Three conditions: \emph{vitality} ($k_{\mathrm{eff},i} = K \cdot v_i$), \emph{uniform} ($k_{\mathrm{eff},i} = K \cdot \bar{v}$), and \emph{control} ($k_{\mathrm{eff}} = 0$); 40\,s runs, 20 seeds each.
-
-Figure~\ref{fig:e5-entrainment}A shows the group mean PLV over time. Both vitality and uniform conditions synchronize above the control baseline. Figure~\ref{fig:e5-entrainment}B plots per-agent final PLV against consonance (using stratified pitch assignment to span the full consonance range): in the vitality condition, consonant agents achieve near-unity PLV while dissonant agents remain desynchronized (the dashed curve is a logistic sigmoid fit, grid-search OLS), whereas the control condition shows no such gradient. Figure~\ref{fig:e5-entrainment}C summarizes the Pearson $r$(consonance, PLV) across all seeds. The vitality condition yields a strong positive correlation ($r = 0.75 \pm 0.09$), confirming that consonance position selectively modulates synchronization strength. The uniform condition, despite identical total coupling, shows near-zero correlation ($r \approx 0.0$), isolating the effect to per-agent vitality modulation rather than aggregate coupling magnitude. This experiment is a pathway-isolation assay: it validates one designed spectral-to-temporal bridge, not that rhythmic organization in the full runtime is determined by consonance alone.
-
-\begin{figure*}[t]
-\centering
 \includegraphics[width=\textwidth]{experiments/plots/e5/paper_e5_figure.pdf}
 \caption{Consonance-gated entrainment (20 seeds $\times$ 3 conditions). (A1)~Group mean PLV over time (95\% CI). (A2)~Paired contrast $\Delta$PLV (95\% CI). (B)~Per-agent final PLV vs.\ consonance (representative seed) with vitality sigmoid fit. (C)~Seed-level Pearson $r$(consonance, PLV): vitality $r=0.75$; uniform and control near zero.}
 \label{fig:e5-entrainment}
@@ -307,6 +295,14 @@ Figure~\ref{fig:e5-entrainment}A shows the group mean PLV over time. Both vitali
 \caption{Hereditary adaptation (20 seeds $\times$ 2 conditions, 4{,}000 deaths each). (A)~Mean consonance $C_{\text{score}}$ over time (shaded: 95\% CI across seeds). (B)~Pitch distribution heatmap for heredity runs; grey lines mark consonant ratios. (C)~Final pitch distribution (cents from anchor); heredity runs concentrate near consonant ratios while random runs remain dispersed.}
 \label{fig:e6-hereditary}
 \end{figure*}
+
+\subsection{Experiment~3: Consonance-Gated Entrainment}
+
+In Conchordal, consonance modulates metabolic energy, which determines vitality, which can scale the strength of Kuramoto phase coupling. This chain predicts---by design---that agents at consonant pitch positions should synchronize more readily to an external rhythm than those at dissonant positions. The following controlled assay validates that this consonance$\to$vitality$\to$coupling pathway operates as intended and isolates it from confounding dynamics.
+
+Agent pitches are assigned by stratified consonance sampling within $\pm 1$ octave of the anchor (one pitch per equal-width consonance stratum). To isolate the consonance$\to$vitality$\to$coupling pathway, we use a simplified continuous energy model (omitting the attack-gated dynamics of the Metabolic Policy section): $dE/dt = -c_b + r_E \cdot C_i$ ($c_b\!=\!0.05$/s, $r_E\!=\!0.1$/s---note the continuous-time units, distinct from the per-attack $r_E$ in the Metabolic Policy section---, $E_{\mathrm{cap}}\!=\!1.0$). Vitality $v$ scales coupling to a 2\,Hz external kick ($K_{\mathrm{base}}\!=\!3.0$; intrinsic frequency $1.8\!\cdot\!2\pi$\,rad/s, $\pm 2\%$ jitter). Three conditions: \emph{vitality} ($k_{\mathrm{eff},i} = K \cdot v_i$), \emph{uniform} ($k_{\mathrm{eff},i} = K \cdot \bar{v}$), and \emph{control} ($k_{\mathrm{eff}} = 0$); 40\,s runs, 20 seeds each.
+
+Figure~\ref{fig:e5-entrainment}A shows the group mean PLV over time. Both vitality and uniform conditions synchronize above the control baseline. Figure~\ref{fig:e5-entrainment}B plots per-agent final PLV against consonance (using stratified pitch assignment to span the full consonance range): in the vitality condition, consonant agents achieve near-unity PLV while dissonant agents remain desynchronized (the dashed curve is a logistic sigmoid fit, grid-search OLS), whereas the control condition shows no such gradient. Figure~\ref{fig:e5-entrainment}C summarizes the Pearson $r$(consonance, PLV) across all seeds. The vitality condition yields a strong positive correlation ($r = 0.75 \pm 0.09$), confirming that consonance position selectively modulates synchronization strength. The uniform condition, despite identical total coupling, shows near-zero correlation ($r \approx 0.0$), isolating the effect to per-agent vitality modulation rather than aggregate coupling magnitude. This experiment is a pathway-isolation assay: it validates one designed spectral-to-temporal bridge, not that rhythmic organization in the full runtime is determined by consonance alone.
 
 \subsection{Experiment~4: Hereditary Adaptation}
 \label{sec:e6}

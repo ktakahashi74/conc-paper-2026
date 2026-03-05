@@ -21131,12 +21131,12 @@ fn render_e2_figure2(
     if len == 0 {
         return Ok(());
     }
-    let root = bitmap_root(out_path, (1600, 800)).into_drawing_area();
+    let root = bitmap_root(out_path, (1600, 680)).into_drawing_area();
     root.fill(&WHITE)?;
     // 2-column layout: A/B stacked (left, wide) | C entropy / D polyphony (right, narrow)
     let (panel_left, panel_right) = root.split_horizontally(1200);
-    let (panel_a, panel_b) = panel_left.split_vertically(400);
-    let (panel_c, panel_d) = panel_right.split_vertically(400);
+    let (panel_a, panel_b) = panel_left.split_vertically(340);
+    let (panel_c, panel_d) = panel_right.split_vertically(340);
 
     // Convert semitone data to cents for display (×100)
     let st2c = 100.0f32;
