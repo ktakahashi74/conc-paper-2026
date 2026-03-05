@@ -28,7 +28,7 @@
 \subsection{S1.1 Pitch Adaptation (Experiment 1)}
 
 \noindent\textbf{Input:} agents $\{a_1,\ldots,a_N\}$ with pitches $x_i$ in $\log_2$-freq space.\\
-\textbf{Parameters:} step size $\lambda\!=\!0.15$\,st, crowding weight $\lambda_C$, $T_0\!=\!0.05$, $\tau\!=\!30$.
+\textbf{Parameters:} step size $\lambda\!=\!15$\,ct, crowding weight $\lambda_C\!=\!0.15$, $T_0\!=\!0.05$, $\tau\!=\!30$.
 
 \smallskip
 \noindent\texttt{for} round $t = 1$ \texttt{to} $100$:\\
@@ -88,7 +88,7 @@
 \smallskip
 \noindent\textbf{Random control:} respawn at $\mathrm{Uniform}(\text{anchor} \pm 1\,\text{oct})$ instead.
 
-\section{S1b. Normalization of $H_{01}$ and $R_{01}$}
+\section{S2. Normalization of $H_{01}$ and $R_{01}$}
 
 Both harmonicity and roughness are normalized to $[0,1]$ before entering the consonance core.
 
@@ -113,7 +113,7 @@ R_{01}(\rho) =
 \end{equation}
 clamped to $[0,1]$. For $\rho < 1$ (below-reference roughness) the mapping is linear; for $\rho \geq 1$ it is a hyperbolic saturation that approaches 1 asymptotically as $\rho \to \infty$. At $\rho = 1$ the function is continuous: $R_{01}(1) = 1/(1+k)$. With $k=1$, the reference roughness maps to $R_{01} = 0.5$.
 
-\section{S2. Complete Parameter Table}
+\section{S3. Complete Parameter Table}
 
 Table~S1 lists all parameters used across experiments.
 
@@ -171,7 +171,7 @@ Mutation $\sigma$ & $\sigma_m$ & --- & --- & --- & $0.003\,\log_2$ \\
 Parent selection & & --- & --- & --- & uniform \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{JI cross-validation}} \\
-Proximity kernel & $\alpha$ & --- & --- & --- & $4.0\,\text{st}^{-2}$ \\
+Proximity kernel & $\alpha$ & --- & --- & --- & $4.0 \times 10^{-4}\,\text{ct}^{-2}$ \\
 Ratio limit & $p,q$ & --- & --- & --- & $\leq 8$ \\
 Ratio weight & & --- & --- & --- & $1/(pq)$ \\
 \bottomrule
@@ -180,7 +180,7 @@ Ratio weight & & --- & --- & --- & $1/(pq)$ \\
 \end{tabular}
 \end{table*}
 
-\section{S3. Experiment 4: Full Sweep Results}
+\section{S4. Experiment 4: Full Sweep Results}
 
 Table~S2 reports the hereditary adaptation parameter sweep. Each of the 15 conditions was run with 20 seeds per arm (heredity vs.\ random control). The reported setting in the main text ($\sigma\!=\!0.003$, deaths $=\!4{,}000$, $N\!=\!32$) is marked with $\star$.
 
@@ -213,7 +213,7 @@ $\star$\,0.003 & 4000 & 32 & $0.121 \pm 0.177$ & $-0.003 \pm 0.027$ & 0.124 & 3.
 \end{tabular}
 \end{table*}
 
-\section{S4. Bilinear Consonance Core: Derivation}
+\section{S5. Bilinear Consonance Core: Derivation}
 
 The consonance core (Eq.~4 in the main text) is the most general bilinear form for two inputs $H_{01}, R_{01} \in [0,1]$:
 \begin{equation}
@@ -235,7 +235,7 @@ This product is nonnegative and peaks where harmonicity is high and roughness is
 
 \noindent\textbf{$C_{\text{level01}}$}: $C_{\text{field}}$ passed through a logistic sigmoid $\sigma(\beta(x - \theta))$ with $\beta=2$, $\theta=0$. This bounds the metabolic signal to $[0,1]$ while preserving the ranking.
 
-\section{S5. Sign-Flip Permutation Test}
+\section{S6. Sign-Flip Permutation Test}
 
 The interaction contrast for the integration test (Figure~7 in the main text) is tested with a one-sample sign-flip permutation test:
 
@@ -247,7 +247,7 @@ The interaction contrast for the integration test (Figure~7 in the main text) is
 
 Because $n=20$, exact enumeration is feasible. The observed $p = 0.000053$ (1 in 18{,}868 patterns) with mean contrast $0.30$ (95\% CI $[0.20, 0.39]$).
 
-\section{S6. Consonance-Only Control (Experiment 1)}
+\section{S7. Consonance-Only Control (Experiment 1)}
 
 Experiment~1 uses a two-phase curriculum: dissonance-seeking (rounds 1--50) followed by consonance-seeking (rounds 51--100). To assess whether the resulting polyphony depends on this schedule, we ran a \emph{consonance-only} control with identical parameters but $s(t) = +1$ for all 100 rounds (baseline condition, 20 seeds).
 
@@ -270,11 +270,11 @@ Interval entropy & $3.93 \pm 0.16$ & $3.53 \pm 0.32$ & $-5.0$ \\
 
 The consonance-only condition still produces structured polyphony (14.8 unique pitch bins, well above the collapse level of $\approx$13 observed without crowding in the main text) and achieves \emph{higher} mean consonance ($C_{\text{score}} = 0.54$ vs.\ $0.47$), confirming that consonant structure emerges from the landscape--penalty interaction alone. However, the curriculum significantly improves diversity: more unique pitch bins ($19.2$ vs.\ $14.8$), wider nearest-neighbour spacing ($0.57$ vs.\ $0.35$\,st), and higher interval entropy ($3.93$ vs.\ $3.53$\,nats). The dissonance-seeking phase thus serves as an initialisation strategy that broadens the starting distribution, but the self-organised polyphony reported in the main text is not an artefact of the curriculum schedule.
 
-\section{S7. Terrain Control and Robustness Analysis}
+\section{S8. Terrain Control and Robustness Analysis}
 
 Three supplementary analyses test whether the self-organised polyphony reported in Experiment~1 depends on the specific structure of the psychoacoustic landscape rather than on incidental parameter choices.
 
-\subsection{S7.1 Shuffled-Landscape Control}
+\subsection{S8.1 Shuffled-Landscape Control}
 
 We destroy spatial coherence by applying a fixed random permutation of the $C_{\text{score}}$ bin indices, generated once per run and held fixed throughout all sweeps.
 Agents therefore move on a stationary landscape with the same \emph{marginal} score distribution but no local gradient structure.
@@ -301,7 +301,7 @@ $C_{\text{score}}$ (ref) denotes the consonance score of each final configuratio
 Without coherent spatial gradients, agents still spread across the register (similar unique-bin count and nearest-neighbour spacing) thanks to the crowding penalty, but the interval structure degrades sharply: entropy rises from $3.93$ to $4.65$\,nats ($p < 0.0001$), approaching the uniform distribution.
 The coherent psychoacoustic landscape is therefore necessary for agents to self-organise into musically structured pitch configurations.
 
-\subsection{S7.2 Harmonicity--Roughness Misalignment Control}
+\subsection{S8.2 Harmonicity--Roughness Misalignment Control}
 
 The consonance kernel combines harmonicity ($H_{01}$) and roughness ($R_{01}$).
 We test whether their spatial alignment matters by circularly shifting $R_{01}$ by $\Delta$ cents before scoring, which preserves each component's marginal statistics but breaks the psychoacoustically motivated registration between them.
@@ -315,7 +315,7 @@ Table~\ref{tab:misaligned} reports the results ($n=20$ seeds per shift, 80 runs 
 \footnotesize
 \begin{tabular}{@{}lccc@{}}
 \toprule
-\textbf{Condition} & \textbf{Unique bins} & \textbf{NN dist.\ (st)} & \textbf{Entropy} \\
+Condition & Unique bins & NN dist.\ (st) & Entropy \\
 \midrule
 Baseline            & $19.2 \pm 1.3$ & $0.574 \pm 0.048$ & $3.93 \pm 0.16$ \\
 $\Delta = 137$\,¢   & $18.8 \pm 1.3$ & $0.547 \pm 0.099$ & $3.87 \pm 0.17$ \\
@@ -329,10 +329,10 @@ Misaligned (avg)    & $19.0 \pm 1.6$ & $0.578 \pm 0.094$ & $3.89 \pm 0.20$ \\
 \end{table}
 
 No individual shift or the aggregate reaches significance on any terrain-agnostic metric (all $p > 0.17$).
-This suggests that at the coarse resolution of the E2 simulation (24 agents, semitone-scale steps), moderate H--R misalignment does not destroy polyphonic structure.
-The shuffled-landscape control (S7.1) remains the stronger test, demonstrating that \emph{some} form of coherent landscape gradient is essential.
+This suggests that at the coarse resolution of the Experiment~1 simulation (24 agents, semitone-scale steps), moderate H--R misalignment does not destroy polyphonic structure.
+The shuffled-landscape control (S8.1) remains the stronger test, demonstrating that \emph{some} form of coherent landscape gradient is essential.
 
-\subsection{S7.3 Consonance Kernel Coefficient Sensitivity}
+\subsection{S8.3 Consonance Kernel Coefficient Sensitivity}
 
 The consonance kernel $C = a\,H_{01} + b\,R_{01} + c\,H_{01}\,R_{01} + d$ has four coefficients; the default is $(a,b,c,d) = (1.0, {-}1.35, 1.0, 0.0)$.
 We sweep $b \in \{-2.0, {-}1.35, {-}0.7, 0.0\}$ and $c \in \{0.0, 0.5, 1.0, 1.5\}$ with $a=1$, $d=0$ fixed (16 conditions, 20 seeds each).
@@ -343,26 +343,26 @@ Table~\ref{tab:coeff} shows all conditions produce unique-bin counts of $\geq 19
 \caption{Coefficient sweep: polyphony metrics across 16 $(b,c)$ settings.}
 \label{tab:coeff}
 \footnotesize
-\begin{tabular}{@{}rrcccc@{}}
+\begin{tabular}{@{}rrccc@{}}
 \toprule
-$b$ & $c$ & Unique bins & NN (st) & Entropy & $C_{\text{score}}$ \\
+$b$ & $c$ & Unique bins & Entropy & $C_{\text{score}}$ \\
 \midrule
-$-2.00$ & $0.00$ & $20.0 \pm 1.7$ & $0.620 \pm 0.081$ & $3.99 \pm 0.21$ & $0.356 \pm 0.046$ \\
-$-2.00$ & $0.50$ & $19.9 \pm 1.3$ & $0.593 \pm 0.069$ & $4.00 \pm 0.21$ & $0.391 \pm 0.046$ \\
-$-2.00$ & $1.00$ & $19.2 \pm 1.8$ & $0.561 \pm 0.100$ & $3.91 \pm 0.20$ & $0.413 \pm 0.038$ \\
-$-2.00$ & $1.50$ & $19.8 \pm 1.8$ & $0.586 \pm 0.085$ & $3.90 \pm 0.21$ & $0.445 \pm 0.045$ \\
-$-1.35$ & $0.00$ & $19.7 \pm 1.5$ & $0.590 \pm 0.056$ & $3.85 \pm 0.24$ & $0.436 \pm 0.034$ \\
-$-1.35$ & $0.50$ & $19.5 \pm 1.2$ & $0.588 \pm 0.087$ & $3.92 \pm 0.24$ & $0.449 \pm 0.044$ \\
-$-1.35$ & $1.00$ & $19.2 \pm 1.3$ & $0.574 \pm 0.048$ & $3.93 \pm 0.16$ & $0.474 \pm 0.040$ \\
-$-1.35$ & $1.50$ & $19.5 \pm 1.5$ & $0.573 \pm 0.081$ & $3.95 \pm 0.22$ & $0.491 \pm 0.039$ \\
-$-0.70$ & $0.00$ & $20.2 \pm 1.4$ & $0.630 \pm 0.095$ & $3.89 \pm 0.22$ & $0.483 \pm 0.034$ \\
-$-0.70$ & $0.50$ & $19.9 \pm 1.2$ & $0.617 \pm 0.089$ & $3.87 \pm 0.21$ & $0.511 \pm 0.039$ \\
-$-0.70$ & $1.00$ & $19.5 \pm 1.3$ & $0.578 \pm 0.082$ & $3.89 \pm 0.21$ & $0.538 \pm 0.049$ \\
-$-0.70$ & $1.50$ & $19.4 \pm 1.0$ & $0.592 \pm 0.072$ & $3.93 \pm 0.17$ & $0.558 \pm 0.045$ \\
-$0.00$  & $0.00$ & $19.0 \pm 1.4$ & $0.566 \pm 0.092$ & $3.89 \pm 0.19$ & $0.547 \pm 0.039$ \\
-$0.00$  & $0.50$ & $19.0 \pm 1.6$ & $0.583 \pm 0.104$ & $3.84 \pm 0.28$ & $0.556 \pm 0.041$ \\
-$0.00$  & $1.00$ & $19.5 \pm 1.1$ & $0.596 \pm 0.083$ & $3.92 \pm 0.15$ & $0.593 \pm 0.053$ \\
-$0.00$  & $1.50$ & $19.2 \pm 1.4$ & $0.592 \pm 0.086$ & $3.82 \pm 0.20$ & $0.619 \pm 0.042$ \\
+$-2.00$ & $0.00$ & $20.0 \pm 1.7$ & $3.99 \pm 0.21$ & $0.356 \pm 0.046$ \\
+$-2.00$ & $0.50$ & $19.9 \pm 1.3$ & $4.00 \pm 0.21$ & $0.391 \pm 0.046$ \\
+$-2.00$ & $1.00$ & $19.2 \pm 1.8$ & $3.91 \pm 0.20$ & $0.413 \pm 0.038$ \\
+$-2.00$ & $1.50$ & $19.8 \pm 1.8$ & $3.90 \pm 0.21$ & $0.445 \pm 0.045$ \\
+$-1.35$ & $0.00$ & $19.7 \pm 1.5$ & $3.85 \pm 0.24$ & $0.436 \pm 0.034$ \\
+$-1.35$ & $0.50$ & $19.5 \pm 1.2$ & $3.92 \pm 0.24$ & $0.449 \pm 0.044$ \\
+$-1.35$ & $1.00$ & $19.2 \pm 1.3$ & $3.93 \pm 0.16$ & $0.474 \pm 0.040$ \\
+$-1.35$ & $1.50$ & $19.5 \pm 1.5$ & $3.95 \pm 0.22$ & $0.491 \pm 0.039$ \\
+$-0.70$ & $0.00$ & $20.2 \pm 1.4$ & $3.89 \pm 0.22$ & $0.483 \pm 0.034$ \\
+$-0.70$ & $0.50$ & $19.9 \pm 1.2$ & $3.87 \pm 0.21$ & $0.511 \pm 0.039$ \\
+$-0.70$ & $1.00$ & $19.5 \pm 1.3$ & $3.89 \pm 0.21$ & $0.538 \pm 0.049$ \\
+$-0.70$ & $1.50$ & $19.4 \pm 1.0$ & $3.93 \pm 0.17$ & $0.558 \pm 0.045$ \\
+$0.00$  & $0.00$ & $19.0 \pm 1.4$ & $3.89 \pm 0.19$ & $0.547 \pm 0.039$ \\
+$0.00$  & $0.50$ & $19.0 \pm 1.6$ & $3.84 \pm 0.28$ & $0.556 \pm 0.041$ \\
+$0.00$  & $1.00$ & $19.5 \pm 1.1$ & $3.92 \pm 0.15$ & $0.593 \pm 0.053$ \\
+$0.00$  & $1.50$ & $19.2 \pm 1.4$ & $3.82 \pm 0.20$ & $0.619 \pm 0.042$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -370,7 +370,7 @@ $0.00$  & $1.50$ & $19.2 \pm 1.4$ & $0.592 \pm 0.086$ & $3.82 \pm 0.20$ & $0.619
 Polyphonic diversity (unique bins $\geq 19$, entropy $\geq 3.82$\,nats) is stable across the entire $(b,c)$ grid.
 The only systematic trend is that $C_{\text{score}}$ itself increases when the roughness penalty $|b|$ decreases or the interaction weight $c$ increases, which is expected from the kernel definition; the emergent pitch structure, however, remains robust.
 
-\subsection{S7.4 Integration Test Terrain Control (Experiment~4)}
+\subsection{S8.4 Integration Test Terrain Control (Experiment~4)}
 
 To test whether the synergistic heredity$\times$hill-climbing interaction (main text, \S5.1) depends on the coherent structure of the psychoacoustic landscape, we repeated all four integration-test conditions on a shuffled landscape, yielding a complete $2 \times 2 \times 2$ factorial (heredity/random $\times$ hill-climbing on/off $\times$ real/shuffled terrain; 8 conditions $\times$ 20 seeds $= 160$ runs).
 
@@ -381,12 +381,12 @@ To test whether the synergistic heredity$\times$hill-climbing interaction (main 
 \footnotesize
 \begin{tabular}{@{}lccc@{}}
 \toprule
-Condition & Real terrain & Shuffled & Difference \\
+Condition & Real & Shuffled & Diff. \\
 \midrule
-H  (heredity, no hill)  & $0.185 \pm 0.076$ & $0.051 \pm 0.006$ & $0.134^{***}$ \\
-HH (heredity + hill)    & $0.530 \pm 0.068$ & $0.082 \pm 0.049$ & $0.449^{***}$ \\
-R  (random, no hill)    & $0.061 \pm 0.008$ & $0.059 \pm 0.008$ & $0.003$ \\
-RH (random + hill)      & $0.107 \pm 0.013$ & $0.056 \pm 0.006$ & $0.051^{***}$ \\
+H  (her., no hill)  & $.185 \pm .076$ & $.051 \pm .006$ & $.134^{***}$ \\
+HH (her.\ + hill)   & $.530 \pm .068$ & $.082 \pm .049$ & $.449^{***}$ \\
+R  (rnd., no hill)   & $.061 \pm .008$ & $.059 \pm .008$ & $.003$ \\
+RH (rnd.\ + hill)    & $.107 \pm .013$ & $.056 \pm .006$ & $.051^{***}$ \\
 \midrule
 \multicolumn{4}{@{}l}{Interaction contrast (real): $0.30$ [$0.20$, $0.39$], $p < 0.001$} \\
 \multicolumn{4}{@{}l}{Interaction contrast (shuffled): $0.03$ [$-0.02$, $0.08$], $p = 0.19$} \\
@@ -398,7 +398,7 @@ On real terrain, the interaction contrast is large and significant ($0.30$, $p <
 The full factorial also reveals that coherent terrain affects the non-hill conditions asymmetrically: heredity benefits substantially from real terrain even without hill-climbing (H~real $0.185$ vs.\ H~shuffled $0.051$, $p = 0.0002$), because consonance-gated metabolism rewards agents that happen to inherit consonant positions, an effect that vanishes when the landscape is spatially incoherent.
 Random respawn shows no such terrain dependence (R~real $0.061$ vs.\ R~shuffled $0.059$, $p = 0.70$), confirming that the metabolism-mediated terrain effect operates specifically through heritable pitch structure.
 
-\subsection{S7.5 Topology Generalization (Experiment~4)}
+\subsection{S8.5 Topology Generalization (Experiment~4)}
 
 To test whether the heredity$\times$hill-climbing interaction depends on the specific harmonicity profile used in the default configuration, we repeated the four real-terrain conditions (H, HH, R, RH; 20 seeds each) under three landscape topologies, generated by varying the number of environment partials in the anchor harmonic series (3, 6, 10). Fewer partials produce a smoother, broader harmonicity landscape; more partials increase spectral fine structure.
 
@@ -407,22 +407,23 @@ To test whether the heredity$\times$hill-climbing interaction depends on the spe
 \caption{Topology generalization: interaction contrast across different numbers of environment partials (20 seeds each).}
 \label{tab:s7-topology}
 \footnotesize
-\begin{tabular}{@{}lcccccc@{}}
+\begin{tabular}{@{}lccccc@{}}
 \toprule
-Partials & H & HH & R & RH & Contrast & $p$ \\
+Partials & H & HH & R & RH & Contrast [95\% CI] \\
 \midrule
-3  & $0.152$ & $0.563$ & $0.074$ & $0.116$ & $0.37$ $[0.29,\,0.45]$ & $< 0.001$ \\
-6 (default)  & $0.185$ & $0.530$ & $0.061$ & $0.107$ & $0.30$ $[0.21,\,0.39]$ & $< 0.001$ \\
-10 & $0.125$ & $0.528$ & $0.064$ & $0.108$ & $0.36$ $[0.28,\,0.44]$ & $< 0.001$ \\
+3  & .152 & .563 & .074 & .116 & $.37$ [.29,\,.45]$^{***}$ \\
+6 (default)  & .185 & .530 & .061 & .107 & $.30$ [.21,\,.39]$^{***}$ \\
+10 & .125 & .528 & .064 & .108 & $.36$ [.28,\,.44]$^{***}$ \\
 \bottomrule
+\multicolumn{6}{@{}l}{\footnotesize $^{***}p < 0.001$.}
 \end{tabular}
 \end{table}
 
 The interaction contrast is large and significant ($p < 0.001$) across all three topologies, ranging from $0.30$ to $0.37$, confirming that the synergistic effect is not specific to the default harmonicity profile but generalizes across qualitatively different landscape structures.
 
-\subsection{S7.6 Phase Coherence (Experiment~4)}
+\subsection{S8.6 Phase Coherence (Experiment~4)}
 
-Each E6 agent entrains to a shared theta oscillator via a Kuramoto coupling mechanism. We computed the population Kuramoto order parameter $R = \lvert N^{-1} \sum_j e^{i(\phi_j - \phi_\theta)} \rvert$ at the final snapshot, where $\phi_j$ is each agent's rhythm phase and $\phi_\theta$ is the global theta phase ($R = 1$ indicates perfect synchrony; $R \approx 0$ indicates incoherence).
+Each Experiment~4 agent entrains to a shared theta oscillator via a Kuramoto coupling mechanism. We computed the population Kuramoto order parameter $R = \lvert N^{-1} \sum_j e^{i(\phi_j - \phi_\theta)} \rvert$ at the final snapshot, where $\phi_j$ is each agent's rhythm phase and $\phi_\theta$ is the global theta phase ($R = 1$ indicates perfect synchrony; $R \approx 0$ indicates incoherence).
 
 \begin{table}[h]
 \centering
@@ -444,9 +445,6 @@ RH (random + hill)      & $0.183 \pm 0.041$ & $0.181 \pm 0.039$ \\
 \end{tabular}
 \end{table}
 
-Phase coherence is low across all conditions ($R \approx 0.12\text{--}0.18$) and does not differ significantly between heredity and random conditions ($p > 0.4$). This indicates that in the current E6 parameterization, consonance-gated entrainment does not produce differential temporal binding across conditions within 2\,000 steps. On real terrain, heredity-type conditions show slightly higher $R$ than their shuffled counterparts (e.g., H: $0.183$ vs.\ $0.117$), consistent with the consonance-gated metabolic advantage providing agents more stable positions from which to entrain; random conditions show no such terrain dependence (R: $0.169$ vs.\ $0.165$).
-
-\bibliographystyle{apalike}
-\bibliography{conc}
+Phase coherence is low across all conditions ($R \approx 0.12\text{--}0.18$) and does not differ significantly between heredity and random conditions ($p > 0.4$). This indicates that in the current Experiment~4 parameterization, consonance-gated entrainment does not produce differential temporal binding across conditions within 4{,}000 deaths. On real terrain, heredity-type conditions show slightly higher $R$ than their shuffled counterparts (e.g., H: $0.183$ vs.\ $0.117$), consistent with the consonance-gated metabolic advantage providing agents more stable positions from which to entrain; random conditions show no such terrain dependence (R: $0.169$ vs.\ $0.165$).
 
 \end{document}
