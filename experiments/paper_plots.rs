@@ -5583,12 +5583,12 @@ where
         .margin(20)
         .x_label_area_size(90)
         .y_label_area_size(120)
-        .build_cartesian_2d(0.0f32..x_max.max(1.0), -12.0f32..12.0f32)?;
+        .build_cartesian_2d(0.0f32..x_max.max(1.0), -1200.0f32..1200.0f32)?;
 
     chart
         .configure_mesh()
         .x_desc("step")
-        .y_desc("semitones")
+        .y_desc("cents")
         .x_label_formatter(&|v| format!("{}", *v as i64))
         .label_style(("sans-serif", 52).into_font())
         .axis_desc_style(("sans-serif", 56).into_font())
@@ -5598,8 +5598,8 @@ where
     for ((step, bin), count) in heat_counts {
         let x0 = *step as f32;
         let x1 = x0 + E6_SNAPSHOT_INTERVAL as f32;
-        let y0 = -12.0 + *bin as f32 * E6_INTERVAL_BIN_ST;
-        let y1 = y0 + E6_INTERVAL_BIN_ST;
+        let y0 = (-12.0 + *bin as f32 * E6_INTERVAL_BIN_ST) * 100.0;
+        let y1 = y0 + E6_INTERVAL_BIN_ST * 100.0;
         let t = (*count / max_count).clamp(0.0, 1.0);
         let color = HSLColor(
             (220.0f64 - 220.0f64 * t as f64) / 360.0,
@@ -5613,8 +5613,8 @@ where
     }
 
     for &target in &E2_CONSONANT_STEPS {
-        for y in [target, target - 12.0] {
-            if !(-12.0..=12.0).contains(&y) {
+        for y in [target * 100.0, (target - 12.0) * 100.0] {
+            if !(-1200.0..=1200.0).contains(&y) {
                 continue;
             }
             chart.draw_series(std::iter::once(PathElement::new(
@@ -6149,9 +6149,9 @@ fn draw_e6_pitch_histogram_panel<DB: DrawingBackend>(
 where
     <DB as DrawingBackend>::ErrorType: 'static,
 {
-    let bin_width = 0.5f32; // semitones per bin
-    let lo = -13.0f32;
-    let hi = 13.0f32;
+    let bin_width = 50.0f32; // cents per bin
+    let lo = -1300.0f32;
+    let hi = 1300.0f32;
     let n_bins = ((hi - lo) / bin_width).ceil() as usize;
 
     let histogram = |data: &[f32]| -> Vec<f32> {
@@ -6166,8 +6166,10 @@ where
         counts
     };
 
-    let hist_h = histogram(st_heredity);
-    let hist_r = histogram(st_random);
+    let ct_heredity: Vec<f32> = st_heredity.iter().map(|&v| v * 100.0).collect();
+    let ct_random: Vec<f32> = st_random.iter().map(|&v| v * 100.0).collect();
+    let hist_h = histogram(&ct_heredity);
+    let hist_r = histogram(&ct_random);
     let y_max = hist_h
         .iter()
         .chain(hist_r.iter())
@@ -6184,7 +6186,7 @@ where
 
     chart
         .configure_mesh()
-        .x_desc("semitones")
+        .x_desc("cents")
         .y_desc("density")
         .y_label_formatter(&|v| {
             let r = (*v * 10.0).round() as i32;
@@ -6200,10 +6202,10 @@ where
 
     // Draw consonant ratio reference lines
     for &target in &E2_CONSONANT_STEPS {
-        for st in [target, target - 12.0] {
-            if st > lo && st < hi {
+        for ct in [target * 100.0, (target - 12.0) * 100.0] {
+            if ct > lo && ct < hi {
                 chart.draw_series(std::iter::once(PathElement::new(
-                    vec![(st, 0.0), (st, y_max)],
+                    vec![(ct, 0.0), (ct, y_max)],
                     BLACK.mix(0.12),
                 )))?;
             }
@@ -20558,15 +20560,16 @@ fn draw_trajectory_panel(
     let mut y_max = f32::NEG_INFINITY;
     for trace in trajectories {
         for &v in trace {
-            if v.is_finite() {
-                y_min = y_min.min(v);
-                y_max = y_max.max(v);
+            let ct = v * 100.0;
+            if ct.is_finite() {
+                y_min = y_min.min(ct);
+                y_max = y_max.max(ct);
             }
         }
     }
     if !y_min.is_finite() || !y_max.is_finite() {
-        y_min = -12.0;
-        y_max = 12.0;
+        y_min = -1200.0;
+        y_max = 1200.0;
     }
     let pad = ((y_max - y_min).abs() * 0.1).max(1e-3);
     let mut chart = ChartBuilder::on(area)
@@ -20581,7 +20584,7 @@ fn draw_trajectory_panel(
     chart
         .configure_mesh()
         .x_desc("step")
-        .y_desc("semitones")
+        .y_desc("cents")
         .label_style(("sans-serif", 28).into_font())
         .axis_desc_style(("sans-serif", 24).into_font())
         .draw()?;
@@ -20596,7 +20599,7 @@ fn draw_trajectory_panel(
         // Vary opacity to distinguish overlapping agents
         let alpha = 0.4 + 0.4 * ((i / n_colors) as f32 / (trajectories.len() as f32 / n_colors as f32).max(1.0)).min(1.0);
         let color = base.mix(alpha as f64);
-        let line = trace.iter().enumerate().map(|(step, &v)| (step as f32, v));
+        let line = trace.iter().enumerate().map(|(step, &v)| (step as f32, v * 100.0));
         chart.draw_series(LineSeries::new(line, ShapeStyle::from(&color).stroke_width(2)))?;
     }
     Ok(())
@@ -21091,9 +21094,9 @@ fn render_e2_figure1(
     draw_diversity_metric_panel_large(
         &panel_balt,
         "B'. NN distance (95% CI)",
-        "NN distance (st)",
+        "NN distance (ct)",
         diversity_rows,
-        |metrics| metrics.nn_mean,
+        |metrics| metrics.nn_mean * 100.0,
     )?;
     draw_trajectory_panel(
         &panel_c,
