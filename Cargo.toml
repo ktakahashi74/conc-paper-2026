@@ -10,7 +10,7 @@ path = "experiments/main.rs"
 
 
 [dependencies]
-conchordal = { path = "../conchordal" }
+conchordal = { path = "../conchordal", version = "0.3.0" }
 plotters = "0.3"
 rand = "0.9"
 hound = "3.5"
