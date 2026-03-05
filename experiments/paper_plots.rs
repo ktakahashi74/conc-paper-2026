@@ -257,8 +257,6 @@ const E5_E_CAP: f32 = 1.0;
 const E5_E_INIT: f32 = 0.1;
 const E5_CB: f32 = 0.05;
 const E5_RECHARGE: f32 = 0.1;
-#[allow(dead_code)]
-const E5_N_SEEDS: usize = 20;
 const E5_SEEDS: [u64; 20] = [
     0xE5C0FF_u64,
     0xE5C0FF_u64 + 1,
@@ -17827,58 +17825,6 @@ fn mean_at_indices(values: &[f32], indices: &[usize]) -> f32 {
     sum / indices.len() as f32
 }
 
-#[allow(dead_code)]
-fn mean_c_score_loo_at_indices_with_prev(
-    space: &Log2Space,
-    workspace: &ConsonanceWorkspace,
-    env_total: &[f32],
-    density_total: &[f32],
-    du_scan: &[f32],
-    prev_indices: &[usize],
-    eval_indices: &[usize],
-) -> f32 {
-    let mut env_loo = Vec::new();
-    let mut density_loo = Vec::new();
-    mean_c_score_loo_at_indices_with_prev_reused(
-        space,
-        workspace,
-        env_total,
-        density_total,
-        du_scan,
-        prev_indices,
-        eval_indices,
-        &mut env_loo,
-        &mut density_loo,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn mean_c_score_loo_at_indices_with_prev_reused(
-    space: &Log2Space,
-    workspace: &ConsonanceWorkspace,
-    env_total: &[f32],
-    density_total: &[f32],
-    du_scan: &[f32],
-    prev_indices: &[usize],
-    eval_indices: &[usize],
-    env_loo: &mut Vec<f32>,
-    density_loo: &mut Vec<f32>,
-) -> f32 {
-    let (mean_current, _mean_chosen) = mean_c_score_loo_pair_at_indices_with_prev_reused(
-        space,
-        workspace,
-        env_total,
-        density_total,
-        du_scan,
-        prev_indices,
-        eval_indices,
-        eval_indices,
-        env_loo,
-        density_loo,
-    );
-    mean_current
-}
-
 #[allow(clippy::too_many_arguments)]
 fn mean_c_score_loo_pair_at_indices_with_prev_reused(
     space: &Log2Space,
@@ -17949,28 +17895,6 @@ fn mean_c_score_loo_pair_at_indices_with_prev_reused(
         chosen_sum / chosen_count as f32
     };
     (current_mean, chosen_mean)
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-fn mean_c_score_loo_at_indices(
-    space: &Log2Space,
-    workspace: &ConsonanceWorkspace,
-    env_total: &[f32],
-    density_total: &[f32],
-    du_scan: &[f32],
-    indices: &[usize],
-    _log2_ratio_scan: &[f32],
-) -> f32 {
-    mean_c_score_loo_at_indices_with_prev(
-        space,
-        workspace,
-        env_total,
-        density_total,
-        du_scan,
-        indices,
-        indices,
-    )
 }
 
 fn mean_std_series(series_list: Vec<&Vec<f32>>) -> (Vec<f32>, Vec<f32>) {
@@ -20694,17 +20618,6 @@ fn draw_consonant_mass_panel(
     draw_consonant_mass_panel_impl(area, caption, subtitle, rows, select, 22, 16, 18)
 }
 
-#[allow(dead_code)]
-fn draw_consonant_mass_panel_large(
-    area: &DrawingArea<SVGBackend, Shift>,
-    caption: &str,
-    subtitle: &str,
-    rows: &[ConsonantMassRow],
-    select: fn(&ConsonantMassRow) -> f32,
-) -> Result<(), Box<dyn Error>> {
-    draw_consonant_mass_panel_impl(area, caption, subtitle, rows, select, 32, 20, 24)
-}
-
 #[allow(clippy::too_many_arguments)]
 fn draw_consonant_mass_panel_impl(
     area: &DrawingArea<SVGBackend, Shift>,
@@ -22164,46 +22077,6 @@ fn render_scatter_on_area(
     Ok(())
 }
 
-#[allow(dead_code)]
-fn render_scatter_on_area_large(
-    area: &DrawingArea<SVGBackend, Shift>,
-    caption: &str,
-    x_desc: &str,
-    data: &ScatterData,
-) -> Result<(), Box<dyn Error>> {
-    let mut chart = ChartBuilder::on(area)
-        .caption(caption, ("sans-serif", 32))
-        .margin(10)
-        .x_label_area_size(55)
-        .y_label_area_size(70)
-        .build_cartesian_2d(data.x_min..data.x_max, 0.0f32..(data.y_max * 1.05))?;
-
-    chart
-        .configure_mesh()
-        .x_desc(x_desc)
-        .y_desc("lifetime (steps)")
-        .label_style(("sans-serif", 20).into_font())
-        .axis_desc_style(("sans-serif", 24).into_font())
-        .draw()?;
-
-    if !data.points.is_empty() {
-        chart.draw_series(
-            data.points
-                .iter()
-                .map(|(x, y)| Circle::new((*x, *y), 3, PAL_H.mix(0.5).filled())),
-        )?;
-    }
-    if data.x_min <= 0.5 && data.x_max >= 0.5 {
-        let y_top = data.y_max * 1.05;
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(0.5, 0.0), (0.5, y_top)],
-            BLACK.mix(0.3),
-        )))?;
-    }
-
-    Ok(())
-}
-
 fn render_e3_scatter_with_stats(
     out_path: &Path,
     caption: &str,
@@ -22419,46 +22292,6 @@ fn build_survival_data(
 }
 
 fn render_survival_on_area(
-    area: &DrawingArea<SVGBackend, Shift>,
-    caption: &str,
-    data: &SurvivalData,
-) -> Result<(), Box<dyn Error>> {
-    let mut chart = ChartBuilder::on(area)
-        .caption(caption, ("sans-serif", 32))
-        .margin(10)
-        .x_label_area_size(55)
-        .y_label_area_size(70)
-        .build_cartesian_2d(0.0f32..data.x_max, 0.0f32..1.05f32)?;
-
-    chart
-        .configure_mesh()
-        .x_desc("time (steps)")
-        .y_desc("survival")
-        .label_style(("sans-serif", 20).into_font())
-        .axis_desc_style(("sans-serif", 24).into_font())
-        .draw()?;
-
-    chart
-        .draw_series(LineSeries::new(data.series_high.clone(), &PAL_H))?
-        .label("high")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_H));
-    chart
-        .draw_series(LineSeries::new(data.series_low.clone(), &PAL_R))?
-        .label("low")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_R));
-
-    chart
-        .configure_series_labels()
-        .background_style(WHITE.mix(0.8))
-        .border_style(BLACK)
-        .label_font(("sans-serif", 24).into_font())
-        .draw()?;
-
-    Ok(())
-}
-
-#[allow(dead_code)]
-fn render_survival_on_area_large(
     area: &DrawingArea<SVGBackend, Shift>,
     caption: &str,
     data: &SurvivalData,
@@ -23290,34 +23123,6 @@ where
     Ok(())
 }
 
-#[allow(dead_code)]
-fn draw_vertical_guides_labeled<DB: DrawingBackend>(
-    chart: &mut ChartContext<DB, Cartesian2d<RangedCoordf32, RangedCoordf32>>,
-    markers: &[(f32, &str)],
-    y_min: f32,
-    y_max: f32,
-) -> Result<(), Box<dyn Error>>
-where
-    DB::ErrorType: 'static,
-{
-    let style = ShapeStyle::from(&BLACK.mix(0.45)).stroke_width(2);
-    let y_span = (y_max - y_min).abs();
-    let text_y = y_max - 0.05 * y_span;
-    let font = ("sans-serif", 36).into_font().color(&BLACK).transform(FontTransform::Rotate90);
-    for &(x, label) in markers {
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(x, y_min), (x, y_max)],
-            style,
-        )))?;
-        chart.draw_series(std::iter::once(Text::new(
-            label.to_string(),
-            (x, text_y),
-            font.clone(),
-        )))?;
-    }
-    Ok(())
-}
-
 fn histogram_counts(values: &[f32], min: f32, max: f32, bin_width: f32) -> Vec<(f32, usize)> {
     if bin_width <= 0.0 {
         return Vec::new();
@@ -23339,15 +23144,6 @@ fn histogram_counts(values: &[f32], min: f32, max: f32, bin_width: f32) -> Vec<(
     (0..bins)
         .map(|i| (min + i as f32 * bin_width, counts[i]))
         .collect()
-}
-
-#[allow(dead_code)]
-fn phase_hist_bins(sample_count: usize) -> usize {
-    if sample_count == 0 {
-        return 12;
-    }
-    let bins = ((sample_count as f32).sqrt() * 2.0).round() as usize;
-    bins.clamp(12, 96)
 }
 
 struct SlidingPlv {
