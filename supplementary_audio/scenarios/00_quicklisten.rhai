@@ -5,9 +5,9 @@
 // Contrast the best-case emergence with ablation controls.
 //
 // 4 segments (12s each, 1s gaps):
-//   1. E2 baseline  — hill-climbing + repulsion → polyphony
+//   1. E2 baseline  — hill-climbing + crowding → polyphony
 //   2. E6 both      — heredity + hill-climbing → integration
-//   3. E2 no-hill   — repulsion only → no landscape guidance
+//   3. E2 no-hill   — crowding only → no landscape guidance
 //   4. E6 neither   — no mechanisms → random control
 
 let anchor_spec = derive(harmonic)
@@ -25,7 +25,7 @@ let agent_random = derive(harmonic)
     .metabolism(0.01)
     .respawn_random()
     .pitch_core("hill_climb")
-    .loo(true)
+    .leave_self_out(true)
     .move_cost(0.05)
     .improvement_threshold(0.0)
     .exploration(0.8)
@@ -41,7 +41,7 @@ let agent_hereditary = derive(harmonic)
     .metabolism(0.01)
     .respawn_hereditary(0.003)
     .pitch_core("hill_climb")
-    .loo(true)
+    .leave_self_out(true)
     .move_cost(0.05)
     .improvement_threshold(0.0)
     .exploration(0.8)
@@ -59,7 +59,7 @@ scene("ql1_e2_baseline", || {
     create(agent_random, 8)
         .place(random_log(110.0, 880.0))
         .landscape_weight(1.0)
-        .repulsion(0.15, 72.0);
+        .crowding(0.15, 72.0);
     wait(12.0);
 });
 wait(1.0);
@@ -82,7 +82,7 @@ scene("ql3_e2_nohill", || {
     create(agent_random, 8)
         .place(random_log(110.0, 880.0))
         .landscape_weight(0.0)
-        .repulsion(0.15, 72.0);
+        .crowding(0.15, 72.0);
     wait(12.0);
 });
 wait(1.0);
