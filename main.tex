@@ -220,24 +220,27 @@ The Conchordal instrument is designed around an extensible agent architecture th
 
 Each agent proposes local pitch perturbations of magnitude $\lambda=15$\,ct sampled within a bounded neighborhood in log-frequency space. A hill-climbing acceptance rule evaluates candidate positions via $C_{\text{field}}$ and a crowding penalty computed in ERB space. The crowding kernel $K_{\text{crowd}}(\Delta_{\text{erb}})$ is derived analytically as the complement of the roughness kernel: $K_{\text{crowd}}(d) = \max\!\bigl(0,\; 1 - R(d/\kappa) / R_{\text{peak}}\bigr)$, where $R$ is the full Plomp--Levelt roughness kernel and $\kappa$ is a reach factor ($\kappa=2.1$). This construction repels agents that are too close in pitch---preventing collapse to unison---while yielding to landscape-mediated repulsion at wider separations where roughness peaks. The combined score is $S = C_{\text{field}} - \lambda_C \sum_{j \neq i} K_{\text{crowd}}(\Delta_{ij})$. Proposals are accepted with probability $\min\!\bigl(1,\,\exp\bigl(\Delta S/T\bigr)\bigr)$ where $\Delta S = S_{\text{new}} - S_{\text{old}}$ and $T$ decays exponentially ($T_0=0.05$, $\tau=30$\,steps), annealing toward greedy hill-climbing.
 
-Ablation conditions remove either the hill-climbing mechanism or the crowding penalty.
-The pitch-adaptation experiment uses a discrete log-frequency grid (0.005\,oct bins) and evaluates leave-one-out consonance by removing each agent's spectral contribution from the shared environment before rescoring---an exact LOO that the real-time instrument approximates with a lighter-weight harmonic-projection subtraction. The leave-one-out mean of $C_{\text{field}}$ across all agents defines $C_{\text{score}}$, the primary outcome metric.
-
 \subsection{Metabolic Policy}
 
 Agents possess energy $E$. Dynamics follow:
 
 \begin{equation}
-E' = E - c_b \Delta t - c_a I_{\text{attack}} + r_E \cdot C_{\text{level01}} \cdot I_{\text{attack}},
+E \leftarrow E - c_b \Delta t - c_a I_{\text{attack}} + r_E \cdot C_{\text{level01}} \cdot I_{\text{attack}},
 \end{equation}
 
 where $c_b$ is basal cost, $c_a$ attack cost, $r_E$ recharge coefficient, and $I_{\text{attack}}\in\{0,1\}$ indicates a sound-onset event ($I_{\text{attack}}=1$ when the agent's phase oscillator crosses zero with $E>0$). Agents start with $E=1.0$ and perish when $E\leq 0$. We set $c_b=0.5$/s, $c_a=0.02$ per event, and $r_E=0.5$ per attack; time advances in hops of $512$ samples at $48\,$kHz ($\Delta t\approx 10.7\,$ms). In the baseline condition, recharge scales with consonance ($r_E=0.5$); in the ablation condition, $r_E=0$. An agent's \emph{vitality} $v = \sqrt{E/E_{\text{cap}}}$ (where $E_{\text{cap}}=1.0$) provides a normalised vigour signal available to downstream dynamics such as phase coupling.
 
 \subsection{Temporal Oscillation}
 
-Each agent contains a phase oscillator $\dot{\phi_i} = \omega_i + (K/N)\sum_j \sin(\phi_j - \phi_i) + F(t)$, where $K$ is coupling strength and $F(t)$ is an optional external forcing term (``kick''). Phase locking is quantified via the Kuramoto order parameter $R(t)$ \citep{kuramoto1984,strogatz2000} and phase-locking value (PLV) \citep{lachaux1999}.
+Neural oscillations in auditory cortex entrain to periodic acoustic stimuli across multiple frequency bands \citep{lakatos2008,doelling2015}, and computational models of beat tracking posit coupled-oscillator dynamics as the underlying mechanism \citep{large1999}. Conchordal's full implementation realises this temporal axis of DCC through a multi-band modulation bank spanning delta through beta frequencies ($\approx$0.5--30\,Hz), mirroring layered temporal processing in cortical auditory networks. Agents couple to this shared oscillatory field rather than directly to one another (mean-field approximation), and the interaction is bidirectional: the field entrains agent timing while agent onsets excite the field.
 
-The Kuramoto model realizes the temporal axis of DCC: cortical oscillations entrain to periodic auditory stimuli \citep{lakatos2008,doelling2015}, and agent timing shares the coupling law hypothesized for cortical beat tracking \citep{large1999}.
+The experiments extract the core coupling law as a single Kuramoto phase oscillator per agent:
+%
+\begin{equation}
+\dot{\phi}_i = \omega_i + \frac{K}{N}\sum_j \sin(\phi_j - \phi_i) + F(t),
+\end{equation}
+%
+where $K$ is coupling strength and $F(t)$ an external forcing term. Because metabolic vitality $v_i$ can gate the effective coupling ($k_{\mathrm{eff},i} = K \cdot v_i$), the spectral landscape (consonance $\to$ energy $\to$ vitality) directly modulates temporal synchronisation---a bridge tested in Experiment~3. Phase locking is quantified via the Kuramoto order parameter $R(t)$ \citep{kuramoto1984,strogatz2000} and phase-locking value (PLV) \citep{lachaux1999}.
 
 
 \section{Results}
@@ -283,6 +286,8 @@ Duration    & 100 rnds & 200 deaths & 40\,s & 4k deaths \\
 \end{table}
 
 \subsection{Experiment~1: Self-Organized Polyphony}
+
+Pitch adaptation is tested on a discrete log-frequency grid (0.005\,oct bins). Ablation conditions remove either the hill-climbing mechanism or the crowding penalty. Leave-one-out consonance is evaluated by removing each agent's spectral contribution from the shared environment before rescoring---an exact LOO that the real-time instrument approximates with a lighter-weight harmonic-projection subtraction. The leave-one-out mean of $C_{\text{field}}$ across all agents defines $C_{\text{score}}$, the primary outcome metric.
 
 Each run begins with a dissonance-seeking phase (steps 1--50) followed by a consonance-seeking phase (steps 51--100); the initial dissonance-seeking phase disperses agents across the landscape, preventing premature collapse to a single attractor; the switch is implemented by negating the hill-climbing score ($S \to -S$), so agents descend the consonance landscape in the first phase and ascend it in the second. The first 10 post-switch steps are discarded as burn-in. The initial phase disperses agents, improving diversity; a consonance-only control (Supplementary S6) confirms that polyphony also emerges without this curriculum, though with fewer unique pitch positions. Three conditions were compared: baseline, no hill-climb, and no crowding (Figures~\ref{fig:e2-dynamics}--\ref{fig:e2-intervals}).
 
