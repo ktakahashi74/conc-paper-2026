@@ -5,6 +5,7 @@
 \usepackage[colorlinks,allcolors=black]{hyperref}
 \usepackage{cleveref}
 \usepackage{booktabs}
+\usepackage{dblfloatfix}   % allow figure* [b] and fix deferred-float ordering
 
 \newcommand\blfootnote[1]{%
   \begingroup
@@ -111,7 +112,7 @@ Audio examples: \url{https://conchordal.org/alife2026-audio}
 
 \section{Introduction}
 
-\begin{figure*}[t]
+\begin{figure*}[b]
 \centering
 \includegraphics[width=\textwidth]{experiments/plots/e1/paper_e1_landscape_scan_anchor220.pdf}
 \caption{Psychoacoustic landscape around 220\,Hz. (A)~Harmonicity $H_{01}$; (B)~roughness $R_{01}$; (C)~consonance field $C_{\text{field}}$; (D)~consonance density $C_{\text{density}}$. Grey: 0.5-oct grid; dashed: integer ratios. Simple-ratio peaks in $H$ and troughs in $R$ create attractor structure in both views. Reduced density outside $\pm 1$\,oct is a finite-order property ($N\!=\!16$).}
@@ -135,13 +136,6 @@ As a design principle, DCC resonates with embodied music cognition \citep{leman2
 
 The present study evaluates whether such a system exhibits core artificial life properties. The psychoacoustic landscape and its attractor structure are established in \S2. Four experiments then test self-organization under environmental constraints (Experiment~1), selection mediated by resource dynamics (Experiment~2), synchronization through external forcing (Experiment~3), and hereditary adaptation through lineage-based pitch inheritance (Experiment~4).
 
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\textwidth]{experiments/plots/e2/paper_e2_figure_e2_1.pdf}
-\caption{Population dynamics and diversity. (A) Leave-one-out mean consonance ($C_{\text{score}}$) over time (95\% CI); the vertical marker indicates the switch from dissonance-seeking to consonance-seeking at round~50. (B) Unique pitch bins at end of run (95\% CI). (B') Mean nearest-neighbor distance (st, 95\% CI), revealing pronounced collapse when crowding penalty is removed. (C) Representative seed trajectories in semitone units.}
-\label{fig:e2-dynamics}
-\end{figure*}
-
 \section{The Psychoacoustic Landscape}
 
 Unlike the tunably rugged landscapes common in artificial life \citep{wright1932,kauffman1993}, Conchordal's landscape is derived deterministically from physical acoustics and cochlear mechanics, not from arbitrary fitness functions.
@@ -149,13 +143,6 @@ Unlike the tunably rugged landscapes common in artificial life \citep{wright1932
 \subsection{Log-Frequency Representation}
 
 All spectral relations are computed in $x = \log_2(f)$ space, where frequency ratios become additive displacements ($\Delta x = \log_2(f_2/f_1)$). This translational invariance lets harmonic templates and interference kernels be defined as convolutions, and is essential for modelling perceptual similarity structured by integer ratios \citep{glasberg1990}.
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\textwidth]{experiments/plots/e2/paper_e2_figure_e2_2.pdf}
-\caption{Emergent interval structure. (A) Pairwise interval histogram for the baseline condition (mean with 95\% CI). (B) Overlay of baseline and ablations, showing how hill-climbing and crowding redistribute interval mass. (C) Shannon entropy of the pairwise interval distribution (95\% CI): removing hill-climbing (\emph{no hill}) raises entropy toward uniform; removing crowding (\emph{no crowd}) lowers entropy through collapse. (D) Distinct pitch positions at run end (95\% CI; 25\,ct): \emph{no crowd} collapses from $\approx$19 to $\approx$13.}
-\label{fig:e2-intervals}
-\end{figure*}
 
 \subsection{Harmonicity}
 
@@ -220,6 +207,13 @@ Each agent proposes local pitch perturbations of magnitude $\lambda=0.15$\,st sa
 Ablation conditions remove either the hill-climbing mechanism or the crowding penalty.
 The pitch-adaptation experiment uses a discrete log-frequency grid (0.005\,oct bins) and evaluates leave-one-out consonance by removing each agent's spectral contribution from the shared environment before rescoring—an exact LOO that the real-time instrument approximates with a lighter-weight harmonic-projection subtraction.
 
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{experiments/plots/e2/paper_e2_figure_e2_1.pdf}
+\caption{Population dynamics and diversity. (A) Leave-one-out mean consonance ($C_{\text{score}}$) over time (95\% CI); the vertical marker indicates the switch from dissonance-seeking to consonance-seeking at round~50. (B) Unique pitch bins at end of run (95\% CI). (B') Mean nearest-neighbor distance (st, 95\% CI), revealing pronounced collapse when crowding penalty is removed. (C) Representative seed trajectories in semitone units.}
+\label{fig:e2-dynamics}
+\end{figure*}
+
 \subsection{Metabolic Policy}
 
 Agents possess energy $E$. Dynamics follow:
@@ -235,6 +229,13 @@ where $c_b$ is basal cost, $c_a$ attack cost, $r_E$ recharge coefficient, and $I
 Each agent contains a phase oscillator $\dot{\phi_i} = \omega_i + (K/N)\sum_j \sin(\phi_j - \phi_i) + F(t)$, where $K$ is coupling strength and $F(t)$ is an optional external forcing term (``kick''). Phase locking is quantified via the Kuramoto order parameter $R(t)$ \citep{kuramoto1984,strogatz2000} and phase-locking value (PLV) \citep{lachaux1999}.
 
 The Kuramoto model realizes the temporal axis of DCC: cortical oscillations entrain to periodic auditory stimuli \citep{lakatos2008,doelling2015}, and neural phase-locking predicts perceived rhythmic salience \citep{nozaradan2011}. Agent timing thus shares the coupling law hypothesized for cortical beat tracking \citep{large1999}.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{experiments/plots/e2/paper_e2_figure_e2_2.pdf}
+\caption{Emergent interval structure. (A) Pairwise interval histogram, baseline (mean, 95\% CI). (B) Overlay with ablations: hill-climbing and crowding redistribute interval mass. (C) Shannon entropy (95\% CI): \emph{no hill} raises entropy toward uniform; \emph{no crowd} lowers it through collapse. (D) Distinct pitches at run end (95\% CI; 25\,ct): \emph{no crowd} collapses from $\approx$19 to $\approx$13.}
+\label{fig:e2-intervals}
+\end{figure*}
 
 \section{Results}
 
@@ -281,7 +282,7 @@ When recharge was disabled, seed-level mean $r = 0.003 \pm 0.08$, not significan
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth]{experiments/plots/e3/paper_e3_figure4.pdf}
-\caption{Consonance as selection pressure (pooled, $n\!\approx\!4{,}000$ per condition). (A,\,B) Kaplan--Meier survival curves split by early consonance $C_{\mathrm{firstK}}$ (median split). (A) Baseline recharge: pronounced survival advantage for high-consonance agents. (B) Removing recharge eliminates the effect. (C,\,D) Scatter of $C_{\mathrm{firstK}}$ vs.\ lifetime. (C) Baseline: strong positive association. (D) No recharge: no association.}
+\caption{Consonance as selection pressure (pooled, $n\!\approx\!4{,}000$). (A,\,B) Kaplan--Meier survival by $C_{\mathrm{firstK}}$ median split. (A) Baseline: survival advantage for high-consonance agents. (B) No recharge: effect vanishes. (C,\,D) $C_{\mathrm{firstK}}$ vs.\ lifetime scatter. (C) Baseline: strong association. (D) No recharge: none.}
 \label{fig:e3-selection}
 \end{figure*}
 

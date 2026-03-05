@@ -4891,26 +4891,55 @@ fn plot_e6_hereditary_adaptation(
     let anchor_hz = E4_ANCHOR_HZ;
     let landscape = e3_reference_landscape(anchor_hz);
 
-    let mut all_results: Vec<(E6Condition, u64, E6RunResult)> = Vec::new();
+    let mut jobs: Vec<(E6Condition, u64)> = Vec::new();
     for condition in conditions {
         for &seed in &E6_SEEDS {
-            let cfg = E6RunConfig {
-                seed,
-                steps_cap: E6_STEPS_CAP,
-                min_deaths: E6_MIN_DEATHS,
-                pop_size: E6_POP_SIZE,
-                first_k: E6_FIRST_K,
-                condition,
-                mutation_sigma: E6_MUTATION_SIGMA,
-                snapshot_interval: E6_SNAPSHOT_INTERVAL,
-                landscape_weight: 0.0,
-                shuffle_landscape: false,
-                env_partials: None,
-            };
-            let result = run_e6(&cfg);
-            all_results.push((condition, seed, result));
+            jobs.push((condition, seed));
         }
     }
+    let worker_count = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(jobs.len())
+        .max(1);
+    let next = AtomicUsize::new(0);
+    let results_slot: Mutex<Vec<Option<(E6Condition, u64, E6RunResult)>>> = Mutex::new(
+        (0..jobs.len()).map(|_| None).collect(),
+    );
+    std::thread::scope(|scope| {
+        for _ in 0..worker_count {
+            scope.spawn(|| {
+                loop {
+                    let idx = next.fetch_add(1, Ordering::Relaxed);
+                    if idx >= jobs.len() {
+                        break;
+                    }
+                    let (condition, seed) = jobs[idx];
+                    let cfg = E6RunConfig {
+                        seed,
+                        steps_cap: E6_STEPS_CAP,
+                        min_deaths: E6_MIN_DEATHS,
+                        pop_size: E6_POP_SIZE,
+                        first_k: E6_FIRST_K,
+                        condition,
+                        mutation_sigma: E6_MUTATION_SIGMA,
+                        snapshot_interval: E6_SNAPSHOT_INTERVAL,
+                        landscape_weight: 0.0,
+                        shuffle_landscape: false,
+                        env_partials: None,
+                    };
+                    let result = run_e6(&cfg);
+                    results_slot.lock().unwrap()[idx] = Some((condition, seed, result));
+                }
+            });
+        }
+    });
+    let all_results: Vec<(E6Condition, u64, E6RunResult)> = results_slot
+        .into_inner()
+        .unwrap()
+        .into_iter()
+        .map(|opt| opt.unwrap())
+        .collect();
 
     let mut deaths_long_csv = String::from(
         "condition,seed,life_id,agent_id,birth_step,death_step,lifetime_steps,c_level01_birth,c_level01_firstk,avg_c_level01_tick,c_level01_std_over_life,avg_c_level01_attack,attack_tick_count\n",
@@ -5430,7 +5459,7 @@ fn render_e6_figure(
     final_st_heredity: &[f32],
     final_st_random: &[f32],
 ) -> Result<(), Box<dyn Error>> {
-    let root = bitmap_root(out_path, (3600, 1100)).into_drawing_area();
+    let root = bitmap_root(out_path, (3600, 935)).into_drawing_area();
     root.fill(&WHITE)?;
     let panels = root.split_evenly((1, 3));
 
@@ -5691,32 +5720,59 @@ fn plot_e6_integration_figure(
     let mut cond_seed_phase: Vec<Vec<f32>> = Vec::new();
 
     for cond in &conditions {
+        // Parallel seed loop
+        let seed_results: Vec<(u64, E6RunResult)> = {
+            let int_next = AtomicUsize::new(0);
+            let int_slots: Mutex<Vec<Option<(u64, E6RunResult)>>> = Mutex::new(
+                (0..E6_SEEDS.len()).map(|_| None).collect(),
+            );
+            let int_workers = std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1)
+                .min(E6_SEEDS.len())
+                .max(1);
+            std::thread::scope(|scope| {
+                for _ in 0..int_workers {
+                    scope.spawn(|| {
+                        loop {
+                            let idx = int_next.fetch_add(1, Ordering::Relaxed);
+                            if idx >= E6_SEEDS.len() {
+                                break;
+                            }
+                            let seed = E6_SEEDS[idx];
+                            let cfg = E6RunConfig {
+                                seed,
+                                steps_cap: E6_STEPS_CAP,
+                                min_deaths: E6_MIN_DEATHS,
+                                pop_size: E6_POP_SIZE,
+                                first_k: E6_FIRST_K,
+                                condition: cond.condition,
+                                mutation_sigma: E6_MUTATION_SIGMA,
+                                snapshot_interval: E6_SNAPSHOT_INTERVAL,
+                                landscape_weight: cond.landscape_weight,
+                                shuffle_landscape: cond.shuffle_landscape,
+                                env_partials: None,
+                            };
+                            let result = run_e6(&cfg);
+                            int_slots.lock().unwrap()[idx] = Some((seed, result));
+                        }
+                    });
+                }
+            });
+            int_slots.into_inner().unwrap().into_iter().map(|o| o.unwrap()).collect()
+        };
+
         let mut by_seed: HashMap<u64, Vec<(usize, f32)>> = HashMap::new();
         let mut phase_by_seed: HashMap<u64, Vec<(usize, f32)>> = HashMap::new();
-
-        for &seed in &E6_SEEDS {
-            let cfg = E6RunConfig {
-                seed,
-                steps_cap: E6_STEPS_CAP,
-                min_deaths: E6_MIN_DEATHS,
-                pop_size: E6_POP_SIZE,
-                first_k: E6_FIRST_K,
-                condition: cond.condition,
-                mutation_sigma: E6_MUTATION_SIGMA,
-                snapshot_interval: E6_SNAPSHOT_INTERVAL,
-                landscape_weight: cond.landscape_weight,
-                shuffle_landscape: cond.shuffle_landscape,
-                env_partials: None,
-            };
-            let result = run_e6(&cfg);
+        for (seed, result) in &seed_results {
             for snap in &result.snapshots {
                 let point = e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape);
                 by_seed
-                    .entry(seed)
+                    .entry(*seed)
                     .or_default()
                     .push((snap.step, point.mean_c_score));
                 phase_by_seed
-                    .entry(seed)
+                    .entry(*seed)
                     .or_default()
                     .push((snap.step, snap.phase_coherence));
             }
