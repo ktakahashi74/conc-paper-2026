@@ -23,13 +23,12 @@ use crate::sim::{
 use conchordal::core::consonance_kernel::{ConsonanceKernel, ConsonanceRepresentationParams};
 use conchordal::core::phase::wrap_pm_pi;
 use conchordal::life::articulation_core::kuramoto_phase_step;
-use conchordal::core::erb::hz_to_erb;
 use conchordal::core::harmonicity_kernel::{HarmonicityKernel, HarmonicityParams};
 use conchordal::core::landscape::{LandscapeParams, RoughnessScalarMode};
 use conchordal::core::log2space::{Log2Space, sample_scan_linear_log2};
 use conchordal::core::psycho_state;
 use conchordal::core::roughness_kernel::{
-    KernelParams, RoughnessKernel, crowding_runtime_delta_erb,
+    KernelParams, RoughnessKernel, crowding_runtime_delta_erb, erb_grid,
 };
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -1172,9 +1171,9 @@ fn plot_e1_landscape_scan(
     space: &Log2Space,
     anchor_hz: f32,
 ) -> Result<(), Box<dyn Error>> {
-    let anchor_idx = nearest_bin(space, anchor_hz);
+    let anchor_idx = space.nearest_index(anchor_hz);
 
-    let (_erb_scan, du_scan) = erb_grid_for_space(space);
+    let (_erb_scan, du_scan) = erb_grid(space);
     let mut anchor_density_scan = vec![0.0f32; space.n_bins()];
     let denom = du_scan[anchor_idx].max(1e-12);
     anchor_density_scan[anchor_idx] = 1.0 / denom;
@@ -1351,8 +1350,8 @@ fn plot_e1_landscape_scan(
             roughness_k: f32,
             h_ref_max: f32,
         ) -> Vec<(f32, f32)> {
-            let alt_idx = nearest_bin(space, alt_hz);
-            let (_erb, du) = erb_grid_for_space(space);
+            let alt_idx = space.nearest_index(alt_hz);
+            let (_erb, du) = erb_grid(space);
             let mut density = vec![0.0f32; space.n_bins()];
             density[alt_idx] = 1.0 / du[alt_idx].max(1e-12);
             let mut env = vec![0.0f32; space.n_bins()];
@@ -3322,7 +3321,7 @@ fn run_e2_once(
         }
     };
 
-    let (erb_scan, du_scan) = erb_grid_for_space(space);
+    let (erb_scan, du_scan) = erb_grid(space);
     let kernel_params = KernelParams::default();
     let mut workspace = build_consonance_workspace(space);
     if let Some(k) = kernel {
@@ -3416,7 +3415,7 @@ fn run_e2_once(
             backtrack_targets.clone_from_slice(&agent_indices);
         }
 
-        let anchor_idx = nearest_bin(space, anchor_hz_current);
+        let anchor_idx = space.nearest_index(anchor_hz_current);
         let (env_scan, density_scan) = build_env_scans(space, anchor_idx, &agent_indices, &du_scan);
         let (c_score_scan, c_level_scan, density_mass, r_state_stats) =
             compute_c_score_level_scans(space, &workspace, &env_scan, &density_scan, &du_scan);
@@ -9426,7 +9425,7 @@ fn write_e4_env_2d_sweep_outputs(
 ) -> io::Result<()> {
     let meta = e4_paper_meta();
     let space = Log2Space::new(meta.fmin, meta.fmax, meta.bins_per_oct);
-    let (_erb_scan, du_scan) = erb_grid_for_space(&space);
+    let (_erb_scan, du_scan) = erb_grid(&space);
     let final_freqs = e4_final_freqs_by_mw_seed(tail_agent_rows);
     if final_freqs.is_empty() {
         write_with_log(
@@ -11334,7 +11333,7 @@ fn e4_wr_dynamics_probe_rows(
     let half_range = 0.5 * meta.range_oct.max(0.0);
     let k = k_from_semitones(E4_DYNAMICS_STEP_SEMITONES.max(1e-3));
     let kernel_params = KernelParams::default();
-    let (erb_scan, _du) = erb_grid_for_space(space);
+    let (erb_scan, _du) = erb_grid(space);
 
     let mut rows = Vec::new();
     let mut keys: Vec<(i32, i32, u64)> = grouped_freqs.keys().copied().collect();
@@ -11359,10 +11358,7 @@ fn e4_wr_dynamics_probe_rows(
 
         let mut initial_indices = Vec::new();
         for &freq in freqs {
-            let idx = space
-                .index_of_freq(freq)
-                .unwrap_or_else(|| nearest_bin(space, freq))
-                .clamp(min_idx, max_idx);
+            let idx = space.nearest_index(freq).clamp(min_idx, max_idx);
             initial_indices.push(idx);
         }
         if initial_indices.is_empty() {
@@ -11728,7 +11724,7 @@ fn e4_abcd_trace_rows(
     let half_range = 0.5 * meta.range_oct.max(0.0);
     let k = k_from_semitones(E4_DYNAMICS_STEP_SEMITONES.max(1e-3));
     let kernel_params = KernelParams::default();
-    let (erb_scan, _du) = erb_grid_for_space(space);
+    let (erb_scan, _du) = erb_grid(space);
     let crowding_weight = E4_DYNAMICS_CROWDING_WEIGHT;
 
     let mut rows = Vec::new();
@@ -11762,10 +11758,7 @@ fn e4_abcd_trace_rows(
 
         let mut indices = Vec::new();
         for &freq in freqs {
-            let idx = space
-                .index_of_freq(freq)
-                .unwrap_or_else(|| nearest_bin(space, freq))
-                .clamp(min_idx, max_idx);
+            let idx = space.nearest_index(freq).clamp(min_idx, max_idx);
             indices.push(idx);
         }
         if indices.is_empty() {
@@ -11981,10 +11974,7 @@ fn e4_diag_rows_from_final_freqs(
         );
         let mut indices = Vec::new();
         for &freq in freqs {
-            let idx = space
-                .index_of_freq(freq)
-                .unwrap_or_else(|| nearest_bin(space, freq))
-                .clamp(min_idx, max_idx);
+            let idx = space.nearest_index(freq).clamp(min_idx, max_idx);
             indices.push(idx);
         }
         if indices.is_empty() {
@@ -13006,7 +12996,7 @@ fn plot_e4_mirror_sweep_wr_cut(out_dir: &Path, anchor_hz: f32) -> Result<(), Box
 
     let meta = e4_paper_meta();
     let space = Log2Space::new(meta.fmin, meta.fmax, meta.bins_per_oct);
-    let (_erb_scan, du_scan) = erb_grid_for_space(&space);
+    let (_erb_scan, du_scan) = erb_grid(&space);
     let grouped_freqs = grouped_freqs_by_wr_mw(&tail_rows);
     let mut landscape_delta_rows = Vec::new();
     for &wr_raw in &E4_WR_GRID {
@@ -16481,8 +16471,8 @@ fn render_e4_kernel_gate(out_path: &Path, anchor_hz: f32) -> Result<(), Box<dyn 
     let root_hz = anchor_hz;
     let fifth_hz = root_hz * 1.5;
     let mut env_scan = vec![0.0f32; space.n_bins()];
-    env_scan[nearest_bin(&space, root_hz)] += 1.0;
-    env_scan[nearest_bin(&space, fifth_hz)] += 1.0;
+    env_scan[space.nearest_index(root_hz)] += 1.0;
+    env_scan[space.nearest_index(fifth_hz)] += 1.0;
 
     let mut points: Vec<(f32, f32)> = Vec::new();
     for weight in build_weight_grid(E4_WEIGHT_FINE_STEP) {
@@ -16737,7 +16727,7 @@ fn shift_indices_by_ratio(
     let mut respawned = 0usize;
     for idx in indices.iter_mut() {
         let target_hz = space.centers_hz[*idx] * ratio;
-        let mut new_idx = nearest_bin(space, target_hz);
+        let mut new_idx = space.nearest_index(target_hz);
         if new_idx < min_idx || new_idx > max_idx {
             let pick = rng.random_range(min_idx..(max_idx + 1));
             new_idx = pick;
@@ -23562,7 +23552,7 @@ mod tests {
     fn e2_density_normalization_invariant_to_scale() {
         let space = Log2Space::new(200.0, 400.0, 12);
         let workspace = build_consonance_workspace(&space);
-        let (_erb_scan, du_scan) = erb_grid_for_space(&space);
+        let (_erb_scan, du_scan) = erb_grid(&space);
         let anchor_idx = space.n_bins() / 2;
         let (env_scan, mut density_scan) = build_env_scans(&space, anchor_idx, &[], &du_scan);
 
@@ -24117,7 +24107,7 @@ mod tests {
     fn mirror_weight_prefers_expected_binding_family() {
         let meta = e4_paper_meta();
         let space = Log2Space::new(meta.fmin, meta.fmax, meta.bins_per_oct);
-        let (_erb_scan, du_scan) = erb_grid_for_space(&space);
+        let (_erb_scan, du_scan) = erb_grid(&space);
 
         let root_family = [
             meta.anchor_hz,
@@ -24222,7 +24212,7 @@ mod tests {
     fn oracle_chord_delta_is_stable_under_noop_update() {
         let meta = e4_paper_meta();
         let space = Log2Space::new(meta.fmin, meta.fmax, meta.bins_per_oct);
-        let (erb_scan, du_scan) = erb_grid_for_space(&space);
+        let (erb_scan, du_scan) = erb_grid(&space);
         let freqs = [
             meta.anchor_hz,
             meta.anchor_hz * (5.0 / 4.0),
@@ -24232,11 +24222,7 @@ mod tests {
         let scan = compute_e4_landscape_scans(&space, meta.anchor_hz, 1.0, 0.0, &freqs, &du_scan);
         let mut indices: Vec<usize> = freqs
             .iter()
-            .map(|f| {
-                space
-                    .index_of_freq(*f)
-                    .unwrap_or_else(|| nearest_bin(&space, *f))
-            })
+            .map(|f| space.nearest_index(*f))
             .collect();
         let kernel_params = KernelParams::default();
         let before =
@@ -24365,7 +24351,7 @@ mod tests {
     fn e4_abcd_trace_has_required_columns_and_finite_metrics() {
         let meta = e4_paper_meta();
         let space = Log2Space::new(meta.fmin, meta.fmax, meta.bins_per_oct);
-        let (_erb_scan, du_scan) = erb_grid_for_space(&space);
+        let (_erb_scan, du_scan) = erb_grid(&space);
         let mut grouped = HashMap::new();
         grouped.insert(
             (float_key(1.0), float_key(0.5), 42_u64),
@@ -24479,7 +24465,7 @@ mod tests {
     fn e4_diag_landscape_changes_with_mirror_weight() {
         let meta = e4_paper_meta();
         let space = Log2Space::new(meta.fmin, meta.fmax, meta.bins_per_oct);
-        let (_erb_scan, du_scan) = erb_grid_for_space(&space);
+        let (_erb_scan, du_scan) = erb_grid(&space);
         let freqs = [
             meta.anchor_hz,
             meta.anchor_hz * (5.0 / 4.0),
@@ -24556,7 +24542,7 @@ mod tests {
     fn peaklist_changes_between_mw_zero_and_one() {
         let meta = e4_paper_meta();
         let space = Log2Space::new(meta.fmin, meta.fmax, meta.bins_per_oct);
-        let (_erb_scan, du_scan) = erb_grid_for_space(&space);
+        let (_erb_scan, du_scan) = erb_grid(&space);
         let freqs = [
             meta.anchor_hz,
             meta.anchor_hz * (3.0 / 2.0),
@@ -24696,7 +24682,7 @@ mod tests {
     fn update_agent_indices_is_order_independent() {
         let space = Log2Space::new(200.0, 400.0, 12);
         let workspace = build_consonance_workspace(&space);
-        let (erb_scan, du_scan) = erb_grid_for_space(&space);
+        let (erb_scan, du_scan) = erb_grid(&space);
         let anchor_idx = space.n_bins() / 2;
         let anchor_hz = space.centers_hz[anchor_idx];
         let log2_ratio_scan = build_log2_ratio_scan(&space, anchor_hz);
@@ -24858,7 +24844,7 @@ mod tests {
         workspace.params.consonance_kernel.b = 0.0;
         workspace.params.consonance_kernel.c = 0.0;
 
-        let (erb_scan, du_scan) = erb_grid_for_space(&space);
+        let (erb_scan, du_scan) = erb_grid(&space);
         let anchor_idx = space.n_bins() / 2;
         let anchor_hz = space.centers_hz[anchor_idx];
         let log2_ratio_scan = build_log2_ratio_scan(&space, anchor_hz);
@@ -24900,7 +24886,7 @@ mod tests {
     fn anti_backtrack_blocks_backtrack_candidate() {
         let space = Log2Space::new(200.0, 400.0, 12);
         let workspace = build_consonance_workspace(&space);
-        let (erb_scan, du_scan) = erb_grid_for_space(&space);
+        let (erb_scan, du_scan) = erb_grid(&space);
         let anchor_idx = space.n_bins() / 2;
         let anchor_hz = space.centers_hz[anchor_idx];
         let log2_ratio_scan = build_log2_ratio_scan(&space, anchor_hz);
@@ -25033,7 +25019,7 @@ mod tests {
     fn update_stats_identity_relations_hold() {
         let space = Log2Space::new(200.0, 400.0, 12);
         let workspace = build_consonance_workspace(&space);
-        let (erb_scan, du_scan) = erb_grid_for_space(&space);
+        let (erb_scan, du_scan) = erb_grid(&space);
         let anchor_idx = space.n_bins() / 2;
         let anchor_hz = space.centers_hz[anchor_idx];
         let log2_ratio_scan = build_log2_ratio_scan(&space, anchor_hz);
@@ -25085,7 +25071,7 @@ mod tests {
     fn e2_update_schedule_random_single_attempts_all_agents() {
         let space = Log2Space::new(200.0, 400.0, 12);
         let workspace = build_consonance_workspace(&space);
-        let (erb_scan, du_scan) = erb_grid_for_space(&space);
+        let (erb_scan, du_scan) = erb_grid(&space);
         let anchor_idx = space.n_bins() / 2;
         let anchor_hz = space.centers_hz[anchor_idx];
         let log2_ratio_scan = build_log2_ratio_scan(&space, anchor_hz);
@@ -25618,43 +25604,6 @@ mod tests {
         assert!(respawned > 0);
         assert!(indices.iter().all(|&idx| idx >= min_idx && idx <= max_idx));
     }
-}
-
-fn erb_grid_for_space(space: &Log2Space) -> (Vec<f32>, Vec<f32>) {
-    let erb_scan: Vec<f32> = space.centers_hz.iter().map(|&f| hz_to_erb(f)).collect();
-    let du_scan = local_du_from_grid(&erb_scan);
-    (erb_scan, du_scan)
-}
-
-fn local_du_from_grid(grid: &[f32]) -> Vec<f32> {
-    if grid.is_empty() {
-        return Vec::new();
-    }
-    if grid.len() == 1 {
-        return vec![1.0];
-    }
-
-    let n = grid.len();
-    let mut du = vec![0.0f32; n];
-    du[0] = (grid[1] - grid[0]).max(0.0);
-    du[n - 1] = (grid[n - 1] - grid[n - 2]).max(0.0);
-    for i in 1..n - 1 {
-        du[i] = (0.5 * (grid[i + 1] - grid[i - 1])).max(0.0);
-    }
-    du
-}
-
-fn nearest_bin(space: &Log2Space, hz: f32) -> usize {
-    let mut best_idx = 0;
-    let mut best_diff = f32::MAX;
-    for (i, &f) in space.centers_hz.iter().enumerate() {
-        let diff = (f - hz).abs();
-        if diff < best_diff {
-            best_diff = diff;
-            best_idx = i;
-        }
-    }
-    best_idx
 }
 
 // ── Independent consonance metric: Just Intonation ratio-complexity ──
