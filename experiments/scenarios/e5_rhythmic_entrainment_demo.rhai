@@ -1,7 +1,6 @@
 // E5 demo (conceptual sketch): rhythmic entrainment flavor with two pulse trains.
 let click = derive(sine)
     .amp(0.18)
-    .phonation("decay")
     .adsr(0.01, 0.08, 0.0, 0.15);
 
 scene("E5 Rhythmic Entrainment Demo", || {
