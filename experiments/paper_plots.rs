@@ -94,8 +94,8 @@ const E2_SEEDS: [u64; 20] = [
     0x10203040_u64,
     0x55667788_u64,
 ];
-const E2_PAPER_N_AGENTS: usize = 5;
-const E2_PAPER_RANGE_OCT: f32 = 2.0;
+const E2_PAPER_N_AGENTS: usize = 24;
+const E2_PAPER_RANGE_OCT: f32 = 4.0;
 const E2_PAPER_REP_SEED_INDEX: usize = 0;
 const E2_CLOSE_PAIR_WINDOW_ST: f32 = 0.5;
 const E2_DENSE_SWEEP_RANGES_OCT: [f32; 3] = [2.0, 3.0, 4.0];
@@ -22103,6 +22103,7 @@ fn draw_diversity_metric_panel(
     draw_diversity_metric_panel_impl(area, caption, y_desc, rows, select, 22, 16, 18)
 }
 
+#[allow(dead_code)]
 fn draw_diversity_metric_panel_large(
     area: &DrawingArea<SVGBackend, Shift>,
     caption: &str,
@@ -22111,6 +22112,27 @@ fn draw_diversity_metric_panel_large(
     select: fn(&DiversityMetrics) -> f32,
 ) -> Result<(), Box<dyn Error>> {
     draw_diversity_metric_panel_impl(area, caption, y_desc, rows, select, 32, 20, 24)
+}
+
+fn draw_diversity_metric_panel_large_for_conditions(
+    area: &DrawingArea<SVGBackend, Shift>,
+    caption: &str,
+    y_desc: &str,
+    rows: &[DiversityRow],
+    select: fn(&DiversityMetrics) -> f32,
+    conditions: &[&str],
+) -> Result<(), Box<dyn Error>> {
+    draw_diversity_metric_panel_impl_for_conditions(
+        area,
+        caption,
+        y_desc,
+        rows,
+        select,
+        32,
+        20,
+        24,
+        conditions,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -22124,35 +22146,63 @@ fn draw_diversity_metric_panel_impl(
     label_size: u32,
     axis_desc_size: u32,
 ) -> Result<(), Box<dyn Error>> {
-    let conditions = ["baseline", "nohill", "nocrowd"];
-    let mut means = [0.0f32; 3];
-    let mut ci95 = [0.0f32; 3];
-    for (i, cond) in conditions.iter().enumerate() {
-        let values = diversity_values_for_condition(rows, cond, select);
-        means[i] = mean_std_scalar(&values).0;
-        ci95[i] = ci95_half_width(&values);
+    draw_diversity_metric_panel_impl_for_conditions(
+        area,
+        caption,
+        y_desc,
+        rows,
+        select,
+        caption_size,
+        label_size,
+        axis_desc_size,
+        &["baseline", "nohill", "nocrowd"],
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_diversity_metric_panel_impl_for_conditions(
+    area: &DrawingArea<SVGBackend, Shift>,
+    caption: &str,
+    y_desc: &str,
+    rows: &[DiversityRow],
+    select: fn(&DiversityMetrics) -> f32,
+    caption_size: u32,
+    label_size: u32,
+    axis_desc_size: u32,
+    conditions: &[&str],
+) -> Result<(), Box<dyn Error>> {
+    if conditions.is_empty() {
+        return Ok(());
     }
+    let mut means = Vec::with_capacity(conditions.len());
+    let mut ci95 = Vec::with_capacity(conditions.len());
     let mut y_max = 0.0f32;
-    for i in 0..3 {
-        y_max = y_max.max(means[i] + ci95[i]);
+    for &cond in conditions {
+        let values = diversity_values_for_condition(rows, cond, select);
+        let mean = mean_std_scalar(&values).0;
+        let ci = ci95_half_width(&values);
+        y_max = y_max.max(mean + ci);
+        means.push(mean);
+        ci95.push(ci);
     }
     y_max = (1.15 * y_max.max(1e-4)).max(1e-4);
+    let x_hi = (conditions.len().saturating_sub(1)) as f32 + 0.5;
 
     let mut chart = ChartBuilder::on(area)
         .caption(caption, ("sans-serif", caption_size))
         .margin(8)
         .x_label_area_size(40)
         .y_label_area_size(55)
-        .build_cartesian_2d(-0.5f32..2.5f32, 0.0f32..y_max)?;
+        .build_cartesian_2d(-0.5f32..x_hi, 0.0f32..y_max)?;
     chart
         .configure_mesh()
         .disable_mesh()
         .x_desc("condition")
         .y_desc(y_desc)
-        .x_labels(3)
+        .x_labels(conditions.len())
         .x_label_formatter(&|x| {
             let idx = x.round() as isize;
-            if (0..=2).contains(&idx) {
+            if idx >= 0 && (idx as usize) < conditions.len() {
                 e2_condition_display(conditions[idx as usize]).to_string()
             } else {
                 String::new()
@@ -22162,7 +22212,7 @@ fn draw_diversity_metric_panel_impl(
         .axis_desc_style(("sans-serif", axis_desc_size).into_font())
         .draw()?;
 
-    for (i, cond) in conditions.iter().enumerate() {
+    for (i, &cond) in conditions.iter().enumerate() {
         let center = i as f32;
         let x0 = center - 0.3;
         let x1 = center + 0.3;
@@ -22280,6 +22330,128 @@ fn draw_e2_timeseries_controls_panel(
             norep_mean,
             norep_std,
             e2_condition_color("nocrowd"),
+        ),
+    ] {
+        let len = mean.len().min(std.len());
+        if len <= x_min {
+            continue;
+        }
+        let end = len.min(x_hi + 1);
+        let mut band: Vec<(f32, f32)> = Vec::with_capacity((end - x_min) * 2);
+        for i in x_min..end {
+            band.push((i as f32, mean[i] + std[i]));
+        }
+        for i in (x_min..end).rev() {
+            band.push((i as f32, mean[i] - std[i]));
+        }
+        chart.draw_series(std::iter::once(Polygon::new(
+            band,
+            color.mix(0.15).filled(),
+        )))?;
+        let line = (x_min..end).map(|i| (i as f32, mean[i]));
+        chart
+            .draw_series(LineSeries::new(line, color))?
+            .label(label)
+            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 18, y)], color));
+    }
+    if draw_legend {
+        chart
+            .configure_series_labels()
+            .background_style(WHITE.mix(0.8))
+            .border_style(BLACK)
+            .label_font(("sans-serif", 28).into_font())
+            .draw()?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_e2_timeseries_pair_panel(
+    area: &DrawingArea<SVGBackend, Shift>,
+    caption: &str,
+    baseline_mean: &[f32],
+    baseline_std: &[f32],
+    nohill_mean: &[f32],
+    nohill_std: &[f32],
+    burn_in: usize,
+    phase_switch_step: Option<usize>,
+    x_min: usize,
+    x_max: usize,
+    draw_legend: bool,
+) -> Result<(), Box<dyn Error>> {
+    let x_hi = x_max.max(x_min + 1);
+    let mut y_min = f32::INFINITY;
+    let mut y_max = f32::NEG_INFINITY;
+    for (mean, std) in [(baseline_mean, baseline_std), (nohill_mean, nohill_std)] {
+        let len = mean.len().min(std.len());
+        for i in x_min..len.min(x_hi + 1) {
+            let lo = mean[i] - std[i];
+            let hi = mean[i] + std[i];
+            if lo.is_finite() && hi.is_finite() {
+                y_min = y_min.min(lo);
+                y_max = y_max.max(hi);
+            }
+        }
+    }
+    if !y_min.is_finite() || !y_max.is_finite() {
+        y_min = 0.0;
+        y_max = 1.0;
+    }
+    let pad = ((y_max - y_min).abs() * 0.1).max(1e-3);
+    y_min = (y_min - pad).max(0.0);
+    y_max += pad;
+
+    let mut chart = ChartBuilder::on(area)
+        .caption(caption, ("sans-serif", 32))
+        .margin(10)
+        .x_label_area_size(60)
+        .y_label_area_size(75)
+        .build_cartesian_2d(x_min as f32..x_hi as f32, y_min..y_max)?;
+    chart
+        .configure_mesh()
+        .x_desc("step")
+        .y_desc("mean LOO C_score")
+        .label_style(("sans-serif", 28).into_font())
+        .axis_desc_style(("sans-serif", 28).into_font())
+        .draw()?;
+
+    if burn_in > x_min {
+        let burn_x1 = burn_in.min(x_hi) as f32;
+        if burn_x1 > x_min as f32 {
+            chart.draw_series(std::iter::once(Rectangle::new(
+                [(x_min as f32, y_min), (burn_x1, y_max)],
+                RGBColor(180, 180, 180).mix(0.15).filled(),
+            )))?;
+        }
+    }
+    if let Some(step) = phase_switch_step
+        && step >= x_min
+        && step <= x_hi
+    {
+        chart.draw_series(std::iter::once(PathElement::new(
+            vec![(step as f32, y_min), (step as f32, y_max)],
+            ShapeStyle::from(&BLACK.mix(0.55)).stroke_width(2),
+        )))?;
+        let y_text = y_max - 0.05 * (y_max - y_min);
+        chart.draw_series(std::iter::once(Text::new(
+            "phase switch".to_string(),
+            (step as f32, y_text),
+            ("sans-serif", 22).into_font().color(&BLACK),
+        )))?;
+    }
+
+    for (label, mean, std, color) in [
+        (
+            "baseline",
+            baseline_mean,
+            baseline_std,
+            e2_condition_color("baseline"),
+        ),
+        (
+            "no hill-climb",
+            nohill_mean,
+            nohill_std,
+            e2_condition_color("nohill"),
         ),
     ] {
         let len = mean.len().min(std.len());
@@ -22857,10 +23029,10 @@ fn render_e2_figure1(
     out_path: &Path,
     baseline_stats: &E2SweepStats,
     nohill_stats: &E2SweepStats,
-    norep_stats: &E2SweepStats,
+    _norep_stats: &E2SweepStats,
     baseline_ci95_c: &[f32],
     nohill_ci95_c: &[f32],
-    norep_ci95_c: &[f32],
+    _norep_ci95_c: &[f32],
     diversity_rows: &[DiversityRow],
     trajectories: &[Vec<f32>],
     phase_mode: E2PhaseMode,
@@ -22877,37 +23049,35 @@ fn render_e2_figure1(
         .len()
         .min(baseline_stats.std_c_score_loo.len())
         .min(nohill_stats.mean_c_score_loo.len())
-        .min(nohill_stats.std_c_score_loo.len())
-        .min(norep_stats.mean_c_score_loo.len())
-        .min(norep_stats.std_c_score_loo.len());
-    draw_e2_timeseries_controls_panel(
+        .min(nohill_stats.std_c_score_loo.len());
+    draw_e2_timeseries_pair_panel(
         &panel_a,
         "A. Mean LOO C_score over time (95% CI)",
         &baseline_stats.mean_c_score_loo,
         baseline_ci95_c,
         &nohill_stats.mean_c_score_loo,
         nohill_ci95_c,
-        &norep_stats.mean_c_score_loo,
-        norep_ci95_c,
         E2_BURN_IN,
         phase_mode.switch_step(),
         0,
         len.saturating_sub(1),
         true,
     )?;
-    draw_diversity_metric_panel_large(
+    draw_diversity_metric_panel_large_for_conditions(
         &panel_b,
         "B. Unique bins (95% CI)",
         "unique bins",
         diversity_rows,
         |metrics| metrics.unique_bins as f32,
+        &["baseline", "nohill"],
     )?;
-    draw_diversity_metric_panel_large(
+    draw_diversity_metric_panel_large_for_conditions(
         &panel_balt,
         "B'. NN distance (95% CI)",
         "NN distance (ct)",
         diversity_rows,
         |metrics| metrics.nn_mean * 100.0,
+        &["baseline", "nohill"],
     )?;
     draw_trajectory_panel(
         &panel_c,
