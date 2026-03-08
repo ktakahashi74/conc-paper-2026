@@ -43,7 +43,7 @@ const PAL_CD: RGBColor = RGBColor(62, 111, 182); // #3E6FB6 cobalt blue
 
 const SPACE_BINS_PER_OCT: u32 = 400;
 
-const E2_SWEEPS: usize = 100;
+const E2_SWEEPS: usize = 50;
 const E2_BURN_IN: usize = 10;
 const E2_ANCHOR_SHIFT_STEP: usize = usize::MAX;
 const E2_ANCHOR_SHIFT_RATIO: f32 = 0.5;
@@ -1805,7 +1805,8 @@ fn plot_e2_emergent_harmony(
     let norep_ci95_c_level = std_series_to_ci95(&norep_stats.std_c_level, norep_stats.n);
     let baseline_ci95_c = std_series_to_ci95(&baseline_stats.std_c_score_loo, baseline_stats.n);
     let nohill_ci95_c = std_series_to_ci95(&nohill_stats.std_c_score_loo, nohill_stats.n);
-    let norep_ci95_c = std_series_to_ci95(&norep_stats.std_c_score_loo, norep_stats.n);
+    let baseline_ci95_g_scene = std_series_to_ci95(&baseline_stats.std_g_scene, baseline_stats.n);
+    let nohill_ci95_g_scene = std_series_to_ci95(&nohill_stats.std_g_scene, nohill_stats.n);
 
     write_with_log(
         out_dir.join("paper_e2_representative_seed.txt"),
@@ -2200,6 +2201,24 @@ fn plot_e2_emergent_harmony(
             baseline_stats.n,
         ),
     )?;
+    write_with_log(
+        out_dir.join("paper_e2_seed_sweep_mean_g_scene.csv"),
+        sweep_csv(
+            "step,mean,std,n",
+            &baseline_stats.mean_g_scene,
+            &baseline_stats.std_g_scene,
+            baseline_stats.n,
+        ),
+    )?;
+    write_with_log(
+        out_dir.join("paper_e2_seed_sweep_mean_g_scene_ci95.csv"),
+        sweep_csv_with_ci95(
+            "step,mean,std,ci95,n\n",
+            &baseline_stats.mean_g_scene,
+            &baseline_stats.std_g_scene,
+            baseline_stats.n,
+        ),
+    )?;
     if E2_EMIT_KBINS_SWEEP_SUMMARY {
         write_with_log(
             out_dir.join("paper_e2_kbins_sweep_summary.csv"),
@@ -2243,6 +2262,27 @@ fn plot_e2_emergent_harmony(
         "mean C score (LOO current)",
         &baseline_stats.mean_c_score_loo,
         &baseline_stats.std_c_score_loo,
+        &marker_steps,
+    )?;
+    let sweep_g_scene_path = out_dir.join("paper_e2_mean_g_scene_over_time_seeds.svg");
+    render_series_plot_multi_with_band(
+        &sweep_g_scene_path,
+        "Mean scene consonance G(F) (seed sweep, 95% CI)",
+        "mean G(F) (a.u.)",
+        &[
+            (
+                "baseline",
+                &baseline_stats.mean_g_scene,
+                &baseline_ci95_g_scene,
+                PAL_H,
+            ),
+            (
+                "no hill-climb",
+                &nohill_stats.mean_g_scene,
+                &nohill_ci95_g_scene,
+                PAL_R,
+            ),
+        ],
         &marker_steps,
     )?;
 
@@ -2373,10 +2413,10 @@ fn plot_e2_emergent_harmony(
         &figure1_path,
         &baseline_stats,
         &nohill_stats,
-        &norep_stats,
         &baseline_ci95_c,
         &nohill_ci95_c,
-        &norep_ci95_c,
+        &baseline_ci95_g_scene,
+        &nohill_ci95_g_scene,
         &diversity_rows_vec,
         &baseline_run.trajectory_semitones,
         phase_mode,
@@ -4560,6 +4600,16 @@ fn e2_seed_sweep_with_threads_for_seeds(
             .map(|r| &r.mean_c_score_loo_series)
             .collect::<Vec<_>>(),
     );
+    let g_scene_series: Vec<Vec<f32>> = runs
+        .iter()
+        .map(|r| {
+            e2_scene_g_series(r, space)
+                .into_iter()
+                .map(|point| point.g_scene)
+                .collect()
+        })
+        .collect();
+    let mean_g_scene = mean_std_series(g_scene_series.iter().collect::<Vec<_>>());
     let mean_score = mean_std_series(
         runs.iter()
             .map(|r| &r.mean_score_series)
@@ -4580,6 +4630,8 @@ fn e2_seed_sweep_with_threads_for_seeds(
             std_c_level: mean_c_level.1,
             mean_c_score_loo: mean_c_score_loo.0,
             std_c_score_loo: mean_c_score_loo.1,
+            mean_g_scene: mean_g_scene.0,
+            std_g_scene: mean_g_scene.1,
             mean_score: mean_score.0,
             std_score: mean_score.1,
             mean_crowding: mean_crowding.0,
@@ -8266,6 +8318,8 @@ struct E2SweepStats {
     std_c_level: Vec<f32>,
     mean_c_score_loo: Vec<f32>,
     std_c_score_loo: Vec<f32>,
+    mean_g_scene: Vec<f32>,
+    std_g_scene: Vec<f32>,
     mean_score: Vec<f32>,
     std_score: Vec<f32>,
     mean_crowding: Vec<f32>,
@@ -22397,6 +22451,7 @@ fn draw_diversity_metric_panel_large(
     draw_diversity_metric_panel_impl(area, caption, y_desc, rows, select, 32, 20, 24)
 }
 
+#[allow(dead_code)]
 fn draw_diversity_metric_panel_large_for_conditions(
     area: &DrawingArea<SVGBackend, Shift>,
     caption: &str,
@@ -22644,6 +22699,7 @@ fn draw_e2_timeseries_controls_panel(
 fn draw_e2_timeseries_pair_panel(
     area: &DrawingArea<SVGBackend, Shift>,
     caption: &str,
+    y_desc: &str,
     baseline_mean: &[f32],
     baseline_std: &[f32],
     nohill_mean: &[f32],
@@ -22673,21 +22729,21 @@ fn draw_e2_timeseries_pair_panel(
         y_max = 1.0;
     }
     let pad = ((y_max - y_min).abs() * 0.1).max(1e-3);
-    y_min = (y_min - pad).max(0.0);
+    y_min -= pad;
     y_max += pad;
 
     let mut chart = ChartBuilder::on(area)
-        .caption(caption, ("sans-serif", 32))
+        .caption(caption, ("sans-serif", 24))
         .margin(10)
-        .x_label_area_size(60)
-        .y_label_area_size(75)
+        .x_label_area_size(52)
+        .y_label_area_size(62)
         .build_cartesian_2d(x_min as f32..x_hi as f32, y_min..y_max)?;
     chart
         .configure_mesh()
         .x_desc("step")
-        .y_desc("mean LOO C_score")
-        .label_style(("sans-serif", 28).into_font())
-        .axis_desc_style(("sans-serif", 28).into_font())
+        .y_desc(y_desc)
+        .label_style(("sans-serif", 20).into_font())
+        .axis_desc_style(("sans-serif", 20).into_font())
         .draw()?;
 
     if burn_in > x_min {
@@ -22711,7 +22767,7 @@ fn draw_e2_timeseries_pair_panel(
         chart.draw_series(std::iter::once(Text::new(
             "phase switch".to_string(),
             (step as f32, y_text),
-            ("sans-serif", 22).into_font().color(&BLACK),
+            ("sans-serif", 16).into_font().color(&BLACK),
         )))?;
     }
 
@@ -22756,7 +22812,7 @@ fn draw_e2_timeseries_pair_panel(
             .configure_series_labels()
             .background_style(WHITE.mix(0.8))
             .border_style(BLACK)
-            .label_font(("sans-serif", 28).into_font())
+            .label_font(("sans-serif", 18).into_font())
             .draw()?;
     }
     Ok(())
@@ -22766,6 +22822,8 @@ fn draw_trajectory_panel(
     area: &DrawingArea<SVGBackend, Shift>,
     caption: &str,
     trajectories: &[Vec<f32>],
+    burn_in: usize,
+    phase_switch_step: Option<usize>,
 ) -> Result<(), Box<dyn Error>> {
     if trajectories.is_empty() {
         return Ok(());
@@ -22774,38 +22832,43 @@ fn draw_trajectory_panel(
     if steps == 0 {
         return Ok(());
     }
-    let mut y_min = f32::INFINITY;
-    let mut y_max = f32::NEG_INFINITY;
-    for trace in trajectories {
-        for &v in trace {
-            let ct = v * 100.0;
-            if ct.is_finite() {
-                y_min = y_min.min(ct);
-                y_max = y_max.max(ct);
-            }
-        }
-    }
-    if !y_min.is_finite() || !y_max.is_finite() {
-        y_min = -1200.0;
-        y_max = 1200.0;
-    }
-    let pad = ((y_max - y_min).abs() * 0.1).max(1e-3);
+    let y_min = -2500.0f32;
+    let y_max = 2500.0f32;
     let mut chart = ChartBuilder::on(area)
-        .caption(caption, ("sans-serif", 32))
+        .caption(caption, ("sans-serif", 24))
         .margin(10)
-        .x_label_area_size(50)
-        .y_label_area_size(65)
+        .x_label_area_size(48)
+        .y_label_area_size(58)
         .build_cartesian_2d(
             0.0f32..(steps.saturating_sub(1) as f32).max(1.0),
-            (y_min - pad)..(y_max + pad),
+            y_min..y_max,
         )?;
     chart
         .configure_mesh()
         .x_desc("step")
         .y_desc("cents")
-        .label_style(("sans-serif", 28).into_font())
-        .axis_desc_style(("sans-serif", 24).into_font())
+        .y_labels(5)
+        .y_label_formatter(&|v| format!("{}", *v as i32))
+        .label_style(("sans-serif", 20).into_font())
+        .axis_desc_style(("sans-serif", 20).into_font())
         .draw()?;
+    if burn_in > 0 {
+        let burn_x1 = burn_in.min(steps.saturating_sub(1)) as f32;
+        if burn_x1 > 0.0 {
+            chart.draw_series(std::iter::once(Rectangle::new(
+                [(0.0, y_min), (burn_x1, y_max)],
+                RGBColor(180, 180, 180).mix(0.15).filled(),
+            )))?;
+        }
+    }
+    if let Some(step) = phase_switch_step
+        && step <= steps.saturating_sub(1)
+    {
+        chart.draw_series(std::iter::once(PathElement::new(
+            vec![(step as f32, y_min), (step as f32, y_max)],
+            ShapeStyle::from(&BLACK.mix(0.55)).stroke_width(2),
+        )))?;
+    }
     // Muted palette cycling through the paper's base colors
     let traj_colors: &[RGBColor] = &[PAL_H, PAL_R, PAL_C, PAL_CD];
     let n_colors = traj_colors.len();
@@ -23304,20 +23367,20 @@ fn render_e2_figure1(
     out_path: &Path,
     baseline_stats: &E2SweepStats,
     nohill_stats: &E2SweepStats,
-    _norep_stats: &E2SweepStats,
     baseline_ci95_c: &[f32],
     nohill_ci95_c: &[f32],
-    _norep_ci95_c: &[f32],
+    baseline_ci95_g_scene: &[f32],
+    nohill_ci95_g_scene: &[f32],
     diversity_rows: &[DiversityRow],
     trajectories: &[Vec<f32>],
     phase_mode: E2PhaseMode,
 ) -> Result<(), Box<dyn Error>> {
-    let root = bitmap_root(out_path, (1800, 510)).into_drawing_area();
+    let root = bitmap_root(out_path, (1860, 420)).into_drawing_area();
     root.fill(&WHITE)?;
-    // 3-column layout: a (wide) | b+b-alt (narrow, stacked) | c (wide)
-    let (panel_a, rest) = root.split_horizontally(700);
-    let (panel_mid, panel_c) = rest.split_horizontally(400);
-    let (panel_b, panel_balt) = panel_mid.split_vertically(255);
+    let (_, content) = root.split_horizontally(75);
+    let (content, _) = content.split_horizontally(1710);
+    let (wide, panel_d) = content.split_horizontally(1440);
+    let panels = wide.split_evenly((1, 3));
 
     let len = baseline_stats
         .mean_c_score_loo
@@ -23326,8 +23389,9 @@ fn render_e2_figure1(
         .min(nohill_stats.mean_c_score_loo.len())
         .min(nohill_stats.std_c_score_loo.len());
     draw_e2_timeseries_pair_panel(
-        &panel_a,
-        "A. Mean LOO C_score over time (95% CI)",
+        &panels[0],
+        "A. Mean LOO C_score",
+        "mean LOO C_score",
         &baseline_stats.mean_c_score_loo,
         baseline_ci95_c,
         &nohill_stats.mean_c_score_loo,
@@ -23338,26 +23402,43 @@ fn render_e2_figure1(
         len.saturating_sub(1),
         true,
     )?;
-    draw_diversity_metric_panel_large_for_conditions(
-        &panel_b,
-        "B. Unique bins (95% CI)",
-        "unique bins",
-        diversity_rows,
-        |metrics| metrics.unique_bins as f32,
-        &["baseline", "nohill"],
-    )?;
-    draw_diversity_metric_panel_large_for_conditions(
-        &panel_balt,
-        "B'. NN distance (95% CI)",
-        "NN distance (ct)",
-        diversity_rows,
-        |metrics| metrics.nn_mean * 100.0,
-        &["baseline", "nohill"],
+    let g_len = baseline_stats
+        .mean_g_scene
+        .len()
+        .min(baseline_ci95_g_scene.len())
+        .min(nohill_stats.mean_g_scene.len())
+        .min(nohill_ci95_g_scene.len());
+    draw_e2_timeseries_pair_panel(
+        &panels[1],
+        "B. Mean scene consonance G(F)",
+        "mean G(F) (a.u.)",
+        &baseline_stats.mean_g_scene,
+        baseline_ci95_g_scene,
+        &nohill_stats.mean_g_scene,
+        nohill_ci95_g_scene,
+        E2_BURN_IN,
+        phase_mode.switch_step(),
+        0,
+        g_len.saturating_sub(1),
+        true,
     )?;
     draw_trajectory_panel(
-        &panel_c,
-        "C. Representative seed trajectories",
+        &panels[2],
+        "C. Baseline trajectories",
         trajectories,
+        E2_BURN_IN,
+        phase_mode.switch_step(),
+    )?;
+    draw_diversity_metric_panel_impl_for_conditions(
+        &panel_d,
+        "D. Final unique bins",
+        "unique bins (25 ct)",
+        diversity_rows,
+        |metrics| metrics.unique_bins as f32,
+        24,
+        18,
+        20,
+        &["baseline", "nohill"],
     )?;
     root.present()?;
     Ok(())
@@ -28249,7 +28330,7 @@ fn render_e2_scene_g_pair_plot(
     chart
         .configure_mesh()
         .x_desc("step")
-        .y_desc("G(F)")
+        .y_desc("G(F) (a.u.)")
         .label_style(("sans-serif", 28).into_font())
         .axis_desc_style(("sans-serif", 28).into_font())
         .draw()?;
