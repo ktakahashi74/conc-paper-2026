@@ -554,6 +554,7 @@ fn usage() -> String {
         "  paper --exp e4 --e4-dyn-exploration 0.9 --e4-dyn-persistence 0.1",
         "  paper --exp e4 --e4-dyn-step-cents 75",
         "  paper --e2-render-baseline 5 4 2",
+        "  paper --e2-render-nohill 5 4 2",
         "  paper --e2-render-proposal 5 4 2",
         "  paper --exp e2 --e2-quick --e2-dense-sweep",
         "  paper --exp e2 --e2-quick --e2-candidate-search",
@@ -565,6 +566,7 @@ fn usage() -> String {
         "E4 fit debug CSV default to off (use --e4-debug-fit-metrics on to enable).",
         "E2 uses dissonance_then_consonance phase schedule.",
         "--e2-render-baseline N P [OCT] writes seed-0 baseline replay WAVs for N agents, P render partials, and optional OCT total range.",
+        "--e2-render-nohill N P [OCT] writes seed-0 no-hill replay WAVs for N agents, P render partials, and optional OCT total range.",
         "--e2-render-proposal N P [OCT] writes a proposal-based replay using step + local/global peak + ratio candidates.",
         "--e2-dense-sweep writes dense-regime baseline vs no-crowding diagnostics into experiments/plots/e2/.",
         "--e2-candidate-search writes 2oct/3oct/4oct baseline-vs-nohill candidate summaries and shortlist renders.",
@@ -695,6 +697,16 @@ fn parse_experiments(args: &[String]) -> Result<Vec<Experiment>, String> {
             continue;
         }
         if arg == "--e2-render-baseline" {
+            if i + 2 >= args.len() {
+                return Err(format!("Missing values after {arg}\n{}", usage()));
+            }
+            i += 3;
+            if i < args.len() && !args[i].starts_with('-') {
+                i += 1;
+            }
+            continue;
+        }
+        if arg == "--e2-render-nohill" {
             if i + 2 >= args.len() {
                 return Err(format!("Missing values after {arg}\n{}", usage()));
             }
@@ -847,6 +859,48 @@ fn parse_e2_render_baseline(args: &[String]) -> Result<Option<(usize, u32, f32)>
         args[pos + 3].parse::<f32>().map_err(|_| {
             format!(
                 "Invalid OCT for --e2-render-baseline: {}\n{}",
+                args[pos + 3],
+                usage()
+            )
+        })?
+    } else {
+        2.0
+    };
+    Ok(Some((
+        n_agents.max(1),
+        partials.clamp(1, 16),
+        octaves.clamp(0.5, 6.0),
+    )))
+}
+
+fn parse_e2_render_nohill(args: &[String]) -> Result<Option<(usize, u32, f32)>, String> {
+    let Some(pos) = args.iter().position(|arg| arg == "--e2-render-nohill") else {
+        return Ok(None);
+    };
+    if pos + 2 >= args.len() {
+        return Err(format!(
+            "Missing values after --e2-render-nohill\n{}",
+            usage()
+        ));
+    }
+    let n_agents = args[pos + 1].parse::<usize>().map_err(|_| {
+        format!(
+            "Invalid N for --e2-render-nohill: {}\n{}",
+            args[pos + 1],
+            usage()
+        )
+    })?;
+    let partials = args[pos + 2].parse::<u32>().map_err(|_| {
+        format!(
+            "Invalid P for --e2-render-nohill: {}\n{}",
+            args[pos + 2],
+            usage()
+        )
+    })?;
+    let octaves = if pos + 3 < args.len() && !args[pos + 3].starts_with('-') {
+        args[pos + 3].parse::<f32>().map_err(|_| {
+            format!(
+                "Invalid OCT for --e2-render-nohill: {}\n{}",
                 args[pos + 3],
                 usage()
             )
@@ -1163,6 +1217,19 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
         parse_e2_render_baseline(&args).map_err(io::Error::other)?
     {
         generate_e2_baseline_render(n_agents, render_partials, range_oct)?;
+        return Ok(());
+    }
+    if let Some((n_agents, render_partials, range_oct)) =
+        parse_e2_render_nohill(&args).map_err(io::Error::other)?
+    {
+        generate_e2_condition_render_named(
+            E2Condition::NoHillClimb,
+            "nohill",
+            n_agents,
+            render_partials,
+            range_oct,
+            "15_exp1_replay",
+        )?;
         return Ok(());
     }
     if let Some((n_agents, render_partials, range_oct)) =
@@ -1741,6 +1808,7 @@ fn plot_e2_emergent_harmony(
         out_dir.join("paper_e2_meta.txt"),
         e2_meta_text(
             baseline_run.n_agents,
+            baseline_run.fixed_drone_hz,
             baseline_run.k_bins,
             baseline_run.density_mass_mean,
             baseline_run.density_mass_min,
@@ -3799,6 +3867,7 @@ fn run_e2_once_cfg(
     range_oct: f32,
 ) -> E2Run {
     let mut rng = seeded_rng(seed);
+    let fixed_drone = e2_fixed_drone(space, anchor_hz);
     let mut anchor_hz_current = anchor_hz;
     let mut log2_ratio_scan = build_log2_ratio_scan(space, anchor_hz_current);
     let half_range_oct = 0.5 * range_oct.max(0.01);
@@ -3919,8 +3988,12 @@ fn run_e2_once_cfg(
             backtrack_targets.clone_from_slice(&agent_indices);
         }
 
-        let anchor_idx = space.nearest_index(anchor_hz_current);
-        let (env_scan, density_scan) = build_env_scans(space, anchor_idx, &agent_indices, &du_scan);
+        let (env_scan, density_scan) = build_env_scans_with_fixed_sources(
+            space,
+            std::slice::from_ref(&fixed_drone.idx),
+            &agent_indices,
+            &du_scan,
+        );
         let (c_score_scan, c_level_scan, density_mass, r_state_stats) =
             compute_c_score_level_scans(space, &workspace, &env_scan, &density_scan, &du_scan);
         let landscape = if use_proposal {
@@ -4300,6 +4373,7 @@ fn run_e2_once_cfg(
         r_ref_peak: workspace.r_ref_peak,
         roughness_k: workspace.params.roughness_k,
         roughness_ref_eps: workspace.params.roughness_ref_eps,
+        fixed_drone_hz: fixed_drone.hz,
         n_agents,
         k_bins,
     }
@@ -8151,6 +8225,7 @@ struct E2Run {
     r_ref_peak: f32,
     roughness_k: f32,
     roughness_ref_eps: f32,
+    fixed_drone_hz: f32,
     n_agents: usize,
     k_bins: i32,
 }
@@ -17421,9 +17496,23 @@ fn render_e4_kernel_gate(out_path: &Path, anchor_hz: f32) -> Result<(), Box<dyn 
     root.present()?;
     Ok(())
 }
-fn build_env_scans(
+#[derive(Clone, Copy, Debug)]
+struct E2FixedDrone {
+    hz: f32,
+    idx: usize,
+}
+
+fn e2_fixed_drone(space: &Log2Space, hz: f32) -> E2FixedDrone {
+    let hz = hz.max(1.0);
+    E2FixedDrone {
+        hz,
+        idx: space.nearest_index(hz),
+    }
+}
+
+fn build_env_scans_with_fixed_sources(
     space: &Log2Space,
-    anchor_idx: usize,
+    fixed_source_indices: &[usize],
     agent_indices: &[usize],
     du_scan: &[f32],
 ) -> (Vec<f32>, Vec<f32>) {
@@ -17436,12 +17525,29 @@ fn build_env_scans(
         density_scan[idx] += 1.0 / denom;
     };
 
-    add_source(anchor_idx);
+    for &idx in fixed_source_indices {
+        add_source(idx);
+    }
     for &idx in agent_indices {
         add_source(idx);
     }
 
     (env_scan, density_scan)
+}
+
+#[cfg(test)]
+fn build_env_scans(
+    space: &Log2Space,
+    anchor_idx: usize,
+    agent_indices: &[usize],
+    du_scan: &[f32],
+) -> (Vec<f32>, Vec<f32>) {
+    build_env_scans_with_fixed_sources(
+        space,
+        std::slice::from_ref(&anchor_idx),
+        agent_indices,
+        du_scan,
+    )
 }
 
 fn build_consonance_workspace(space: &Log2Space) -> ConsonanceWorkspace {
@@ -19358,6 +19464,7 @@ fn final_agents_csv(run: &E2Run) -> String {
 #[allow(clippy::too_many_arguments)]
 fn e2_meta_text(
     n_agents: usize,
+    fixed_drone_hz: f32,
     k_bins: i32,
     density_mass_mean: f32,
     density_mass_min: f32,
@@ -19384,6 +19491,14 @@ fn e2_meta_text(
         E2_ANCHOR_SHIFT_RATIO
     ));
     out.push_str(&format!("E2_STEP_SEMITONES={:.3}\n", E2_STEP_SEMITONES));
+    out.push_str("E2_REFERENCE_MODE=fixed_reference_condition\n");
+    out.push_str(&format!(
+        "E2_FIXED_DRONE_DESC=one immobile drone voice fixed at {:.3} Hz throughout the run\n",
+        fixed_drone_hz
+    ));
+    out.push_str(&format!("E2_FIXED_DRONE_HZ={:.3}\n", fixed_drone_hz));
+    out.push_str(&format!("E2_ADAPTIVE_VOICES={}\n", n_agents));
+    out.push_str(&format!("E2_TOTAL_FIELD_VOICES={}\n", n_agents + 1));
     out.push_str(&format!("E2_N_AGENTS={}\n", n_agents));
     out.push_str(&format!("E2_K_BINS={}\n", k_bins));
     out.push_str(&format!("E2_CROWDING_WEIGHT={:.3}\n", E2_CROWDING_WEIGHT));
@@ -19462,6 +19577,9 @@ fn e2_meta_text(
         "E2_PAIRWISE_INTERVAL_N_PAIRS={}\n",
         pairwise_n_pairs
     ));
+    out.push_str(
+        "E2_ADAPTIVE_STATS_SCOPE=adaptive voices only; fixed drone excluded from move/update, LOO means, pairwise intervals, diversity, and scene summaries\n",
+    );
     out.push_str(
         "E2_MEAN_C_SCORE_CURRENT_LOO_DESC=mean C score at current positions using LOO env (env_total-1 at current bin, density_total-1/du)\n",
     );
@@ -20407,10 +20525,10 @@ fn mean_last_c_score_loo(runs: &[E2Run]) -> f32 {
     mean_std_scalar(&values).0
 }
 
-fn mean_ji_scene_end(runs: &[E2Run], anchor_hz: f32) -> f32 {
+fn mean_ji_scene_end(runs: &[E2Run], _anchor_hz: f32) -> f32 {
     let values: Vec<f32> = runs
         .iter()
-        .map(|run| ji_population_score(&run.final_freqs_hz, anchor_hz))
+        .map(|run| ji_population_score(&run.final_freqs_hz, run.fixed_drone_hz))
         .collect();
     mean_std_scalar(&values).0
 }
@@ -20444,7 +20562,7 @@ fn e2_render_summary_csv(
     mode: &str,
     condition_label: &str,
     run: &E2Run,
-    anchor_hz: f32,
+    _anchor_hz: f32,
     render_partials: u32,
     range_oct: f32,
 ) -> String {
@@ -20477,7 +20595,7 @@ fn e2_render_summary_csv(
         .last()
         .copied()
         .unwrap_or(init_loo);
-    let ji_series = e2_scene_ji_series(run, anchor_hz);
+    let ji_series = e2_scene_ji_series(run);
     let init_ji = ji_series.first().copied().unwrap_or(0.0);
     let mid_ji = ji_series
         .get(E2_PHASE_SWITCH_STEP.min(ji_series.len().saturating_sub(1)))
@@ -20506,12 +20624,13 @@ fn e2_render_summary_csv(
         0.0
     };
     let mut out = String::from(
-        "file,mode,seed,condition,n_agents,render_partials,range_octaves,steps,mean_c_init,mean_c_mid,mean_c_end,delta_mean_c,mean_c_level_init,mean_c_level_mid,mean_c_level_end,delta_mean_c_level,mean_c_score_loo_init,mean_c_score_loo_mid,mean_c_score_loo_end,delta_mean_c_score_loo,ji_scene_init,ji_scene_mid,ji_scene_end,delta_ji_scene,moved_pre,moved_post\n",
+        "file,mode,seed,condition,n_agents,fixed_drone_hz,render_partials,range_octaves,steps,mean_c_init,mean_c_mid,mean_c_end,delta_mean_c,mean_c_level_init,mean_c_level_mid,mean_c_level_end,delta_mean_c_level,mean_c_score_loo_init,mean_c_score_loo_mid,mean_c_score_loo_end,delta_mean_c_score_loo,ji_scene_init,ji_scene_mid,ji_scene_end,delta_ji_scene,moved_pre,moved_post\n",
     );
     out.push_str(&format!(
-        "{stem},{mode},{},{condition_label},{},{},{:.1},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
+        "{stem},{mode},{},{condition_label},{},{:.3},{},{:.1},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
         run.seed,
         run.n_agents,
+        run.fixed_drone_hz,
         render_partials,
         range_oct,
         run.mean_c_series.len(),
@@ -20580,6 +20699,7 @@ fn generate_e2_condition_render_named(
         &run.trajectory_semitones,
         anchor_hz,
         render_partials,
+        Some(run.fixed_drone_hz),
         true,
     )?;
     write_with_log(
@@ -22123,15 +22243,7 @@ fn draw_diversity_metric_panel_large_for_conditions(
     conditions: &[&str],
 ) -> Result<(), Box<dyn Error>> {
     draw_diversity_metric_panel_impl_for_conditions(
-        area,
-        caption,
-        y_desc,
-        rows,
-        select,
-        32,
-        20,
-        24,
-        conditions,
+        area, caption, y_desc, rows, select, 32, 20, 24, conditions,
     )
 }
 
@@ -25415,6 +25527,7 @@ mod tests {
             r_ref_peak: 0.0,
             roughness_k: 0.0,
             roughness_ref_eps: 0.0,
+            fixed_drone_hz: E4_ANCHOR_HZ,
             n_agents: 0,
             k_bins: 0,
         }
@@ -25579,6 +25692,62 @@ mod tests {
             (frac - (2.0 / 6.0)).abs() < 1e-6,
             "expected 2 close pairs out of 6, got {frac}"
         );
+    }
+
+    #[test]
+    fn fixed_drone_is_included_in_field_scans() {
+        let space = Log2Space::new(200.0, 400.0, 12);
+        let (_erb_scan, du_scan) = erb_grid(&space);
+        let drone = e2_fixed_drone(&space, E4_ANCHOR_HZ);
+        let (env_scan, density_scan) = build_env_scans_with_fixed_sources(
+            &space,
+            std::slice::from_ref(&drone.idx),
+            &[],
+            &du_scan,
+        );
+        assert!(
+            env_scan[drone.idx] > 0.0,
+            "expected fixed drone in env scan"
+        );
+        assert!(
+            density_scan[drone.idx] > 0.0,
+            "expected fixed drone in density scan"
+        );
+    }
+
+    #[test]
+    fn fixed_drone_is_audible_but_excluded_from_adaptive_scene_metrics() {
+        let mut run = test_e2_run(0.0, 0xD06E);
+        run.fixed_drone_hz = E4_ANCHOR_HZ;
+        run.n_agents = 1;
+        run.trajectory_semitones = vec![vec![12.0]];
+        run.trajectory_c_level = vec![vec![0.5]];
+        run.final_semitones = vec![12.0];
+        run.final_log2_ratios = vec![1.0];
+        run.final_freqs_hz = vec![E4_ANCHOR_HZ * 2.0];
+
+        let adaptive_freqs = e2_freqs_at_step(&run, 0);
+        assert_eq!(adaptive_freqs.len(), 1);
+        assert!((adaptive_freqs[0] - E4_ANCHOR_HZ * 2.0).abs() < 1e-4);
+
+        let render_freqs = e2_trajectory_freqs_at_step(
+            &run.trajectory_semitones,
+            run.fixed_drone_hz,
+            0,
+            None,
+            Some(run.fixed_drone_hz),
+        );
+        assert_eq!(render_freqs.len(), 2);
+        assert!((render_freqs[0] - E4_ANCHOR_HZ * 2.0).abs() < 1e-4);
+        assert!((render_freqs[1] - E4_ANCHOR_HZ).abs() < 1e-4);
+
+        let csv = e2_scene_metrics_csv(&run, E4_ANCHOR_HZ);
+        let row = csv
+            .lines()
+            .nth(1)
+            .expect("expected one scene-metrics data row");
+        let fields: Vec<&str> = row.split(',').collect();
+        assert_eq!(fields.last().copied(), Some("1"));
     }
 
     #[test]
@@ -27284,7 +27453,7 @@ mod tests {
             .any(|&v| v > 0.0);
         assert!(post_moved, "expected post-switch proposal motion");
 
-        let ji_series = e2_scene_ji_series(&run, E4_ANCHOR_HZ);
+        let ji_series = e2_scene_ji_series(&run);
         let ji_mid = ji_series
             .get(E2_PHASE_SWITCH_STEP)
             .copied()
@@ -27758,13 +27927,13 @@ fn ji_population_score(freqs_hz: &[f32], anchor_hz: f32) -> f32 {
     if count > 0 { total / count as f32 } else { 0.0 }
 }
 
-fn e2_freqs_at_step(run: &E2Run, anchor_hz: f32, step: usize) -> Vec<f32> {
+fn e2_freqs_at_step(run: &E2Run, step: usize) -> Vec<f32> {
     run.trajectory_semitones
         .iter()
         .filter_map(|trace| {
             trace.get(step).copied().and_then(|st| {
                 if st.is_finite() {
-                    Some(anchor_hz * 2.0_f32.powf(st / 12.0))
+                    Some(run.fixed_drone_hz * 2.0_f32.powf(st / 12.0))
                 } else {
                     None
                 }
@@ -27773,7 +27942,7 @@ fn e2_freqs_at_step(run: &E2Run, anchor_hz: f32, step: usize) -> Vec<f32> {
         .collect()
 }
 
-fn e2_scene_ji_series(run: &E2Run, anchor_hz: f32) -> Vec<f32> {
+fn e2_scene_ji_series(run: &E2Run) -> Vec<f32> {
     let n_steps = run
         .trajectory_semitones
         .iter()
@@ -27782,14 +27951,14 @@ fn e2_scene_ji_series(run: &E2Run, anchor_hz: f32) -> Vec<f32> {
         .unwrap_or(0);
     let mut series = Vec::with_capacity(n_steps);
     for step in 0..n_steps {
-        let freqs = e2_freqs_at_step(run, anchor_hz, step);
-        series.push(ji_population_score(&freqs, anchor_hz));
+        let freqs = e2_freqs_at_step(run, step);
+        series.push(ji_population_score(&freqs, run.fixed_drone_hz));
     }
     series
 }
 
-fn e2_scene_metrics_csv(run: &E2Run, anchor_hz: f32) -> String {
-    let ji_series = e2_scene_ji_series(run, anchor_hz);
+fn e2_scene_metrics_csv(run: &E2Run, _anchor_hz: f32) -> String {
+    let ji_series = e2_scene_ji_series(run);
     let n_steps = run
         .mean_c_series
         .len()
@@ -27866,11 +28035,53 @@ fn rhai_replay_header(title: &str, detail: &str) -> String {
 
 /// Emit Rhai scene for an E2 segment: create agents, step through trajectory, release.
 /// Linearly interpolates between simulation steps to reduce grid-quantisation beating.
+fn e2_trajectory_freqs_at_step(
+    trajectory_semitones: &[Vec<f32>],
+    reference_hz: f32,
+    step: usize,
+    selected: Option<&[usize]>,
+    fixed_drone_hz: Option<f32>,
+) -> Vec<f32> {
+    let mut freqs = Vec::new();
+    match selected {
+        Some(selected) => {
+            freqs.reserve(selected.len() + usize::from(fixed_drone_hz.is_some()));
+            for &agent_i in selected {
+                let Some(trace) = trajectory_semitones.get(agent_i) else {
+                    continue;
+                };
+                let Some(&st) = trace.get(step) else {
+                    continue;
+                };
+                if st.is_finite() {
+                    freqs.push(reference_hz * 2.0_f32.powf(st / 12.0));
+                }
+            }
+        }
+        None => {
+            freqs.reserve(trajectory_semitones.len() + usize::from(fixed_drone_hz.is_some()));
+            for trace in trajectory_semitones {
+                let Some(&st) = trace.get(step) else {
+                    continue;
+                };
+                if st.is_finite() {
+                    freqs.push(reference_hz * 2.0_f32.powf(st / 12.0));
+                }
+            }
+        }
+    }
+    if let Some(hz) = fixed_drone_hz {
+        freqs.push(hz.max(1.0));
+    }
+    freqs
+}
+
 fn rhai_e2_segment(
     scene_name: &str,
     trajectory_semitones: &[Vec<f32>],
     anchor_hz: f32,
     selected: &[usize],
+    fixed_drone_hz: Option<f32>,
     step_sec: f32,
 ) -> String {
     let mut s = format!("scene(\"{scene_name}\", || {{\n");
@@ -27881,6 +28092,11 @@ fn rhai_e2_segment(
         let freq = anchor_hz * 2.0_f32.powf(st / 12.0);
         s.push_str(&format!(
             "    let a{i} = create(agent_spec, 1).freq({freq:.2});\n"
+        ));
+    }
+    if let Some(hz) = fixed_drone_hz {
+        s.push_str(&format!(
+            "    let d0 = create(agent_spec, 1).freq({hz:.2});\n"
         ));
     }
     s.push_str("    flush();\n");
@@ -28019,7 +28235,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
     // ── 10_exp1_polyphony.rhai ──
     {
         let detail = format!(
-            "// {} agents (selected from {}), {} sweeps, step={} st\n\
+            "// {} adaptive agents (selected from {}) + 1 fixed drone at {:.1} Hz, {} sweeps, step={} st\n\
              // Phase switch at step {} (dissonance -> consonance)\n\
              //\n\
              // 6 segments: 3 conditions x 2 seeds\n\
@@ -28027,6 +28243,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
              //   E2_SEEDS[10] = 0x{:X} = {}",
             AUDIO_N_SELECT_E2,
             E2_N_AGENTS,
+            anchor_hz,
             E2_SWEEPS,
             E2_STEP_SEMITONES,
             E2_PHASE_SWITCH_STEP,
@@ -28046,6 +28263,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
                 &e2_runs[i].trajectory_semitones,
                 anchor_hz,
                 &e2_selected,
+                Some(e2_runs[i].fixed_drone_hz),
                 AUDIO_STEP_SEC,
             ));
             if i + 1 < e2_segments.len() {
@@ -28160,7 +28378,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
     // ── 00_quicklisten.rhai ──
     // 4 segments: E2 baseline seed0, E6 both seed0, E2 nohill seed0, E6 neither seed0
     {
-        let detail = "// 4 segments (curated highlights):\n\
+        let detail = "// 4 segments (curated highlights); all E2 segments include 1 fixed drone at 220 Hz:\n\
              //   1. E2 baseline  (seed 0) -- hill-climbing + crowding\n\
              //   2. E6 both      (seed 0) -- heredity + hill-climbing\n\
              //   3. E2 no-hill   (seed 0) -- crowding only\n\
@@ -28176,6 +28394,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             &e2_runs[0].trajectory_semitones,
             anchor_hz,
             &e2_selected,
+            Some(e2_runs[0].fixed_drone_hz),
             AUDIO_STEP_SEC,
         ));
         rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
@@ -28199,6 +28418,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             &e2_runs[1].trajectory_semitones,
             anchor_hz,
             &e2_selected,
+            Some(e2_runs[1].fixed_drone_hz),
             AUDIO_STEP_SEC,
         ));
         rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
@@ -28288,17 +28508,17 @@ pub fn generate_e2_replay_wav(output_path: &Path) -> io::Result<()> {
 
         let n_steps = run.trajectory_semitones[0].len();
         // Track oscillator phases across steps for phase continuity
-        let mut phases = vec![0.0f32; n_select];
+        let mut phases = vec![0.0f32; n_select + 1];
 
         for step in 0..n_steps {
             // Frequencies for this step
-            let freqs: Vec<f32> = selected
-                .iter()
-                .map(|&g| {
-                    let st = run.trajectory_semitones[g][step];
-                    anchor_hz * 2.0_f32.powf(st / 12.0)
-                })
-                .collect();
+            let freqs = e2_trajectory_freqs_at_step(
+                &run.trajectory_semitones,
+                anchor_hz,
+                step,
+                Some(&selected),
+                Some(run.fixed_drone_hz),
+            );
 
             // Render step_samples of audio
             for s in 0..step_samples {
@@ -28422,6 +28642,7 @@ fn render_e2_trajectory_wav(
     trajectory_semitones: &[Vec<f32>],
     anchor_hz: f32,
     render_partials: u32,
+    fixed_drone_hz: Option<f32>,
     continuous: bool,
 ) -> io::Result<()> {
     use std::f32::consts::TAU;
@@ -28429,7 +28650,7 @@ fn render_e2_trajectory_wav(
     if trajectory_semitones.is_empty() {
         return Ok(());
     }
-    let n_agents = trajectory_semitones.len();
+    let n_agents = trajectory_semitones.len() + usize::from(fixed_drone_hz.is_some());
     let n_steps = trajectory_semitones[0].len();
     if n_steps == 0 {
         return Ok(());
@@ -28455,15 +28676,21 @@ fn render_e2_trajectory_wav(
     let mut all_samples = Vec::with_capacity(n_steps * step_samples);
 
     for step in 0..n_steps {
-        let current_freqs: Vec<f32> = trajectory_semitones
-            .iter()
-            .map(|semis| anchor_hz * 2.0_f32.powf(semis[step] / 12.0))
-            .collect();
-        let next_freqs: Vec<f32> = if continuous && step + 1 < n_steps {
-            trajectory_semitones
-                .iter()
-                .map(|semis| anchor_hz * 2.0_f32.powf(semis[step + 1] / 12.0))
-                .collect()
+        let current_freqs = e2_trajectory_freqs_at_step(
+            trajectory_semitones,
+            anchor_hz,
+            step,
+            None,
+            fixed_drone_hz,
+        );
+        let next_freqs = if continuous && step + 1 < n_steps {
+            e2_trajectory_freqs_at_step(
+                trajectory_semitones,
+                anchor_hz,
+                step + 1,
+                None,
+                fixed_drone_hz,
+            )
         } else {
             current_freqs.clone()
         };
@@ -29134,6 +29361,7 @@ fn run_e2_once_proposal_cfg(
     range_oct: f32,
 ) -> E2Run {
     let mut rng = seeded_rng(seed);
+    let fixed_drone = e2_fixed_drone(space, anchor_hz);
     let anchor_hz_current = anchor_hz;
     let log2_ratio_scan = build_log2_ratio_scan(space, anchor_hz_current);
     let half_range_oct = 0.5 * range_oct.max(0.01);
@@ -29186,7 +29414,6 @@ fn run_e2_once_proposal_cfg(
     let mut backtrack_targets = agent_indices.clone();
     let phase_switch_step = phase_mode.switch_step();
 
-    let anchor_idx = space.nearest_index(anchor_hz_current);
     for sweep in 0..E2_SWEEPS {
         if let Some(switch_step) = phase_switch_step
             && sweep == switch_step
@@ -29194,7 +29421,12 @@ fn run_e2_once_proposal_cfg(
             backtrack_targets.clone_from_slice(&agent_indices);
         }
         let score_sign = phase_mode.score_sign(sweep);
-        let (env_scan, density_scan) = build_env_scans(space, anchor_idx, &agent_indices, &du_scan);
+        let (env_scan, density_scan) = build_env_scans_with_fixed_sources(
+            space,
+            std::slice::from_ref(&fixed_drone.idx),
+            &agent_indices,
+            &du_scan,
+        );
         let (landscape, c_score_scan, c_level_scan, density_mass, r_state_stats) =
             build_pitch_core_landscape(space, &workspace, &env_scan, &density_scan, &du_scan);
 
@@ -29382,6 +29614,7 @@ fn run_e2_once_proposal_cfg(
         r_ref_peak: workspace.r_ref_peak,
         roughness_k: workspace.params.roughness_k,
         roughness_ref_eps: workspace.params.roughness_ref_eps,
+        fixed_drone_hz: fixed_drone.hz,
         n_agents,
         k_bins: k_from_semitones(step_semitones),
     }
@@ -29426,6 +29659,7 @@ pub fn generate_e2_baseline_render(
         &run.trajectory_semitones,
         anchor_hz,
         render_partials,
+        Some(run.fixed_drone_hz),
         true,
     )?;
     write_with_log(
@@ -29480,6 +29714,7 @@ pub fn generate_e2_proposal_render(
         &run.trajectory_semitones,
         anchor_hz,
         render_partials,
+        Some(run.fixed_drone_hz),
         true,
     )?;
     write_with_log(
