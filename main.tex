@@ -248,11 +248,11 @@ where $K$ is coupling strength and $F(t)$ an external forcing term. Because meta
 \vspace*{-1.5em}
 \centering
 \includegraphics[width=\textwidth,trim=56 0 56 0,clip]{experiments/plots/e2/paper_e2_figure_e2_1.pdf}
-\caption{Population dynamics and emergent structure. (A)~Mean LOO consonance $C_{\text{score}}$, the local surrogate each agent optimises, over time (95\,\% CI); the vertical marker indicates the phase switch at step~25. (B)~Scene consonance $G(F)$, a global surrogate measuring inter-voice harmonic binding, over time (95\,\% CI). (C)~Representative local-search trajectories (cents from drone). (D)~Final unique pitch bins (95\,\% CI).}
+\caption{Population dynamics and emergent structure. (A)~Mean LOO consonance $C_{\text{score}}$, the local surrogate each agent optimises, over time (95\,\% CI); the vertical marker indicates the phase switch at step~25, and the shaded band marks the 10-step post-switch burn-in window excluded from summary statistics. (B)~Scene consonance $G(F)$ (Eq.~\ref{eq:consonance-core}), evaluated on the shared field after singleton subtraction, over time (95\,\% CI). (C)~Representative local-search trajectories (cents from drone). (D)~Final unique pitch bins (95\,\% CI).}
 \label{fig:e2-dynamics}
 \vspace{1em}
 \includegraphics[width=\textwidth]{experiments/plots/e2/paper_e2_figure_e2_2.pdf}
-\caption{Emergent interval structure. (A) Pairwise interval histogram: \emph{local-search} runs concentrate interval mass at a small set of octave-equivalent intervals, whereas \emph{random-walk} spreads mass broadly and therefore remains near the floor at each individual bin. (B) Entropy (95\% CI): \emph{random-walk} approaches a near-uniform interval distribution ($H \approx 4.97$), while \emph{local-search} remains much lower ($H \approx 1.57$). (C) Polyphony (95\% CI; 25\,ct bins): \emph{local-search} self-organizes into fewer occupied pitch bins ($\approx 9.4$) than \emph{random-walk} ($\approx 22.5$), but does not collapse to unison.}
+\caption{Emergent interval structure. (A) Pairwise interval histogram, displayed at 25\,ct bins for readability: \emph{local-search} runs concentrate interval mass at a small set of octave-equivalent intervals, whereas \emph{random-walk} spreads mass broadly and therefore remains near the floor at each individual bin. (B) Entropy of the raw 5\,ct pairwise interval distribution (95\% CI): \emph{random-walk} approaches a near-uniform interval distribution ($H \approx 4.97$), while \emph{local-search} remains much lower ($H \approx 1.57$). (C) Polyphony (95\% CI; 25\,ct bins): \emph{local-search} self-organizes into fewer occupied pitch bins ($\approx 9.4$) than \emph{random-walk} ($\approx 22.5$), but does not collapse to unison.}
 \label{fig:e2-intervals}
 \vspace{1em}
 \includegraphics[width=\textwidth]{experiments/plots/e3/paper_e3_figure4.pdf}
@@ -264,9 +264,10 @@ Four experiments each isolate a different mechanism subset (Table~\ref{tab:condi
 
 \begin{table}[t]
 \centering
-\caption{Experiment conditions. \checkmark/\texttimes\ = on/off; abl.\ = ablated (compared with both states); simpl.\ = simplified continuous model. All experiments use 220\,Hz anchor.}
+\caption{Experiment conditions. \checkmark/\texttimes\ = on/off; abl.\ = ablated (compared with both states); simpl.\ = simplified continuous model. All experiments use a fixed 220\,Hz reference; in Experiment~1 this is realised as one immobile drone voice.}
 \label{tab:conditions}
 \footnotesize
+{\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lcccc@{}}
 \toprule
  & \textbf{Exp.\,1} & \textbf{Exp.\,2} & \textbf{Exp.\,3} & \textbf{Exp.\,4} \\
@@ -282,6 +283,7 @@ Heredity    & \texttimes & \texttimes & \texttimes & abl.\ \\
 Duration    & 50 rnds & 200 deaths & 40\,s & 4k deaths \\
 \bottomrule
 \end{tabular}
+}
 \end{table}
 
 \subsection{Experiment~1: Self-Organized Polyphony}
@@ -290,7 +292,7 @@ Twenty-four adaptive voices plus one immobile drone at 220\,Hz are placed on a d
 
 Each run consists of 50 sweeps: a dissonance-seeking phase (steps 0--24) followed by a consonance-seeking phase (steps 25--49); the dissonance phase disperses agents before convergence, and the switch is implemented by negating the same exact-LOO proposal score ($S \to -S$). A consonance-only control (Supplementary S7) confirms that structure also emerges without this curriculum, though with significantly fewer stable pitch positions ($5.9$ vs.\ $9.4$ unique bins; $p < 0.0001$). Two conditions were compared (Figures~\ref{fig:e2-dynamics}--\ref{fig:e2-intervals}).
 
-\textbf{Diversity.} Unique pitch bins averaged $9.4 \pm 1.2$ (\emph{local-search}) vs.\ $22.5 \pm 1.2$ (\emph{random-walk}). Score-based local search concentrates 24 agents into $\approx$\,9 distinct pitch classes at consonant intervals, whereas random walks distribute agents nearly uniformly across the grid. Scene consonance $G(F)$---the bilinear kernel~(\ref{eq:consonance-core}) applied to social harmonicity and roughness after subtracting each voice's solo contribution---confirms the same dynamic: a sharp rise after the phase switch for \emph{local-search}, while \emph{random-walk} remains flat (Figure~\ref{fig:e2-dynamics}B).
+\textbf{Diversity.} Unique pitch bins averaged $9.4 \pm 1.2$ (\emph{local-search}) vs.\ $22.5 \pm 1.2$ (\emph{random-walk}). Score-based local search concentrates 24 agents into $\approx$\,9 distinct pitch classes at consonant intervals, whereas random walks distribute agents nearly uniformly across the grid. Scene consonance $G(F)=aH_{\mathrm{soc}}+bR_{\mathrm{soc}}+cH_{\mathrm{soc}}R_{\mathrm{soc}}$ (Eq.~\ref{eq:consonance-core}), where $H_{\mathrm{soc}}$ and $R_{\mathrm{soc}}$ denote the scene harmonicity and roughness after subtracting the mean singleton contribution, confirms the same dynamic: a sharp rise after the phase switch for \emph{local-search}, while \emph{random-walk} remains flat (Figure~\ref{fig:e2-dynamics}B).
 
 \textbf{Interval Structure.} Shannon entropy of the pairwise interval distribution (240 bins of 5\,ct over 0--1200\,ct; uniform maximum $\ln 240 = 5.48$\,nats) was $1.57 \pm 0.35$\,nats (\emph{local-search}) vs.\ $4.97 \pm 0.04$ (\emph{random-walk}). The \emph{local-search} distribution concentrates mass at a small number of just-intonation intervals (Figure~\ref{fig:e2-intervals}A), whereas \emph{random-walk} approaches a near-uniform distribution.
 
@@ -362,7 +364,7 @@ The same control extends to the integrated system (as reported above; Supplement
 \section{Limitations and Future Work}
 \label{sec:limits}
 
-The ecological--aesthetic duality predicts that ecological success correlates with perceptual coherence, but the present work does not test this prediction against human judgements; behavioural listening experiments remain necessary. Because harmonicity--roughness weighting varies across listeners and cultures \citep{mcdermott2016}, the present coefficients implicitly encode a Western-leaning profile; listener-informed reparametrisation could enable non-Western perceptual weightings. All experiments use a 220\,Hz anchor, realised in Experiment~1 as an immobile drone voice. Including a fixed point is a compositional choice, not a system constraint: conventional instruments fix intonation at construction, whereas adaptive agents traverse pitch space continuously, so that removing the anchor allows the emergent tuning itself to evolve during performance. Experiments with freely drifting populations and inharmonic timbres would test whether the present findings generalise to such conditions.
+The ecological--aesthetic duality predicts that ecological success correlates with perceptual coherence, but the present work does not test this prediction against human judgements; behavioural listening experiments remain necessary. Because harmonicity--roughness weighting varies across listeners and cultures \citep{mcdermott2016}, the present coefficients implicitly encode a Western-leaning profile; listener-informed reparametrisation could enable non-Western perceptual weightings. All experiments use a fixed 220\,Hz reference; in Experiment~1 this reference is realised as an immobile drone voice. Including a fixed point is a compositional choice, not a system constraint: conventional instruments fix intonation at construction, whereas adaptive agents traverse pitch space continuously, so that removing the reference allows the emergent tuning itself to evolve during performance. Experiments with freely drifting populations and inharmonic timbres would test whether the present findings generalise to such conditions.
 
 Experiment~4's hereditary adaptation converges to fixed-landscape attractors and does not constitute open-ended evolution \citep{bedau2000}; whether evolvable timbres or coupling topologies could support open-ended dynamics remains open. More broadly, closing the loop via real-time listener biosignals---feeding back brainwave or physiological signals to the landscape---would realise the bidirectional DCC envisioned in the Conchordal manifesto, turning perception and generation into a coupled dynamical system.
 
