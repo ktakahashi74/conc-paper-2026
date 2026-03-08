@@ -97,6 +97,16 @@ const E2_SEEDS: [u64; 20] = [
 const E2_PAPER_N_AGENTS: usize = 5;
 const E2_PAPER_RANGE_OCT: f32 = 2.0;
 const E2_PAPER_REP_SEED_INDEX: usize = 0;
+const E2_CLOSE_PAIR_WINDOW_ST: f32 = 0.5;
+const E2_DENSE_SWEEP_RANGES_OCT: [f32; 3] = [2.0, 3.0, 4.0];
+const E2_DENSE_SWEEP_VOICES_PER_OCT: [f32; 4] = [2.5, 4.0, 6.0, 8.0];
+const E2_DENSE_SWEEP_2OCT_EXTREME_N: [usize; 2] = [24, 48];
+const E2_DENSE_SWEEP_QUICK_SEEDS: usize = 8;
+const E2_CANDIDATE_SEARCH_2OCT_N: [usize; 8] = [5, 6, 7, 8, 10, 12, 16, 24];
+const E2_CANDIDATE_SEARCH_3OCT_N: [usize; 9] = [6, 7, 8, 9, 10, 12, 14, 16, 18];
+const E2_CANDIDATE_SEARCH_4OCT_N: [usize; 9] = [8, 9, 10, 12, 14, 16, 18, 20, 24];
+const E2_CANDIDATE_SEARCH_RENDER_PARTIALS: u32 = 4;
+const E2_CANDIDATE_SEARCH_TOP_PER_RANGE: usize = 2;
 
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
@@ -545,6 +555,8 @@ fn usage() -> String {
         "  paper --exp e4 --e4-dyn-step-cents 75",
         "  paper --e2-render-baseline 5 4 2",
         "  paper --e2-render-proposal 5 4 2",
+        "  paper --exp e2 --e2-quick --e2-dense-sweep",
+        "  paper --exp e2 --e2-quick --e2-candidate-search",
         "If no experiment is specified, paper defaults (E1,E2,E3,E5,E6) run.",
         "Use --exp e4 to run E4 explicitly.",
         "E4 histogram dumps default to off (use --e4-hist on to enable).",
@@ -554,6 +566,8 @@ fn usage() -> String {
         "E2 uses dissonance_then_consonance phase schedule.",
         "--e2-render-baseline N P [OCT] writes seed-0 baseline replay WAVs for N agents, P render partials, and optional OCT total range.",
         "--e2-render-proposal N P [OCT] writes a proposal-based replay using step + local/global peak + ratio candidates.",
+        "--e2-dense-sweep writes dense-regime baseline vs no-crowding diagnostics into experiments/plots/e2/.",
+        "--e2-candidate-search writes 2oct/3oct/4oct baseline-vs-nohill candidate summaries and shortlist renders.",
         "Outputs are written to experiments/plots/<exp>/ (e.g. experiments/plots/e2).",
         "By default only selected experiment dirs are overwritten.",
         "Use --clean to clear experiments/plots before running.",
@@ -700,7 +714,11 @@ fn parse_experiments(args: &[String]) -> Result<Vec<Experiment>, String> {
             }
             continue;
         }
-        if arg == "--e2-replay" || arg == "--e2-quick" {
+        if arg == "--e2-replay"
+            || arg == "--e2-quick"
+            || arg == "--e2-dense-sweep"
+            || arg == "--e2-candidate-search"
+        {
             i += 1;
             continue;
         }
@@ -1177,6 +1195,8 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
     let e4_dyn_step_cents = parse_e4_dyn_step_cents(&args).map_err(io::Error::other)?;
     let e2_phase_mode = E2PhaseMode::DissonanceThenConsonance;
     let e2_quick = args.iter().any(|a| a == "--e2-quick");
+    let e2_dense_sweep = args.iter().any(|a| a == "--e2-dense-sweep");
+    let e2_candidate_search = args.iter().any(|a| a == "--e2-candidate-search");
     let clean_all = parse_clean(&args).map_err(io::Error::other)?;
     let experiments = parse_experiments(&args).map_err(io::Error::other)?;
     let experiments = if experiments.is_empty() {
@@ -1233,6 +1253,8 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
                             anchor_hz,
                             e2_phase_mode,
                             e2_quick,
+                            e2_dense_sweep,
+                            e2_candidate_search,
                         )
                         .map_err(|err| io::Error::other(err.to_string()))
                     });
@@ -1608,6 +1630,8 @@ fn plot_e2_emergent_harmony(
     anchor_hz: f32,
     phase_mode: E2PhaseMode,
     quick: bool,
+    dense_sweep: bool,
+    candidate_search: bool,
 ) -> Result<(), Box<dyn Error>> {
     let (
         baseline_runs,
@@ -2468,6 +2492,12 @@ fn plot_e2_emergent_harmony(
         &hist_rows,
         &diversity_rows_vec,
     )?;
+    if dense_sweep {
+        plot_e2_dense_sweep(out_dir, space, anchor_hz, phase_mode, quick)?;
+    }
+    if candidate_search {
+        plot_e2_candidate_search(out_dir, space, anchor_hz, phase_mode, quick)?;
+    }
 
     let nohill_hist_05 = e2_hist_seed_sweep(&nohill_runs, 0.5, hist_min, hist_max);
     let norep_hist_05 = e2_hist_seed_sweep(&norep_runs, 0.5, hist_min, hist_max);
@@ -4334,7 +4364,34 @@ fn e2_seed_sweep_with_threads(
     range_oct: f32,
     max_worker_threads: Option<usize>,
 ) -> (Vec<E2Run>, E2SweepStats) {
-    let seeds = &E2_SEEDS;
+    e2_seed_sweep_with_threads_for_seeds(
+        space,
+        anchor_hz,
+        condition,
+        step_semitones,
+        phase_mode,
+        kernel,
+        r_shift_bins,
+        n_agents,
+        range_oct,
+        &E2_SEEDS,
+        max_worker_threads,
+    )
+}
+
+fn e2_seed_sweep_with_threads_for_seeds(
+    space: &Log2Space,
+    anchor_hz: f32,
+    condition: E2Condition,
+    step_semitones: f32,
+    phase_mode: E2PhaseMode,
+    kernel: Option<ConsonanceKernel>,
+    r_shift_bins: i32,
+    n_agents: usize,
+    range_oct: f32,
+    seeds: &[u64],
+    max_worker_threads: Option<usize>,
+) -> (Vec<E2Run>, E2SweepStats) {
     let max_threads = max_worker_threads.unwrap_or_else(|| {
         std::thread::available_parallelism()
             .map(|n| n.get())
@@ -8163,6 +8220,61 @@ struct DiversityRow {
     condition: &'static str,
     seed: u64,
     metrics: DiversityMetrics,
+}
+
+struct E2DenseSweepRow {
+    range_oct: f32,
+    n_agents: usize,
+    voices_per_oct: f32,
+    condition: &'static str,
+    seed: u64,
+    c_score_loo_end: f32,
+    ji_scene_end: f32,
+    entropy_end: f32,
+    unique_bins_end: usize,
+    nn_mean_end: f32,
+    close_pair_frac_50ct: f32,
+}
+
+struct E2DenseSweepSummaryRow {
+    range_oct: f32,
+    n_agents: usize,
+    voices_per_oct: f32,
+    condition: &'static str,
+    c_score_loo_mean: f32,
+    c_score_loo_ci95: f32,
+    ji_scene_mean: f32,
+    ji_scene_ci95: f32,
+    entropy_mean: f32,
+    entropy_ci95: f32,
+    unique_bins_mean: f32,
+    unique_bins_ci95: f32,
+    nn_mean_mean: f32,
+    nn_mean_ci95: f32,
+    close_pair_mean: f32,
+    close_pair_ci95: f32,
+    n: usize,
+}
+
+struct E2CandidateSummaryRow {
+    range_oct: f32,
+    n_agents: usize,
+    n_seeds: usize,
+    baseline_c_score_loo_mean: f32,
+    nohill_c_score_loo_mean: f32,
+    delta_c_score_loo: f32,
+    baseline_ji_scene_mean: f32,
+    nohill_ji_scene_mean: f32,
+    delta_ji_scene: f32,
+    baseline_entropy_mean: f32,
+    nohill_entropy_mean: f32,
+    delta_entropy: f32,
+    baseline_unique_bins_mean: f32,
+    nohill_unique_bins_mean: f32,
+    delta_unique_bins: f32,
+    baseline_nn_mean: f32,
+    nohill_nn_mean: f32,
+    shortlist_score: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -19871,6 +19983,759 @@ fn diversity_summary_csv(rows: &[DiversityRow]) -> String {
     out
 }
 
+fn close_pair_fraction_for_semitones(semitones: &[f32], window_st: f32) -> f32 {
+    if semitones.len() < 2 || window_st <= 0.0 {
+        return 0.0;
+    }
+    let mut close = 0usize;
+    let mut total = 0usize;
+    for i in 0..semitones.len() {
+        let a = semitones[i];
+        if !a.is_finite() {
+            continue;
+        }
+        for &b in &semitones[..i] {
+            if !b.is_finite() {
+                continue;
+            }
+            total += 1;
+            if (a - b).abs() <= window_st + 1e-6 {
+                close += 1;
+            }
+        }
+    }
+    if total == 0 {
+        0.0
+    } else {
+        close as f32 / total as f32
+    }
+}
+
+fn e2_dense_seed_slice(quick: bool) -> &'static [u64] {
+    if quick {
+        &E2_SEEDS[..E2_DENSE_SWEEP_QUICK_SEEDS.min(E2_SEEDS.len())]
+    } else {
+        &E2_SEEDS
+    }
+}
+
+fn e2_dense_n_agents(range_oct: f32, voices_per_oct: f32) -> usize {
+    (range_oct * voices_per_oct).round().max(2.0) as usize
+}
+
+fn e2_dense_row_from_run(
+    run: &E2Run,
+    anchor_hz: f32,
+    range_oct: f32,
+    voices_per_oct: f32,
+    condition: &'static str,
+) -> E2DenseSweepRow {
+    let diversity = diversity_metrics_for_run(run);
+    E2DenseSweepRow {
+        range_oct,
+        n_agents: run.n_agents,
+        voices_per_oct,
+        condition,
+        seed: run.seed,
+        c_score_loo_end: run.mean_c_score_loo_series.last().copied().unwrap_or(0.0),
+        ji_scene_end: ji_population_score(&run.final_freqs_hz, anchor_hz),
+        entropy_end: hist_structure_metrics_for_run(run).entropy,
+        unique_bins_end: diversity.unique_bins,
+        nn_mean_end: diversity.nn_mean,
+        close_pair_frac_50ct: close_pair_fraction_for_semitones(
+            &run.final_semitones,
+            E2_CLOSE_PAIR_WINDOW_ST,
+        ),
+    }
+}
+
+fn e2_dense_sweep_by_seed_csv(rows: &[E2DenseSweepRow]) -> String {
+    let mut out = String::from(
+        "range_oct,n_agents,voices_per_oct,condition,seed,c_score_loo_end,ji_scene_end,entropy_end,unique_bins_end,nn_mean_end,close_pair_frac_50ct\n",
+    );
+    for row in rows {
+        out.push_str(&format!(
+            "{:.2},{},{:.2},{},{},{:.6},{:.6},{:.6},{},{:.6},{:.6}\n",
+            row.range_oct,
+            row.n_agents,
+            row.voices_per_oct,
+            row.condition,
+            row.seed,
+            row.c_score_loo_end,
+            row.ji_scene_end,
+            row.entropy_end,
+            row.unique_bins_end,
+            row.nn_mean_end,
+            row.close_pair_frac_50ct
+        ));
+    }
+    out
+}
+
+fn e2_dense_sweep_summary_rows(rows: &[E2DenseSweepRow]) -> Vec<E2DenseSweepSummaryRow> {
+    let mut grouped: std::collections::BTreeMap<
+        (i32, usize, i32, &'static str),
+        Vec<&E2DenseSweepRow>,
+    > = std::collections::BTreeMap::new();
+    for row in rows {
+        grouped
+            .entry((
+                float_key(row.range_oct),
+                row.n_agents,
+                float_key(row.voices_per_oct),
+                row.condition,
+            ))
+            .or_default()
+            .push(row);
+    }
+    let mut out = Vec::with_capacity(grouped.len());
+    for ((range_key, n_agents, vpo_key, condition), group) in grouped {
+        let c_vals: Vec<f32> = group.iter().map(|r| r.c_score_loo_end).collect();
+        let ji_vals: Vec<f32> = group.iter().map(|r| r.ji_scene_end).collect();
+        let ent_vals: Vec<f32> = group.iter().map(|r| r.entropy_end).collect();
+        let bins_vals: Vec<f32> = group.iter().map(|r| r.unique_bins_end as f32).collect();
+        let nn_vals: Vec<f32> = group.iter().map(|r| r.nn_mean_end).collect();
+        let close_vals: Vec<f32> = group.iter().map(|r| r.close_pair_frac_50ct).collect();
+        let (c_mean, _) = mean_std_scalar(&c_vals);
+        let (ji_mean, _) = mean_std_scalar(&ji_vals);
+        let (ent_mean, _) = mean_std_scalar(&ent_vals);
+        let (bins_mean, _) = mean_std_scalar(&bins_vals);
+        let (nn_mean, _) = mean_std_scalar(&nn_vals);
+        let (close_mean, _) = mean_std_scalar(&close_vals);
+        out.push(E2DenseSweepSummaryRow {
+            range_oct: float_from_key(range_key),
+            n_agents,
+            voices_per_oct: float_from_key(vpo_key),
+            condition,
+            c_score_loo_mean: c_mean,
+            c_score_loo_ci95: ci95_half_width(&c_vals),
+            ji_scene_mean: ji_mean,
+            ji_scene_ci95: ci95_half_width(&ji_vals),
+            entropy_mean: ent_mean,
+            entropy_ci95: ci95_half_width(&ent_vals),
+            unique_bins_mean: bins_mean,
+            unique_bins_ci95: ci95_half_width(&bins_vals),
+            nn_mean_mean: nn_mean,
+            nn_mean_ci95: ci95_half_width(&nn_vals),
+            close_pair_mean: close_mean,
+            close_pair_ci95: ci95_half_width(&close_vals),
+            n: group.len(),
+        });
+    }
+    out
+}
+
+fn e2_dense_sweep_summary_csv(rows: &[E2DenseSweepSummaryRow]) -> String {
+    let mut out = String::from(
+        "range_oct,n_agents,voices_per_oct,condition,c_score_loo_mean,c_score_loo_ci95,ji_scene_mean,ji_scene_ci95,entropy_mean,entropy_ci95,unique_bins_mean,unique_bins_ci95,nn_mean_mean,nn_mean_ci95,close_pair_mean,close_pair_ci95,n\n",
+    );
+    for row in rows {
+        out.push_str(&format!(
+            "{:.2},{},{:.2},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{}\n",
+            row.range_oct,
+            row.n_agents,
+            row.voices_per_oct,
+            row.condition,
+            row.c_score_loo_mean,
+            row.c_score_loo_ci95,
+            row.ji_scene_mean,
+            row.ji_scene_ci95,
+            row.entropy_mean,
+            row.entropy_ci95,
+            row.unique_bins_mean,
+            row.unique_bins_ci95,
+            row.nn_mean_mean,
+            row.nn_mean_ci95,
+            row.close_pair_mean,
+            row.close_pair_ci95,
+            row.n
+        ));
+    }
+    out
+}
+
+fn e2_dense_delta_csv(rows: &[E2DenseSweepSummaryRow]) -> String {
+    let mut out = String::from(
+        "range_oct,n_agents,voices_per_oct,delta_c_score_loo_end,delta_ji_scene_end,delta_entropy_end,delta_unique_bins_end,delta_nn_mean_end,delta_close_pair_frac_50ct\n",
+    );
+    let mut grouped: std::collections::BTreeMap<
+        (i32, usize, i32),
+        (&E2DenseSweepSummaryRow, &E2DenseSweepSummaryRow),
+    > = std::collections::BTreeMap::new();
+    for row in rows {
+        let key = (
+            float_key(row.range_oct),
+            row.n_agents,
+            float_key(row.voices_per_oct),
+        );
+        let entry = grouped.entry(key).or_insert((row, row));
+        match row.condition {
+            "baseline" => entry.0 = row,
+            "nocrowd" => entry.1 = row,
+            _ => {}
+        }
+    }
+    for ((range_key, n_agents, vpo_key), (baseline, nocrowd)) in grouped {
+        if baseline.condition != "baseline" || nocrowd.condition != "nocrowd" {
+            continue;
+        }
+        out.push_str(&format!(
+            "{:.2},{},{:.2},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
+            float_from_key(range_key),
+            n_agents,
+            float_from_key(vpo_key),
+            nocrowd.c_score_loo_mean - baseline.c_score_loo_mean,
+            nocrowd.ji_scene_mean - baseline.ji_scene_mean,
+            nocrowd.entropy_mean - baseline.entropy_mean,
+            nocrowd.unique_bins_mean - baseline.unique_bins_mean,
+            nocrowd.nn_mean_mean - baseline.nn_mean_mean,
+            nocrowd.close_pair_mean - baseline.close_pair_mean
+        ));
+    }
+    out
+}
+
+fn render_e2_dense_tradeoff_plot(
+    out_path: &Path,
+    rows: &[E2DenseSweepSummaryRow],
+) -> Result<(), Box<dyn Error>> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let ranges = E2_DENSE_SWEEP_RANGES_OCT;
+    let root = bitmap_root(out_path, (1650, 520)).into_drawing_area();
+    root.fill(&WHITE)?;
+    let panels = root.split_evenly((1, ranges.len()));
+
+    let mut x_max = 0.0f32;
+    let mut y_min = f32::INFINITY;
+    let mut y_max = f32::NEG_INFINITY;
+    for row in rows {
+        x_max = x_max.max(row.close_pair_mean + row.close_pair_ci95);
+        y_min = y_min.min(row.c_score_loo_mean - row.c_score_loo_ci95);
+        y_max = y_max.max(row.c_score_loo_mean + row.c_score_loo_ci95);
+    }
+    let x_hi = (x_max * 1.15).max(0.05);
+    if !y_min.is_finite() || !y_max.is_finite() {
+        y_min = 0.0;
+        y_max = 1.0;
+    }
+    let y_pad = ((y_max - y_min).abs() * 0.12).max(0.05);
+    let y_lo = (y_min - y_pad).min(0.0);
+    let y_hi = y_max + y_pad;
+
+    for (panel_idx, range_oct) in ranges.iter().enumerate() {
+        let panel_rows: Vec<&E2DenseSweepSummaryRow> = rows
+            .iter()
+            .filter(|row| (row.range_oct - *range_oct).abs() < 1e-6)
+            .collect();
+        if panel_rows.is_empty() {
+            continue;
+        }
+        let mut chart = ChartBuilder::on(&panels[panel_idx])
+            .caption(
+                format!("range={range_oct:.0} oct | close-pairs vs final C_score"),
+                ("sans-serif", 18),
+            )
+            .margin(10)
+            .x_label_area_size(46)
+            .y_label_area_size(58)
+            .build_cartesian_2d(0.0f32..x_hi, y_lo..y_hi)?;
+        chart
+            .configure_mesh()
+            .x_desc("close-pair fraction (< 50 ct)")
+            .y_desc("final mean LOO C_score")
+            .label_style(("sans-serif", 14).into_font())
+            .axis_desc_style(("sans-serif", 16).into_font())
+            .draw()?;
+
+        let mut by_n: std::collections::BTreeMap<usize, Vec<&E2DenseSweepSummaryRow>> =
+            std::collections::BTreeMap::new();
+        for row in panel_rows {
+            by_n.entry(row.n_agents).or_default().push(row);
+        }
+        for (n_agents, pair) in by_n {
+            let baseline = pair.iter().find(|row| row.condition == "baseline").copied();
+            let nocrowd = pair.iter().find(|row| row.condition == "nocrowd").copied();
+            if let (Some(base), Some(no_rep)) = (baseline, nocrowd) {
+                chart.draw_series(std::iter::once(PathElement::new(
+                    vec![
+                        (base.close_pair_mean, base.c_score_loo_mean),
+                        (no_rep.close_pair_mean, no_rep.c_score_loo_mean),
+                    ],
+                    BLACK.mix(0.25),
+                )))?;
+            }
+            for row in pair {
+                let color = e2_condition_color(row.condition);
+                chart.draw_series(std::iter::once(Circle::new(
+                    (row.close_pair_mean, row.c_score_loo_mean),
+                    5,
+                    color.filled(),
+                )))?;
+                chart.draw_series(std::iter::once(Text::new(
+                    format!("N={n_agents}"),
+                    (row.close_pair_mean + 0.01, row.c_score_loo_mean),
+                    ("sans-serif", 12).into_font().color(&color),
+                )))?;
+            }
+        }
+    }
+    root.present()?;
+    Ok(())
+}
+
+fn e2_candidate_cases() -> Vec<(f32, usize)> {
+    let mut cases = Vec::new();
+    for &n_agents in &E2_CANDIDATE_SEARCH_2OCT_N {
+        cases.push((2.0, n_agents));
+    }
+    for &n_agents in &E2_CANDIDATE_SEARCH_3OCT_N {
+        cases.push((3.0, n_agents));
+    }
+    for &n_agents in &E2_CANDIDATE_SEARCH_4OCT_N {
+        cases.push((4.0, n_agents));
+    }
+    cases
+}
+
+fn e2_candidate_summary_csv(rows: &[E2CandidateSummaryRow]) -> String {
+    let mut out = String::from(
+        "range_oct,n_agents,n_seeds,baseline_c_score_loo_mean,nohill_c_score_loo_mean,delta_c_score_loo,baseline_ji_scene_mean,nohill_ji_scene_mean,delta_ji_scene,baseline_entropy_mean,nohill_entropy_mean,delta_entropy,baseline_unique_bins_mean,nohill_unique_bins_mean,delta_unique_bins,baseline_nn_mean,nohill_nn_mean,shortlist_score\n",
+    );
+    for row in rows {
+        out.push_str(&format!(
+            "{:.2},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
+            row.range_oct,
+            row.n_agents,
+            row.n_seeds,
+            row.baseline_c_score_loo_mean,
+            row.nohill_c_score_loo_mean,
+            row.delta_c_score_loo,
+            row.baseline_ji_scene_mean,
+            row.nohill_ji_scene_mean,
+            row.delta_ji_scene,
+            row.baseline_entropy_mean,
+            row.nohill_entropy_mean,
+            row.delta_entropy,
+            row.baseline_unique_bins_mean,
+            row.nohill_unique_bins_mean,
+            row.delta_unique_bins,
+            row.baseline_nn_mean,
+            row.nohill_nn_mean,
+            row.shortlist_score
+        ));
+    }
+    out
+}
+
+fn e2_candidate_report(rows: &[E2CandidateSummaryRow]) -> String {
+    let mut out = String::from(
+        "Fig2A candidate search (baseline vs no-hill)\n=========================================\n\n",
+    );
+    for &range_oct in &[2.0f32, 3.0, 4.0] {
+        out.push_str(&format!("range={range_oct:.0} oct\n"));
+        out.push_str(
+            "N    score   dEntropy  baseJI   dCscore  baseBins  nohillBins  baseNN  nohillNN\n",
+        );
+        let mut range_rows: Vec<&E2CandidateSummaryRow> = rows
+            .iter()
+            .filter(|row| (row.range_oct - range_oct).abs() < 1e-6)
+            .collect();
+        range_rows.sort_by(|a, b| {
+            b.shortlist_score
+                .partial_cmp(&a.shortlist_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        for row in range_rows {
+            out.push_str(&format!(
+                "{:<4} {:>6.3} {:>9.3} {:>7.3} {:>8.3} {:>9.3} {:>11.3} {:>7.3} {:>9.3}\n",
+                row.n_agents,
+                row.shortlist_score,
+                row.delta_entropy,
+                row.baseline_ji_scene_mean,
+                row.delta_c_score_loo,
+                row.baseline_unique_bins_mean,
+                row.nohill_unique_bins_mean,
+                row.baseline_nn_mean,
+                row.nohill_nn_mean,
+            ));
+        }
+        out.push('\n');
+    }
+    out
+}
+
+fn e2_candidate_top_rows(rows: &[E2CandidateSummaryRow]) -> Vec<&E2CandidateSummaryRow> {
+    let mut selected = Vec::new();
+    for &range_oct in &[2.0f32, 3.0, 4.0] {
+        let mut range_rows: Vec<&E2CandidateSummaryRow> = rows
+            .iter()
+            .filter(|row| (row.range_oct - range_oct).abs() < 1e-6)
+            .collect();
+        range_rows.sort_by(|a, b| {
+            b.shortlist_score
+                .partial_cmp(&a.shortlist_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        selected.extend(
+            range_rows
+                .into_iter()
+                .take(E2_CANDIDATE_SEARCH_TOP_PER_RANGE),
+        );
+    }
+    selected
+}
+
+fn e2_shortlist_score(
+    baseline_c: f32,
+    nohill_c: f32,
+    baseline_ji: f32,
+    baseline_entropy: f32,
+    nohill_entropy: f32,
+) -> f32 {
+    let delta_entropy = nohill_entropy - baseline_entropy;
+    let delta_c = baseline_c - nohill_c;
+    delta_entropy + 0.5 * baseline_ji + 0.25 * delta_c
+}
+
+fn mean_last_c_score_loo(runs: &[E2Run]) -> f32 {
+    let values: Vec<f32> = runs
+        .iter()
+        .map(|run| run.mean_c_score_loo_series.last().copied().unwrap_or(0.0))
+        .collect();
+    mean_std_scalar(&values).0
+}
+
+fn mean_ji_scene_end(runs: &[E2Run], anchor_hz: f32) -> f32 {
+    let values: Vec<f32> = runs
+        .iter()
+        .map(|run| ji_population_score(&run.final_freqs_hz, anchor_hz))
+        .collect();
+    mean_std_scalar(&values).0
+}
+
+fn mean_entropy_end(runs: &[E2Run]) -> f32 {
+    let values: Vec<f32> = runs
+        .iter()
+        .map(|run| hist_structure_metrics_for_run(run).entropy)
+        .collect();
+    mean_std_scalar(&values).0
+}
+
+fn mean_unique_bins_end(runs: &[E2Run]) -> f32 {
+    let values: Vec<f32> = runs
+        .iter()
+        .map(|run| diversity_metrics_for_run(run).unique_bins as f32)
+        .collect();
+    mean_std_scalar(&values).0
+}
+
+fn mean_nn_end(runs: &[E2Run]) -> f32 {
+    let values: Vec<f32> = runs
+        .iter()
+        .map(|run| diversity_metrics_for_run(run).nn_mean)
+        .collect();
+    mean_std_scalar(&values).0
+}
+
+fn e2_render_summary_csv(
+    stem: &str,
+    mode: &str,
+    condition_label: &str,
+    run: &E2Run,
+    anchor_hz: f32,
+    render_partials: u32,
+    range_oct: f32,
+) -> String {
+    let init_c = run.mean_c_series.first().copied().unwrap_or(0.0);
+    let mid_c = run
+        .mean_c_series
+        .get(E2_PHASE_SWITCH_STEP.min(run.mean_c_series.len().saturating_sub(1)))
+        .copied()
+        .unwrap_or(init_c);
+    let end_c = run.mean_c_series.last().copied().unwrap_or(init_c);
+    let init_level = run.mean_c_level_series.first().copied().unwrap_or(0.0);
+    let mid_level = run
+        .mean_c_level_series
+        .get(E2_PHASE_SWITCH_STEP.min(run.mean_c_level_series.len().saturating_sub(1)))
+        .copied()
+        .unwrap_or(init_level);
+    let end_level = run
+        .mean_c_level_series
+        .last()
+        .copied()
+        .unwrap_or(init_level);
+    let init_loo = run.mean_c_score_loo_series.first().copied().unwrap_or(0.0);
+    let mid_loo = run
+        .mean_c_score_loo_series
+        .get(E2_PHASE_SWITCH_STEP.min(run.mean_c_score_loo_series.len().saturating_sub(1)))
+        .copied()
+        .unwrap_or(init_loo);
+    let end_loo = run
+        .mean_c_score_loo_series
+        .last()
+        .copied()
+        .unwrap_or(init_loo);
+    let ji_series = e2_scene_ji_series(run, anchor_hz);
+    let init_ji = ji_series.first().copied().unwrap_or(0.0);
+    let mid_ji = ji_series
+        .get(E2_PHASE_SWITCH_STEP.min(ji_series.len().saturating_sub(1)))
+        .copied()
+        .unwrap_or(init_ji);
+    let end_ji = ji_series.last().copied().unwrap_or(init_ji);
+    let moved_pre = run
+        .moved_frac_series
+        .iter()
+        .take(E2_PHASE_SWITCH_STEP)
+        .copied()
+        .sum::<f32>()
+        / E2_PHASE_SWITCH_STEP.max(1) as f32;
+    let moved_post_len = run
+        .moved_frac_series
+        .len()
+        .saturating_sub(E2_PHASE_SWITCH_STEP);
+    let moved_post = if moved_post_len > 0 {
+        run.moved_frac_series
+            .iter()
+            .skip(E2_PHASE_SWITCH_STEP)
+            .copied()
+            .sum::<f32>()
+            / moved_post_len as f32
+    } else {
+        0.0
+    };
+    let mut out = String::from(
+        "file,mode,seed,condition,n_agents,render_partials,range_octaves,steps,mean_c_init,mean_c_mid,mean_c_end,delta_mean_c,mean_c_level_init,mean_c_level_mid,mean_c_level_end,delta_mean_c_level,mean_c_score_loo_init,mean_c_score_loo_mid,mean_c_score_loo_end,delta_mean_c_score_loo,ji_scene_init,ji_scene_mid,ji_scene_end,delta_ji_scene,moved_pre,moved_post\n",
+    );
+    out.push_str(&format!(
+        "{stem},{mode},{},{condition_label},{},{},{:.1},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
+        run.seed,
+        run.n_agents,
+        render_partials,
+        range_oct,
+        run.mean_c_series.len(),
+        init_c,
+        mid_c,
+        end_c,
+        end_c - init_c,
+        init_level,
+        mid_level,
+        end_level,
+        end_level - init_level,
+        init_loo,
+        mid_loo,
+        end_loo,
+        end_loo - init_loo,
+        init_ji,
+        mid_ji,
+        end_ji,
+        end_ji - init_ji,
+        moved_pre,
+        moved_post,
+    ));
+    out
+}
+
+fn generate_e2_condition_render_named(
+    condition: E2Condition,
+    condition_label: &str,
+    n_agents: usize,
+    render_partials: u32,
+    range_oct: f32,
+    stem_prefix: &str,
+) -> io::Result<()> {
+    let space = Log2Space::new(20.0, 8000.0, SPACE_BINS_PER_OCT);
+    let anchor_hz = E4_ANCHOR_HZ;
+    let seed = E2_SEEDS[0];
+    let run = run_e2_once_cfg(
+        &space,
+        anchor_hz,
+        seed,
+        condition,
+        E2_STEP_SEMITONES,
+        E2PhaseMode::DissonanceThenConsonance,
+        None,
+        0,
+        n_agents,
+        range_oct,
+    );
+
+    let out_dir = Path::new("supplementary_audio/audio");
+    create_dir_all(out_dir)?;
+    let stem = format!(
+        "{stem_prefix}_seed0_{}_n{}_p{}_{}",
+        condition_label,
+        n_agents,
+        render_partials,
+        e2_range_oct_tag(range_oct)
+    );
+    let wav_path = out_dir.join(format!("{stem}.wav"));
+    let csv_path = out_dir.join(format!("{stem}.csv"));
+    let moves_path = out_dir.join(format!("{stem}_moves.csv"));
+    let scene_metrics_path = out_dir.join(format!("{stem}_scene_metrics.csv"));
+
+    render_e2_trajectory_wav(
+        &wav_path,
+        &run.trajectory_semitones,
+        anchor_hz,
+        render_partials,
+        true,
+    )?;
+    write_with_log(
+        &csv_path,
+        e2_render_summary_csv(
+            &format!("{stem}.wav"),
+            "continuous",
+            condition_label,
+            &run,
+            anchor_hz,
+            render_partials,
+            range_oct,
+        ),
+    )?;
+    write_with_log(&moves_path, e2_moves_csv(&run))?;
+    write_with_log(&scene_metrics_path, e2_scene_metrics_csv(&run, anchor_hz))?;
+    Ok(())
+}
+
+fn plot_e2_candidate_search(
+    out_dir: &Path,
+    space: &Log2Space,
+    anchor_hz: f32,
+    phase_mode: E2PhaseMode,
+    quick: bool,
+) -> Result<(), Box<dyn Error>> {
+    let seeds = e2_dense_seed_slice(quick);
+    let max_worker_threads = if quick { Some(4) } else { None };
+    let mut rows = Vec::new();
+
+    for (range_oct, n_agents) in e2_candidate_cases() {
+        eprintln!(
+            "  Candidate search: range={range_oct:.1}oct N={n_agents} seeds={}",
+            seeds.len()
+        );
+        let (baseline_runs, _) = e2_seed_sweep_with_threads_for_seeds(
+            space,
+            anchor_hz,
+            E2Condition::Baseline,
+            E2_STEP_SEMITONES,
+            phase_mode,
+            None,
+            0,
+            n_agents,
+            range_oct,
+            seeds,
+            max_worker_threads,
+        );
+        let (nohill_runs, _) = e2_seed_sweep_with_threads_for_seeds(
+            space,
+            anchor_hz,
+            E2Condition::NoHillClimb,
+            E2_STEP_SEMITONES,
+            phase_mode,
+            None,
+            0,
+            n_agents,
+            range_oct,
+            seeds,
+            max_worker_threads,
+        );
+        let baseline_c = mean_last_c_score_loo(&baseline_runs);
+        let nohill_c = mean_last_c_score_loo(&nohill_runs);
+        let baseline_ji = mean_ji_scene_end(&baseline_runs, anchor_hz);
+        let nohill_ji = mean_ji_scene_end(&nohill_runs, anchor_hz);
+        let baseline_entropy = mean_entropy_end(&baseline_runs);
+        let nohill_entropy = mean_entropy_end(&nohill_runs);
+        let baseline_bins = mean_unique_bins_end(&baseline_runs);
+        let nohill_bins = mean_unique_bins_end(&nohill_runs);
+        let baseline_nn = mean_nn_end(&baseline_runs);
+        let nohill_nn = mean_nn_end(&nohill_runs);
+        rows.push(E2CandidateSummaryRow {
+            range_oct,
+            n_agents,
+            n_seeds: baseline_runs.len(),
+            baseline_c_score_loo_mean: baseline_c,
+            nohill_c_score_loo_mean: nohill_c,
+            delta_c_score_loo: baseline_c - nohill_c,
+            baseline_ji_scene_mean: baseline_ji,
+            nohill_ji_scene_mean: nohill_ji,
+            delta_ji_scene: baseline_ji - nohill_ji,
+            baseline_entropy_mean: baseline_entropy,
+            nohill_entropy_mean: nohill_entropy,
+            delta_entropy: nohill_entropy - baseline_entropy,
+            baseline_unique_bins_mean: baseline_bins,
+            nohill_unique_bins_mean: nohill_bins,
+            delta_unique_bins: baseline_bins - nohill_bins,
+            baseline_nn_mean: baseline_nn,
+            nohill_nn_mean: nohill_nn,
+            shortlist_score: e2_shortlist_score(
+                baseline_c,
+                nohill_c,
+                baseline_ji,
+                baseline_entropy,
+                nohill_entropy,
+            ),
+        });
+    }
+
+    rows.sort_by(|a, b| {
+        a.range_oct
+            .partial_cmp(&b.range_oct)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.n_agents.cmp(&b.n_agents))
+    });
+    write_with_log(
+        out_dir.join("paper_e2_candidate_search_summary.csv"),
+        e2_candidate_summary_csv(&rows),
+    )?;
+    write_with_log(
+        out_dir.join("paper_e2_candidate_search_report.txt"),
+        e2_candidate_report(&rows),
+    )?;
+
+    let shortlist = e2_candidate_top_rows(&rows);
+    let mut shortlist_text =
+        String::from("range_oct,n_agents,score,baseline_render,nohill_render\n");
+    for row in shortlist {
+        generate_e2_condition_render_named(
+            E2Condition::Baseline,
+            "baseline",
+            row.n_agents,
+            E2_CANDIDATE_SEARCH_RENDER_PARTIALS,
+            row.range_oct,
+            "15_exp1_candidate",
+        )?;
+        generate_e2_condition_render_named(
+            E2Condition::NoHillClimb,
+            "nohill",
+            row.n_agents,
+            E2_CANDIDATE_SEARCH_RENDER_PARTIALS,
+            row.range_oct,
+            "15_exp1_candidate",
+        )?;
+        let range_tag = e2_range_oct_tag(row.range_oct);
+        shortlist_text.push_str(&format!(
+            "{:.1},{},{:.6},15_exp1_candidate_seed0_baseline_n{}_p{}_{}.wav,15_exp1_candidate_seed0_nohill_n{}_p{}_{}.wav\n",
+            row.range_oct,
+            row.n_agents,
+            row.shortlist_score,
+            row.n_agents,
+            E2_CANDIDATE_SEARCH_RENDER_PARTIALS,
+            range_tag,
+            row.n_agents,
+            E2_CANDIDATE_SEARCH_RENDER_PARTIALS,
+            range_tag,
+        ));
+    }
+    write_with_log(
+        out_dir.join("paper_e2_candidate_search_shortlist.csv"),
+        shortlist_text,
+    )?;
+
+    Ok(())
+}
+
 fn render_diversity_summary_plot(
     out_path: &Path,
     rows: &[DiversityRow],
@@ -21666,6 +22531,7 @@ fn draw_consonant_mass_panel_impl(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn draw_entropy_panel(
     area: &DrawingArea<SVGBackend, Shift>,
     caption: &str,
@@ -21674,39 +22540,53 @@ fn draw_entropy_panel(
     label_size: u32,
     axis_desc_size: u32,
 ) -> Result<(), Box<dyn Error>> {
-    let conditions = ["baseline", "nohill", "nocrowd"];
-    let mut means = [0.0f32; 3];
-    let mut ci95 = [0.0f32; 3];
-    for (i, cond) in conditions.iter().enumerate() {
-        let values: Vec<f32> = hist_rows
-            .iter()
-            .filter(|r| r.condition == *cond)
-            .map(|r| r.metrics.entropy)
-            .collect();
-        means[i] = mean_std_scalar(&values).0;
-        ci95[i] = ci95_half_width(&values);
+    draw_entropy_panel_for_conditions(
+        area,
+        caption,
+        hist_rows,
+        &["baseline", "nohill", "nocrowd"],
+        caption_size,
+        label_size,
+        axis_desc_size,
+    )
+}
+
+fn draw_condition_bar_panel(
+    area: &DrawingArea<SVGBackend, Shift>,
+    caption: &str,
+    y_desc: &str,
+    conditions: &[&str],
+    means: &[f32],
+    ci95: &[f32],
+    caption_size: u32,
+    label_size: u32,
+    axis_desc_size: u32,
+) -> Result<(), Box<dyn Error>> {
+    if conditions.is_empty() {
+        return Ok(());
     }
     let mut y_max = 0.0f32;
-    for i in 0..3 {
+    for i in 0..conditions.len().min(means.len()).min(ci95.len()) {
         y_max = y_max.max(means[i] + ci95[i]);
     }
     y_max = (1.15 * y_max.max(1e-6)).max(1e-6);
 
+    let x_hi = (conditions.len() as f32 - 0.5).max(0.5);
     let mut chart = ChartBuilder::on(area)
         .caption(caption, ("sans-serif", caption_size))
         .margin(8)
         .x_label_area_size(40)
         .y_label_area_size(55)
-        .build_cartesian_2d(-0.5f32..2.5f32, 0.0f32..y_max)?;
+        .build_cartesian_2d(-0.5f32..x_hi, 0.0f32..y_max)?;
     chart
         .configure_mesh()
         .disable_mesh()
         .x_desc("condition")
-        .y_desc("entropy (nats)")
-        .x_labels(3)
+        .y_desc(y_desc)
+        .x_labels(conditions.len())
         .x_label_formatter(&|x| {
             let idx = x.round() as isize;
-            if (0..=2).contains(&idx) {
+            if idx >= 0 && (idx as usize) < conditions.len() {
                 e2_condition_display(conditions[idx as usize]).to_string()
             } else {
                 String::new()
@@ -21735,6 +22615,40 @@ fn draw_entropy_panel(
     Ok(())
 }
 
+fn draw_entropy_panel_for_conditions(
+    area: &DrawingArea<SVGBackend, Shift>,
+    caption: &str,
+    hist_rows: &[HistStructureRow],
+    conditions: &[&str],
+    caption_size: u32,
+    label_size: u32,
+    axis_desc_size: u32,
+) -> Result<(), Box<dyn Error>> {
+    let mut means = vec![0.0f32; conditions.len()];
+    let mut ci95 = vec![0.0f32; conditions.len()];
+    for (i, cond) in conditions.iter().enumerate() {
+        let values: Vec<f32> = hist_rows
+            .iter()
+            .filter(|r| r.condition == *cond)
+            .map(|r| r.metrics.entropy)
+            .collect();
+        means[i] = mean_std_scalar(&values).0;
+        ci95[i] = ci95_half_width(&values);
+    }
+    draw_condition_bar_panel(
+        area,
+        caption,
+        "entropy (nats)",
+        conditions,
+        &means,
+        &ci95,
+        caption_size,
+        label_size,
+        axis_desc_size,
+    )
+}
+
+#[allow(dead_code)]
 fn draw_polyphony_panel(
     area: &DrawingArea<SVGBackend, Shift>,
     caption: &str,
@@ -21743,9 +22657,28 @@ fn draw_polyphony_panel(
     label_size: u32,
     axis_desc_size: u32,
 ) -> Result<(), Box<dyn Error>> {
-    let conditions = ["baseline", "nohill", "nocrowd"];
-    let mut means = [0.0f32; 3];
-    let mut ci95 = [0.0f32; 3];
+    draw_polyphony_panel_for_conditions(
+        area,
+        caption,
+        diversity_rows,
+        &["baseline", "nohill", "nocrowd"],
+        caption_size,
+        label_size,
+        axis_desc_size,
+    )
+}
+
+fn draw_polyphony_panel_for_conditions(
+    area: &DrawingArea<SVGBackend, Shift>,
+    caption: &str,
+    diversity_rows: &[DiversityRow],
+    conditions: &[&str],
+    caption_size: u32,
+    label_size: u32,
+    axis_desc_size: u32,
+) -> Result<(), Box<dyn Error>> {
+    let mut means = vec![0.0f32; conditions.len()];
+    let mut ci95 = vec![0.0f32; conditions.len()];
     for (i, cond) in conditions.iter().enumerate() {
         let values: Vec<f32> = diversity_rows
             .iter()
@@ -21755,53 +22688,17 @@ fn draw_polyphony_panel(
         means[i] = mean_std_scalar(&values).0;
         ci95[i] = ci95_half_width(&values);
     }
-    let mut y_max = 0.0f32;
-    for i in 0..3 {
-        y_max = y_max.max(means[i] + ci95[i]);
-    }
-    y_max = (1.15 * y_max.max(1e-6)).max(1e-6);
-
-    let mut chart = ChartBuilder::on(area)
-        .caption(caption, ("sans-serif", caption_size))
-        .margin(8)
-        .x_label_area_size(40)
-        .y_label_area_size(55)
-        .build_cartesian_2d(-0.5f32..2.5f32, 0.0f32..y_max)?;
-    chart
-        .configure_mesh()
-        .disable_mesh()
-        .x_desc("condition")
-        .y_desc("distinct pitch pos. (25 ct)")
-        .x_labels(3)
-        .x_label_formatter(&|x| {
-            let idx = x.round() as isize;
-            if (0..=2).contains(&idx) {
-                e2_condition_display(conditions[idx as usize]).to_string()
-            } else {
-                String::new()
-            }
-        })
-        .label_style(("sans-serif", label_size).into_font())
-        .axis_desc_style(("sans-serif", axis_desc_size).into_font())
-        .draw()?;
-
-    for (i, cond) in conditions.iter().enumerate() {
-        let center = i as f32;
-        let x0 = center - 0.3;
-        let x1 = center + 0.3;
-        let color = desaturate_rgb(e2_condition_color(cond), 0.2);
-        chart.draw_series(std::iter::once(Rectangle::new(
-            [(x0, 0.0), (x1, means[i])],
-            color.mix(0.7).filled(),
-        )))?;
-        let y0 = (means[i] - ci95[i]).max(0.0);
-        let y1 = (means[i] + ci95[i]).min(y_max);
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(center, y0), (center, y1)],
-            BLACK.mix(0.7),
-        )))?;
-    }
-    Ok(())
+    draw_condition_bar_panel(
+        area,
+        caption,
+        "distinct pitch pos. (25 ct)",
+        conditions,
+        &means,
+        &ci95,
+        caption_size,
+        label_size,
+        axis_desc_size,
+    )
 }
 
 fn desaturate_rgb(color: RGBColor, amount: f32) -> RGBColor {
@@ -22028,7 +22925,7 @@ fn render_e2_figure2(
     pairwise_baseline_mean: &[f32],
     pairwise_baseline_std: &[f32],
     pairwise_nohill_mean: &[f32],
-    pairwise_norep_mean: &[f32],
+    _pairwise_norep_mean: &[f32],
     _consonant_rows: &[ConsonantMassRow],
     hist_rows: &[HistStructureRow],
     diversity_rows: &[DiversityRow],
@@ -22040,8 +22937,7 @@ fn render_e2_figure2(
         .len()
         .min(pairwise_baseline_mean.len())
         .min(pairwise_baseline_std.len())
-        .min(pairwise_nohill_mean.len())
-        .min(pairwise_norep_mean.len());
+        .min(pairwise_nohill_mean.len());
     if len == 0 {
         return Ok(());
     }
@@ -22059,13 +22955,71 @@ fn render_e2_figure2(
     {
         let x_min = pairwise_centers[0] * st2c - 0.5 * bin_c;
         let x_max = pairwise_centers[len - 1] * st2c + 0.5 * bin_c;
+        let mut y_peak = 0.0f32;
+        for i in 0..len {
+            y_peak = y_peak
+                .max(pairwise_baseline_mean[i] + pairwise_baseline_std[i])
+                .max(pairwise_nohill_mean[i]);
+        }
+        let y_max = (1.15 * y_peak.max(1e-4)).max(1e-4);
+        let mut chart = ChartBuilder::on(&panel_a)
+            .caption(
+                "A. Interval histogram: baseline vs no-hill",
+                ("sans-serif", 32),
+            )
+            .margin(10)
+            .x_label_area_size(55)
+            .y_label_area_size(70)
+            .build_cartesian_2d(x_min..x_max, 0.0f32..y_max)?;
+        chart
+            .configure_mesh()
+            .x_desc("cents")
+            .y_desc("mean fraction")
+            .label_style(("sans-serif", 20).into_font())
+            .axis_desc_style(("sans-serif", 24).into_font())
+            .draw()?;
+        draw_e2_interval_guides_cents(&mut chart, y_max)?;
+        let half = bin_c * 0.45;
+        for i in 0..len {
+            let cx = pairwise_centers[i] * st2c;
+            chart.draw_series(std::iter::once(Rectangle::new(
+                [(cx - half, 0.0), (cx + half, pairwise_baseline_mean[i])],
+                PAL_H.mix(0.65).filled(),
+            )))?;
+            let y0 = (pairwise_baseline_mean[i] - pairwise_baseline_std[i]).max(0.0);
+            let y1 = (pairwise_baseline_mean[i] + pairwise_baseline_std[i]).min(y_max);
+            chart.draw_series(std::iter::once(PathElement::new(
+                vec![(cx, y0), (cx, y1)],
+                BLACK.mix(0.6),
+            )))?;
+        }
+        let nohill_line = pairwise_centers
+            .iter()
+            .take(len)
+            .map(|&x| x * st2c)
+            .zip(pairwise_nohill_mean.iter().take(len).copied());
+        chart
+            .draw_series(LineSeries::new(nohill_line, PAL_R.stroke_width(3)))?
+            .label("no hill-climb")
+            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 18, y)], PAL_R.stroke_width(3)));
+        chart
+            .configure_series_labels()
+            .background_style(WHITE.mix(0.8))
+            .border_style(BLACK)
+            .label_font(("sans-serif", 22).into_font())
+            .draw()?;
+    }
+
+    {
+        let x_min = pairwise_centers[0] * st2c - 0.5 * bin_c;
+        let x_max = pairwise_centers[len - 1] * st2c + 0.5 * bin_c;
         let y_max = y_max_from_mean_err(
             &pairwise_baseline_mean[..len],
             &pairwise_baseline_std[..len],
         );
-        let mut chart = ChartBuilder::on(&panel_a)
+        let mut chart = ChartBuilder::on(&panel_b)
             .caption(
-                "A. Interval histogram (baseline, 95% CI)",
+                "B. Baseline interval histogram (95% CI)",
                 ("sans-serif", 32),
             )
             .margin(10)
@@ -22096,72 +23050,107 @@ fn render_e2_figure2(
         }
     }
 
-    {
-        let x_min = pairwise_centers[0] * st2c - 0.5 * bin_c;
-        let x_max = pairwise_centers[len - 1] * st2c + 0.5 * bin_c;
-        let mut y_peak = 0.0f32;
-        for i in 0..len {
-            y_peak = y_peak
-                .max(pairwise_baseline_mean[i])
-                .max(pairwise_nohill_mean[i])
-                .max(pairwise_norep_mean[i]);
-        }
-        let y_max = (1.15 * y_peak.max(1e-4)).max(1e-4);
-        let mut chart = ChartBuilder::on(&panel_b)
-            .caption("B. Controls overlay", ("sans-serif", 32))
-            .margin(10)
-            .x_label_area_size(55)
-            .y_label_area_size(70)
-            .build_cartesian_2d(x_min..x_max, 0.0f32..y_max)?;
-        chart
-            .configure_mesh()
-            .x_desc("cents")
-            .y_desc("mean fraction")
-            .label_style(("sans-serif", 20).into_font())
-            .axis_desc_style(("sans-serif", 24).into_font())
-            .draw()?;
-        draw_e2_interval_guides_cents(&mut chart, y_max)?;
-        for (label, values, color) in [
-            ("baseline", pairwise_baseline_mean, PAL_H),
-            ("no hill-climb", pairwise_nohill_mean, PAL_R),
-            ("no crowding", pairwise_norep_mean, PAL_CD),
-        ] {
-            let line = pairwise_centers
-                .iter()
-                .take(len)
-                .map(|&x| x * st2c)
-                .zip(values.iter().take(len).copied());
-            chart
-                .draw_series(LineSeries::new(line, color))?
-                .label(label)
-                .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 18, y)], color));
-        }
-        chart
-            .configure_series_labels()
-            .background_style(WHITE.mix(0.8))
-            .border_style(BLACK)
-            .label_font(("sans-serif", 24).into_font())
-            .draw()?;
-    }
-
-    draw_entropy_panel(
+    draw_entropy_panel_for_conditions(
         &panel_c,
         "C. Interval entropy (95% CI)",
         hist_rows,
+        &["baseline", "nohill"],
         29,
         18,
         22,
     )?;
-    draw_polyphony_panel(
+    draw_polyphony_panel_for_conditions(
         &panel_d,
         "D. Emergent polyphony (95% CI)",
         diversity_rows,
+        &["baseline", "nohill"],
         29,
         18,
         22,
     )?;
 
     root.present()?;
+    Ok(())
+}
+
+fn plot_e2_dense_sweep(
+    out_dir: &Path,
+    space: &Log2Space,
+    anchor_hz: f32,
+    phase_mode: E2PhaseMode,
+    quick: bool,
+) -> Result<(), Box<dyn Error>> {
+    let seeds = e2_dense_seed_slice(quick);
+    let max_worker_threads = if quick { Some(4) } else { None };
+    let mut rows = Vec::new();
+    let mut cases: Vec<(f32, usize, f32)> = Vec::new();
+
+    for &range_oct in &E2_DENSE_SWEEP_RANGES_OCT {
+        for &voices_per_oct in &E2_DENSE_SWEEP_VOICES_PER_OCT {
+            let n_agents = e2_dense_n_agents(range_oct, voices_per_oct);
+            cases.push((range_oct, n_agents, voices_per_oct));
+        }
+    }
+    for &n_agents in &E2_DENSE_SWEEP_2OCT_EXTREME_N {
+        cases.push((2.0, n_agents, n_agents as f32 / 2.0));
+    }
+    cases.sort_by(|a, b| {
+        a.0.partial_cmp(&b.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.1.cmp(&b.1))
+    });
+    cases.dedup_by(|a, b| (a.0 - b.0).abs() < 1e-6 && a.1 == b.1);
+
+    for (range_oct, n_agents, voices_per_oct) in cases {
+        for (condition, label) in [
+            (E2Condition::Baseline, "baseline"),
+            (E2Condition::NoCrowding, "nocrowd"),
+        ] {
+            eprintln!(
+                "  Dense sweep: range={range_oct:.1}oct voices/oct={voices_per_oct:.1} N={n_agents} cond={label} seeds={}",
+                seeds.len()
+            );
+            let (runs, _) = e2_seed_sweep_with_threads_for_seeds(
+                space,
+                anchor_hz,
+                condition,
+                E2_STEP_SEMITONES,
+                phase_mode,
+                None,
+                0,
+                n_agents,
+                range_oct,
+                seeds,
+                max_worker_threads,
+            );
+            for run in &runs {
+                rows.push(e2_dense_row_from_run(
+                    run,
+                    anchor_hz,
+                    range_oct,
+                    voices_per_oct,
+                    label,
+                ));
+            }
+        }
+    }
+
+    let summary_rows = e2_dense_sweep_summary_rows(&rows);
+    write_with_log(
+        out_dir.join("paper_e2_dense_sweep_by_seed.csv"),
+        e2_dense_sweep_by_seed_csv(&rows),
+    )?;
+    write_with_log(
+        out_dir.join("paper_e2_dense_sweep_summary.csv"),
+        e2_dense_sweep_summary_csv(&summary_rows),
+    )?;
+    write_with_log(
+        out_dir.join("paper_e2_dense_sweep_delta.csv"),
+        e2_dense_delta_csv(&summary_rows),
+    )?;
+    let plot_path = out_dir.join("paper_e2_dense_tradeoff_scatter.svg");
+    render_e2_dense_tradeoff_plot(&plot_path, &summary_rows)?;
+
     Ok(())
 }
 
@@ -24410,6 +25399,16 @@ mod tests {
         );
         let tail = hist.last().map(|(_, c)| *c).unwrap_or(0.0);
         assert!(tail < 0.5, "expected last bin not to receive octave sample");
+    }
+
+    #[test]
+    fn close_pair_fraction_counts_absolute_near_unisons_only() {
+        let semitones = [0.0f32, 0.20, 0.60, 7.0];
+        let frac = close_pair_fraction_for_semitones(&semitones, 0.5);
+        assert!(
+            (frac - (2.0 / 6.0)).abs() < 1e-6,
+            "expected 2 close pairs out of 6, got {frac}"
+        );
     }
 
     #[test]
@@ -27220,93 +28219,15 @@ fn e2_baseline_summary_csv(
     render_partials: u32,
     range_oct: f32,
 ) -> String {
-    let init_c = run.mean_c_series.first().copied().unwrap_or(0.0);
-    let mid_c = run
-        .mean_c_series
-        .get(E2_PHASE_SWITCH_STEP.min(run.mean_c_series.len().saturating_sub(1)))
-        .copied()
-        .unwrap_or(init_c);
-    let end_c = run.mean_c_series.last().copied().unwrap_or(init_c);
-    let init_level = run.mean_c_level_series.first().copied().unwrap_or(0.0);
-    let mid_level = run
-        .mean_c_level_series
-        .get(E2_PHASE_SWITCH_STEP.min(run.mean_c_level_series.len().saturating_sub(1)))
-        .copied()
-        .unwrap_or(init_level);
-    let end_level = run
-        .mean_c_level_series
-        .last()
-        .copied()
-        .unwrap_or(init_level);
-    let init_loo = run.mean_c_score_loo_series.first().copied().unwrap_or(0.0);
-    let mid_loo = run
-        .mean_c_score_loo_series
-        .get(E2_PHASE_SWITCH_STEP.min(run.mean_c_score_loo_series.len().saturating_sub(1)))
-        .copied()
-        .unwrap_or(init_loo);
-    let end_loo = run
-        .mean_c_score_loo_series
-        .last()
-        .copied()
-        .unwrap_or(init_loo);
-    let ji_series = e2_scene_ji_series(run, anchor_hz);
-    let init_ji = ji_series.first().copied().unwrap_or(0.0);
-    let mid_ji = ji_series
-        .get(E2_PHASE_SWITCH_STEP.min(ji_series.len().saturating_sub(1)))
-        .copied()
-        .unwrap_or(init_ji);
-    let end_ji = ji_series.last().copied().unwrap_or(init_ji);
-    let moved_pre = run
-        .moved_frac_series
-        .iter()
-        .take(E2_PHASE_SWITCH_STEP)
-        .copied()
-        .sum::<f32>()
-        / E2_PHASE_SWITCH_STEP.max(1) as f32;
-    let moved_post_len = run
-        .moved_frac_series
-        .len()
-        .saturating_sub(E2_PHASE_SWITCH_STEP);
-    let moved_post = if moved_post_len > 0 {
-        run.moved_frac_series
-            .iter()
-            .skip(E2_PHASE_SWITCH_STEP)
-            .copied()
-            .sum::<f32>()
-            / moved_post_len as f32
-    } else {
-        0.0
-    };
-    let mut out = String::from(
-        "file,mode,seed,condition,n_agents,render_partials,range_octaves,steps,mean_c_init,mean_c_mid,mean_c_end,delta_mean_c,mean_c_level_init,mean_c_level_mid,mean_c_level_end,delta_mean_c_level,mean_c_score_loo_init,mean_c_score_loo_mid,mean_c_score_loo_end,delta_mean_c_score_loo,ji_scene_init,ji_scene_mid,ji_scene_end,delta_ji_scene,moved_pre,moved_post\n",
-    );
-    out.push_str(&format!(
-        "{stem},{mode},{},baseline,{},{},{:.1},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
-        run.seed,
-        run.n_agents,
+    e2_render_summary_csv(
+        stem,
+        mode,
+        "baseline",
+        run,
+        anchor_hz,
         render_partials,
         range_oct,
-        run.mean_c_series.len(),
-        init_c,
-        mid_c,
-        end_c,
-        end_c - init_c,
-        init_level,
-        mid_level,
-        end_level,
-        end_level - init_level,
-        init_loo,
-        mid_loo,
-        end_loo,
-        end_loo - init_loo,
-        init_ji,
-        mid_ji,
-        end_ji,
-        end_ji - init_ji,
-        moved_pre,
-        moved_post,
-    ));
-    out
+    )
 }
 
 fn e2_moves_csv(run: &E2Run) -> String {
@@ -28325,21 +29246,13 @@ pub fn generate_e2_baseline_render(
         render_partials,
         e2_range_oct_tag(range_oct)
     );
-    let impulse_path = out_dir.join(format!("{stem}.wav"));
-    let continuous_path = out_dir.join(format!("{stem}_continuous.wav"));
+    let wav_path = out_dir.join(format!("{stem}.wav"));
     let csv_path = out_dir.join(format!("{stem}.csv"));
     let moves_path = out_dir.join(format!("{stem}_moves.csv"));
     let scene_metrics_path = out_dir.join(format!("{stem}_scene_metrics.csv"));
 
     render_e2_trajectory_wav(
-        &impulse_path,
-        &run.trajectory_semitones,
-        anchor_hz,
-        render_partials,
-        false,
-    )?;
-    render_e2_trajectory_wav(
-        &continuous_path,
+        &wav_path,
         &run.trajectory_semitones,
         anchor_hz,
         render_partials,
@@ -28347,29 +29260,13 @@ pub fn generate_e2_baseline_render(
     )?;
     write_with_log(
         &csv_path,
-        format!(
-            "{}{}",
-            e2_baseline_summary_csv(
-                &format!("{stem}.wav"),
-                "impulse",
-                &run,
-                anchor_hz,
-                render_partials,
-                range_oct
-            ),
-            e2_baseline_summary_csv(
-                &format!("{stem}_continuous.wav"),
-                "continuous",
-                &run,
-                anchor_hz,
-                render_partials,
-                range_oct,
-            )
-            .lines()
-            .skip(1)
-            .collect::<Vec<_>>()
-            .join("\n")
-                + "\n",
+        e2_baseline_summary_csv(
+            &format!("{stem}.wav"),
+            "continuous",
+            &run,
+            anchor_hz,
+            render_partials,
+            range_oct,
         ),
     )?;
     write_with_log(&moves_path, e2_moves_csv(&run))?;
@@ -28403,21 +29300,13 @@ pub fn generate_e2_proposal_render(
         render_partials,
         e2_range_oct_tag(range_oct)
     );
-    let impulse_path = out_dir.join(format!("{stem}.wav"));
-    let continuous_path = out_dir.join(format!("{stem}_continuous.wav"));
+    let wav_path = out_dir.join(format!("{stem}.wav"));
     let csv_path = out_dir.join(format!("{stem}.csv"));
     let moves_path = out_dir.join(format!("{stem}_moves.csv"));
     let scene_metrics_path = out_dir.join(format!("{stem}_scene_metrics.csv"));
 
     render_e2_trajectory_wav(
-        &impulse_path,
-        &run.trajectory_semitones,
-        anchor_hz,
-        render_partials,
-        false,
-    )?;
-    render_e2_trajectory_wav(
-        &continuous_path,
+        &wav_path,
         &run.trajectory_semitones,
         anchor_hz,
         render_partials,
@@ -28425,29 +29314,13 @@ pub fn generate_e2_proposal_render(
     )?;
     write_with_log(
         &csv_path,
-        format!(
-            "{}{}",
-            e2_baseline_summary_csv(
-                &format!("{stem}.wav"),
-                "impulse",
-                &run,
-                anchor_hz,
-                render_partials,
-                range_oct
-            ),
-            e2_baseline_summary_csv(
-                &format!("{stem}_continuous.wav"),
-                "continuous",
-                &run,
-                anchor_hz,
-                render_partials,
-                range_oct,
-            )
-            .lines()
-            .skip(1)
-            .collect::<Vec<_>>()
-            .join("\n")
-                + "\n",
+        e2_baseline_summary_csv(
+            &format!("{stem}.wav"),
+            "continuous",
+            &run,
+            anchor_hz,
+            render_partials,
+            range_oct,
         ),
     )?;
     write_with_log(&moves_path, e2_moves_csv(&run))?;
