@@ -249,11 +249,11 @@ Because $n=20$, exact enumeration is feasible. The observed $p = 0.000053$ (1 in
 
 \section{S7. Consonance-Only Control (Experiment 1)}
 
-Experiment~1 uses a two-phase curriculum: dissonance-seeking (rounds 1--50) followed by consonance-seeking (rounds 51--100). To assess whether the resulting polyphony depends on this schedule, we ran a \emph{consonance-only} control with identical parameters but $s(t) = +1$ for all 100 rounds (baseline condition, 20 seeds).
+Experiment~1 uses a two-phase curriculum: dissonance-seeking (rounds 1--50) followed by consonance-seeking (rounds 51--100). To assess whether the resulting polyphony depends on this schedule, we ran a \emph{consonance-only} control with identical parameters but $s(t) = +1$ for all 100 rounds (\emph{local-search} condition, 20 seeds).
 
 \begin{table}[h]
 \centering
-\caption{Curriculum vs.\ consonance-only control (Experiment~1, baseline condition, $n\!=\!20$ seeds). All differences are significant at $p < 0.001$ (Welch's $t$-test).}
+\caption{Curriculum vs.\ consonance-only control (Experiment~1, \emph{local-search} condition, $n\!=\!20$ seeds). All differences are significant at $p < 0.001$ (Welch's $t$-test).}
 \label{tab:consonly}
 \footnotesize
 \begin{tabular}{@{}lccc@{}}
@@ -278,16 +278,16 @@ Three supplementary analyses test whether the self-organised polyphony reported 
 
 We destroy spatial coherence by applying a fixed random permutation of the $C_{\text{score}}$ bin indices, generated once per run and held fixed throughout all sweeps.
 Agents therefore move on a stationary landscape with the same \emph{marginal} score distribution but no local gradient structure.
-Table~\ref{tab:shuffled} compares the shuffled condition with the standard baseline ($n=20$ seeds each).
+Table~\ref{tab:shuffled} compares the shuffled condition with the standard \emph{local-search} condition ($n=20$ seeds each).
 
 \begin{table}[h]
 \centering
-\caption{Baseline vs.\ Shuffled landscape (Experiment~1).}
+\caption{\emph{Local-search} vs.\ shuffled landscape (Experiment~1).}
 \label{tab:shuffled}
 \footnotesize
 \begin{tabular}{@{}lccr@{}}
 \toprule
-\textbf{Metric} & \textbf{Baseline} & \textbf{Shuffled} & $t$ \\
+\textbf{Metric} & \textbf{Local-search} & \textbf{Shuffled} & $t$ \\
 \midrule
 Unique pitch bins & $19.2 \pm 1.3$ & $19.5 \pm 1.2$ & $0.6$ \\
 NN distance (st)  & $0.574 \pm 0.048$ & $0.568 \pm 0.079$ & $-0.3$ \\
@@ -310,14 +310,14 @@ Table~\ref{tab:misaligned} reports the results ($n=20$ seeds per shift, 80 runs 
 
 \begin{table}[h]
 \centering
-\caption{Baseline vs.\ H/R-misaligned conditions (Experiment~1).}
+\caption{\emph{Local-search} vs.\ H/R-misaligned conditions (Experiment~1).}
 \label{tab:misaligned}
 \footnotesize
 \begin{tabular}{@{}lccc@{}}
 \toprule
 Condition & Unique bins & NN dist.\ (st) & Entropy \\
 \midrule
-Baseline            & $19.2 \pm 1.3$ & $0.574 \pm 0.048$ & $3.93 \pm 0.16$ \\
+Local-search        & $19.2 \pm 1.3$ & $0.574 \pm 0.048$ & $3.93 \pm 0.16$ \\
 $\Delta = 137$\,¢   & $18.8 \pm 1.3$ & $0.547 \pm 0.099$ & $3.87 \pm 0.17$ \\
 $\Delta = 271$\,¢   & $19.0 \pm 1.5$ & $0.581 \pm 0.093$ & $3.92 \pm 0.15$ \\
 $\Delta = 389$\,¢   & $19.3 \pm 1.9$ & $0.595 \pm 0.093$ & $3.85 \pm 0.26$ \\

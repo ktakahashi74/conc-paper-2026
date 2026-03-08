@@ -8,7 +8,7 @@ Qualitative audio demonstrations accompanying the paper
 | File | Role | Duration | Description |
 |------|------|----------|-------------|
 | `00_quicklisten.wav` | Orientation | ~35 s | Curated montage: best-case emergence vs. ablation controls |
-| `10_exp1_polyphony.wav` | Evidence (E2) | ~53 s | Hill-climbing + repulsion → emergent polyphony |
+| `10_exp1_polyphony.wav` | Evidence (E2) | ~53 s | Local-search + repulsion → emergent polyphony |
 | `20_integration.wav` | Evidence (E6) | ~55 s | Heredity × hill-climbing → integration |
 
 ### 00_quicklisten — Orientation montage
@@ -16,9 +16,9 @@ Qualitative audio demonstrations accompanying the paper
 For quick orientation. Four 8-second segments contrast the strongest
 emergent behaviour with ablation controls:
 
-1. **E2 baseline** — hill-climbing + repulsion → consonant polyphony
+1. **E2 local-search** — score-based local search + repulsion → consonant polyphony
 2. **E6 both** — hereditary respawn + hill-climbing → integration
-3. **E2 no-hill** — repulsion only, no landscape guidance
+3. **E2 random-walk** — repulsion only, matched random local walk
 4. **E6 neither** — random respawn, no landscape → random control
 
 ### 10_exp1_polyphony — Experiment 2 (E2)
@@ -27,11 +27,11 @@ Three conditions × two seeds (index 0, 10). Each segment ~8 s:
 
 | Condition | landscape_weight | repulsion |
 |-----------|-----------------|-----------|
-| baseline | 1.0 | 0.15 @ 72 cents |
-| no-hill | 0.0 | 0.15 @ 72 cents |
+| local-search | 1.0 | 0.15 @ 72 cents |
+| random-walk | 0.0 | 0.15 @ 72 cents |
 | no-rep | 1.0 | off |
 
-**Expected:** baseline converges to consonant intervals; no-hill stays
+**Expected:** local-search converges to consonant intervals; random-walk stays
 random; no-rep collapses toward unison.
 
 ### 20_integration — Experiment 6 (E6)
@@ -83,7 +83,7 @@ claims rest on the paper's simulation statistics (Section 5).
 |--------|-------------------------------|------------------------|
 | Landscape | Computed from known frequencies | Computed from audio signal (NSGT) |
 | Update timing | Discrete steps | Real-time hop rate |
-| E2 hill-climbing | Discrete grid + LOO | Continuous frequency + native pitch_core |
+| E2 local-search | Discrete grid + LOO | Continuous frequency + native pitch_core |
 | E6 heredity | Custom parent selection | RuntimeGroup-based |
 | Qualitative behaviour | Same attractors | Same attractors |
 | Quantitative match | — | Not guaranteed |
