@@ -21,13 +21,14 @@ use crate::sim::{
     run_e4_mirror_schedule_samples, run_e6, set_e4_runtime_overrides,
 };
 use conchordal::core::consonance_kernel::{ConsonanceKernel, ConsonanceRepresentationParams};
+use conchordal::core::erb::hz_to_erb;
 use conchordal::core::harmonicity_kernel::{HarmonicityKernel, HarmonicityParams};
 use conchordal::core::landscape::{Landscape, LandscapeParams, RoughnessScalarMode};
 use conchordal::core::log2space::{Log2Space, sample_scan_linear_log2};
 use conchordal::core::phase::wrap_pm_pi;
 use conchordal::core::psycho_state;
 use conchordal::core::roughness_kernel::{
-    KernelParams, RoughnessKernel, crowding_runtime_delta_erb, erb_grid,
+    KernelParams, RoughnessKernel, crowding_runtime_delta_erb, erb_grid, eval_kernel_delta_erb,
 };
 use conchordal::life::articulation_core::kuramoto_phase_step;
 use conchordal::life::individual::PitchHillClimbPitchCore;
@@ -8191,7 +8192,6 @@ fn plot_e4_mirror_sweep(
 struct ConsonanceWorkspace {
     params: LandscapeParams,
     r_ref_peak: f32,
-    r_ref_total: f32,
     r_shift_bins: i32,
 }
 
@@ -8251,9 +8251,11 @@ struct E2Run {
 #[derive(Clone, Copy, Debug, Default)]
 struct E2SceneGPoint {
     h_scene: f32,
+    h_single_mean: f32,
+    h_social: f32,
     r_scene: f32,
-    phi_scene: f32,
-    phi_single_mean: f32,
+    r_single_mean: f32,
+    r_social: f32,
     g_scene: f32,
 }
 
@@ -17606,7 +17608,6 @@ fn build_consonance_workspace(space: &Log2Space) -> ConsonanceWorkspace {
     ConsonanceWorkspace {
         params,
         r_ref_peak: r_ref.peak,
-        r_ref_total: r_ref.total,
         r_shift_bins: 0,
     }
 }
@@ -17717,30 +17718,62 @@ fn e2_scene_spectrum_features_for_freqs(
     if clean_freqs.is_empty() {
         return (0.0, 0.0);
     }
-    let (env_scan, density_scan) = build_env_density_from_freqs(
+    let (env_scan, _density_scan) = build_env_density_from_freqs(
         space,
         &clean_freqs,
         du_scan,
         E2_SCENE_G_ENV_PARTIALS,
         E2_SCENE_G_ENV_DECAY,
     );
-    let (density_norm, _) =
-        psycho_state::normalize_density(&density_scan, du_scan, workspace.params.roughness_ref_eps);
     let h_dual = workspace
         .params
         .harmonicity_kernel
         .potential_h_dual_from_log2_spectrum(&env_scan, space);
-    let (_r_pot_scan, r_total) = workspace
-        .params
-        .roughness_kernel
-        .potential_r_from_log2_spectrum_density(&density_norm, space);
     let h_scene = h_dual.metrics.binding_strength.max(0.0);
-    let r_scene = if workspace.r_ref_total > 0.0 {
-        (r_total / workspace.r_ref_total).max(0.0)
-    } else {
-        0.0
-    };
+    let r_scene = e2_scene_direct_roughness_from_freqs(workspace, &clean_freqs);
     (h_scene, r_scene)
+}
+
+fn e2_scene_direct_roughness_from_freqs(workspace: &ConsonanceWorkspace, freqs_hz: &[f32]) -> f32 {
+    let clean_freqs: Vec<f32> = freqs_hz
+        .iter()
+        .copied()
+        .filter(|f| f.is_finite() && *f > 0.0)
+        .collect();
+    if clean_freqs.is_empty() {
+        return 0.0;
+    }
+    let partials = E2_SCENE_G_ENV_PARTIALS.clamp(1, 32) as usize;
+    let decay = if E2_SCENE_G_ENV_DECAY.is_finite() {
+        E2_SCENE_G_ENV_DECAY.clamp(0.0, 4.0)
+    } else {
+        1.0
+    };
+    let harmonic_norm = (1..=partials)
+        .map(|k| 1.0 / (k as f32).powf(decay))
+        .sum::<f32>()
+        .max(1e-6);
+    let mut partials_erb = Vec::with_capacity(clean_freqs.len() * partials);
+    for &freq in &clean_freqs {
+        for k in 1..=partials {
+            let harmonic = k as f32;
+            let partial_freq = freq * harmonic;
+            if !partial_freq.is_finite() || partial_freq <= 0.0 {
+                continue;
+            }
+            let gain = (1.0 / harmonic.powf(decay)) / harmonic_norm;
+            partials_erb.push((hz_to_erb(partial_freq), gain));
+        }
+    }
+    let kernel_params = &workspace.params.roughness_kernel.params;
+    let mut total = 0.0f32;
+    for i in 0..partials_erb.len() {
+        let (erb_i, gain_i) = partials_erb[i];
+        for &(erb_j, gain_j) in partials_erb.iter().skip(i + 1) {
+            total += gain_i * gain_j * eval_kernel_delta_erb(kernel_params, erb_i - erb_j);
+        }
+    }
+    total.max(0.0)
 }
 
 fn e2_scene_g_phi(workspace: &ConsonanceWorkspace, h_scene: f32, r_scene: f32) -> f32 {
@@ -17774,28 +17807,34 @@ fn e2_scene_g_point_for_freqs(
     }
     let (h_scene, r_scene) =
         e2_scene_spectrum_features_for_freqs(space, workspace, du_scan, &clean_freqs);
-    let phi_scene = e2_scene_g_phi(workspace, h_scene, r_scene);
 
-    let mut singleton_cache: HashMap<i32, f32> = HashMap::new();
-    let mut phi_single_sum = 0.0f32;
+    let mut singleton_cache: HashMap<i32, (f32, f32)> = HashMap::new();
+    let mut h_single_sum = 0.0f32;
+    let mut r_single_sum = 0.0f32;
     for &freq in &clean_freqs {
         let key = (freq * 1000.0).round() as i32;
-        let phi_single = *singleton_cache.entry(key).or_insert_with(|| {
+        let (h_single, r_single) = *singleton_cache.entry(key).or_insert_with(|| {
             let singleton = [freq];
-            let (h_single, r_single) =
-                e2_scene_spectrum_features_for_freqs(space, workspace, du_scan, &singleton);
-            e2_scene_g_phi(workspace, h_single, r_single)
+            e2_scene_spectrum_features_for_freqs(space, workspace, du_scan, &singleton)
         });
-        phi_single_sum += phi_single;
+        h_single_sum += h_single;
+        r_single_sum += r_single;
     }
-    let phi_single_mean = phi_single_sum / clean_freqs.len() as f32;
+    let inv_n = 1.0 / clean_freqs.len() as f32;
+    let h_single_mean = h_single_sum * inv_n;
+    let r_single_mean = r_single_sum * inv_n;
+    let h_social = h_scene - h_single_mean;
+    let r_social = r_scene - r_single_mean;
+    let g_scene = e2_scene_g_phi(workspace, h_social, r_social);
 
     E2SceneGPoint {
         h_scene,
+        h_single_mean,
+        h_social,
         r_scene,
-        phi_scene,
-        phi_single_mean,
-        g_scene: phi_scene - phi_single_mean,
+        r_single_mean,
+        r_social,
+        g_scene,
     }
 }
 
@@ -25882,31 +25921,33 @@ mod tests {
         let freqs = [E4_ANCHOR_HZ, E4_ANCHOR_HZ * 1.5];
         let point = e2_scene_g_point_for_freqs(&space, &workspace, &du_scan, &freqs);
         assert!(point.h_scene.is_finite() && point.h_scene >= 0.0);
+        assert!(point.h_single_mean.is_finite() && point.h_single_mean >= 0.0);
+        assert!(point.h_social.is_finite());
         assert!(point.r_scene.is_finite() && point.r_scene >= 0.0);
-        assert!(point.phi_scene.is_finite());
-        assert!(point.phi_single_mean.is_finite());
+        assert!(point.r_single_mean.is_finite() && point.r_single_mean >= 0.0);
+        assert!(point.r_social.is_finite());
         assert!(point.g_scene.is_finite());
         assert!(
-            point.phi_scene > point.phi_single_mean - 1.0,
+            point.h_scene > 0.0 && point.r_scene > 0.0,
             "unexpectedly pathological G(F) components: {:?}",
             point
         );
     }
 
     #[test]
-    fn g_scene_rewards_social_binding_over_singletons() {
+    fn scene_roughness_feature_penalizes_close_intervals() {
         let space = Log2Space::new(20.0, 8000.0, SPACE_BINS_PER_OCT);
         let workspace = build_consonance_workspace(&space);
         let (_erb_scan, du_scan) = erb_grid(&space);
-        let singleton = [E4_ANCHOR_HZ];
-        let dyad = [E4_ANCHOR_HZ, E4_ANCHOR_HZ * 1.5];
-        let p_single = e2_scene_g_point_for_freqs(&space, &workspace, &du_scan, &singleton);
-        let p_dyad = e2_scene_g_point_for_freqs(&space, &workspace, &du_scan, &dyad);
+        let close = [E4_ANCHOR_HZ, E4_ANCHOR_HZ * 2.0_f32.powf(1.0 / 12.0)];
+        let consonant = [E4_ANCHOR_HZ, E4_ANCHOR_HZ * 1.5];
+        let p_close = e2_scene_g_point_for_freqs(&space, &workspace, &du_scan, &close);
+        let p_consonant = e2_scene_g_point_for_freqs(&space, &workspace, &du_scan, &consonant);
         assert!(
-            p_dyad.g_scene > p_single.g_scene + 1e-4,
-            "expected social scene to exceed singleton baseline: single={:?} dyad={:?}",
-            p_single,
-            p_dyad
+            p_close.r_social > p_consonant.r_social + 1e-3,
+            "expected close interval to have higher social roughness: close={:?} consonant={:?}",
+            p_close,
+            p_consonant
         );
     }
 
@@ -28145,24 +28186,28 @@ fn e2_scene_g_series(run: &E2Run, space: &Log2Space) -> Vec<E2SceneGPoint> {
 fn e2_scene_g_pair_csv(baseline: &[E2SceneGPoint], nohill: &[E2SceneGPoint]) -> String {
     let len = baseline.len().min(nohill.len());
     let mut out = String::from(
-        "# G(F)=Phi(scene)-mean_i Phi(singleton_i); scene includes adaptive voices plus fixed drone; Phi(H,R)=aH+bR+cHR using scene-spectrum binding and roughness features\n\
-step,baseline_g_scene,baseline_phi_scene,baseline_phi_single_mean,baseline_h_scene,baseline_r_scene,nohill_g_scene,nohill_phi_scene,nohill_phi_single_mean,nohill_h_scene,nohill_r_scene\n",
+        "# G(F)=a*H_soc+b*R_soc+c*H_soc*R_soc; H_soc=H_scene-mean_i H(singleton_i); R_soc=R_scene-mean_i R(singleton_i); scene includes adaptive voices plus fixed drone\n\
+step,baseline_g_scene,baseline_h_scene,baseline_h_single_mean,baseline_h_social,baseline_r_scene,baseline_r_single_mean,baseline_r_social,nohill_g_scene,nohill_h_scene,nohill_h_single_mean,nohill_h_social,nohill_r_scene,nohill_r_single_mean,nohill_r_social\n",
     );
     for step in 0..len {
         let b = baseline[step];
         let n = nohill[step];
         out.push_str(&format!(
-            "{step},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
+            "{step},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
             b.g_scene,
-            b.phi_scene,
-            b.phi_single_mean,
             b.h_scene,
+            b.h_single_mean,
+            b.h_social,
             b.r_scene,
+            b.r_single_mean,
+            b.r_social,
             n.g_scene,
-            n.phi_scene,
-            n.phi_single_mean,
             n.h_scene,
+            n.h_single_mean,
+            n.h_social,
             n.r_scene,
+            n.r_single_mean,
+            n.r_social,
         ));
     }
     out
