@@ -94,6 +94,9 @@ const E2_SEEDS: [u64; 20] = [
     0x10203040_u64,
     0x55667788_u64,
 ];
+const E2_PAPER_N_AGENTS: usize = 5;
+const E2_PAPER_RANGE_OCT: f32 = 2.0;
+const E2_PAPER_REP_SEED_INDEX: usize = 0;
 
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
@@ -1616,7 +1619,7 @@ fn plot_e2_emergent_harmony(
         shuffled_runs,
     ) = std::thread::scope(|scope| {
         let baseline_handle = scope.spawn(|| {
-            e2_seed_sweep(
+            e2_seed_sweep_cfg(
                 space,
                 anchor_hz,
                 E2Condition::Baseline,
@@ -1624,10 +1627,12 @@ fn plot_e2_emergent_harmony(
                 phase_mode,
                 None,
                 0,
+                E2_PAPER_N_AGENTS,
+                E2_PAPER_RANGE_OCT,
             )
         });
         let nohill_handle = scope.spawn(|| {
-            e2_seed_sweep(
+            e2_seed_sweep_cfg(
                 space,
                 anchor_hz,
                 E2Condition::NoHillClimb,
@@ -1635,10 +1640,12 @@ fn plot_e2_emergent_harmony(
                 phase_mode,
                 None,
                 0,
+                E2_PAPER_N_AGENTS,
+                E2_PAPER_RANGE_OCT,
             )
         });
         let norep_handle = scope.spawn(|| {
-            e2_seed_sweep(
+            e2_seed_sweep_cfg(
                 space,
                 anchor_hz,
                 E2Condition::NoCrowding,
@@ -1646,10 +1653,12 @@ fn plot_e2_emergent_harmony(
                 phase_mode,
                 None,
                 0,
+                E2_PAPER_N_AGENTS,
+                E2_PAPER_RANGE_OCT,
             )
         });
         let shuffled_handle = scope.spawn(|| {
-            e2_seed_sweep(
+            e2_seed_sweep_cfg(
                 space,
                 anchor_hz,
                 E2Condition::ShuffledLandscape,
@@ -1657,6 +1666,8 @@ fn plot_e2_emergent_harmony(
                 phase_mode,
                 None,
                 0,
+                E2_PAPER_N_AGENTS,
+                E2_PAPER_RANGE_OCT,
             )
         });
         let (baseline_runs, baseline_stats) = baseline_handle
@@ -1681,7 +1692,10 @@ fn plot_e2_emergent_harmony(
             shuffled_runs,
         )
     });
-    let rep_index = pick_representative_run_index(&baseline_runs);
+    let rep_index = baseline_runs
+        .iter()
+        .position(|run| run.seed == E2_SEEDS[E2_PAPER_REP_SEED_INDEX])
+        .unwrap_or_else(|| pick_representative_run_index(&baseline_runs));
     let baseline_run = &baseline_runs[rep_index];
     let marker_steps = e2_marker_steps(phase_mode);
     let caption_suffix = e2_caption_suffix(phase_mode);
@@ -2269,8 +2283,15 @@ fn plot_e2_emergent_harmony(
     let hist_plot_path = out_dir.join("paper_e2_hist_structure_summary.svg");
     render_hist_structure_summary_plot(&hist_plot_path, &hist_rows)?;
 
-    let nohill_rep = &nohill_runs[pick_representative_run_index(&nohill_runs)];
-    let norep_rep = &norep_runs[pick_representative_run_index(&norep_runs)];
+    let rep_seed = E2_SEEDS[E2_PAPER_REP_SEED_INDEX];
+    let nohill_rep = &nohill_runs[nohill_runs
+        .iter()
+        .position(|run| run.seed == rep_seed)
+        .unwrap_or_else(|| pick_representative_run_index(&nohill_runs))];
+    let norep_rep = &norep_runs[norep_runs
+        .iter()
+        .position(|run| run.seed == rep_seed)
+        .unwrap_or_else(|| pick_representative_run_index(&norep_runs))];
     render_e2_control_histograms(out_dir, baseline_run, nohill_rep, norep_rep)?;
 
     let hist_min = -12.0f32;
@@ -3804,7 +3825,15 @@ fn run_e2_once_cfg(
         .map(|_| Vec::with_capacity(E2_SWEEPS))
         .collect::<Vec<_>>();
     let mut backtrack_targets = agent_indices.clone();
-    let use_nohill = matches!(condition, E2Condition::NoHillClimb);
+    let use_proposal = matches!(
+        condition,
+        E2Condition::Baseline | E2Condition::NoCrowding | E2Condition::ShuffledLandscape
+    );
+    let mut pitch_cores = if use_proposal {
+        build_e2_pitch_cores(space, &agent_indices, step_semitones)
+    } else {
+        Vec::new()
+    };
     let mut nohill_env_loo = Vec::new();
     let mut nohill_density_loo = Vec::new();
 
@@ -3864,6 +3893,16 @@ fn run_e2_once_cfg(
         let (env_scan, density_scan) = build_env_scans(space, anchor_idx, &agent_indices, &du_scan);
         let (c_score_scan, c_level_scan, density_mass, r_state_stats) =
             compute_c_score_level_scans(space, &workspace, &env_scan, &density_scan, &du_scan);
+        let landscape = if use_proposal {
+            Some(build_pitch_core_landscape_from_scans(
+                space,
+                &c_score_scan,
+                &c_level_scan,
+                &env_scan,
+            ))
+        } else {
+            None
+        };
         if density_mass.is_finite() {
             density_mass_sum += density_mass;
             density_mass_min = density_mass_min.min(density_mass);
@@ -3901,61 +3940,131 @@ fn run_e2_once_cfg(
         let score_sign = phase_mode.score_sign(sweep);
         let block_backtrack = e2_should_block_backtrack(phase_mode, sweep);
         let positions_before_update = agent_indices.clone();
-        let mut stats = match condition {
-            E2Condition::Baseline => update_e2_sweep_scored_loo(
-                E2_UPDATE_SCHEDULE,
-                &mut agent_indices,
-                &positions_before_update,
-                space,
-                &workspace,
-                &env_scan,
-                &density_scan,
-                &du_scan,
-                &erb_scan,
-                &log2_ratio_scan,
-                min_idx,
-                max_idx,
-                k_bins,
-                score_sign,
-                E2_CROWDING_WEIGHT,
-                &kernel_params,
-                temperature,
-                sweep,
-                block_backtrack,
-                if block_backtrack {
-                    Some(backtrack_targets.as_slice())
+        let stats = match condition {
+            E2Condition::Baseline => {
+                if score_sign < 0.0 {
+                    update_e2_sweep_scored_loo(
+                        E2_UPDATE_SCHEDULE,
+                        &mut agent_indices,
+                        &positions_before_update,
+                        space,
+                        &workspace,
+                        &env_scan,
+                        &density_scan,
+                        &du_scan,
+                        &erb_scan,
+                        &log2_ratio_scan,
+                        min_idx,
+                        max_idx,
+                        k_bins,
+                        score_sign,
+                        E2_CROWDING_WEIGHT,
+                        &kernel_params,
+                        temperature,
+                        sweep,
+                        block_backtrack,
+                        if block_backtrack {
+                            Some(backtrack_targets.as_slice())
+                        } else {
+                            None
+                        },
+                        &mut rng,
+                    )
                 } else {
-                    None
-                },
-                &mut rng,
-            ),
-            E2Condition::NoCrowding => update_e2_sweep_scored_loo(
-                E2_UPDATE_SCHEDULE,
-                &mut agent_indices,
-                &positions_before_update,
-                space,
-                &workspace,
-                &env_scan,
-                &density_scan,
-                &du_scan,
-                &erb_scan,
-                &log2_ratio_scan,
-                min_idx,
-                max_idx,
-                k_bins,
-                score_sign,
-                0.0,
-                &kernel_params,
-                temperature,
-                sweep,
-                block_backtrack,
-                if block_backtrack {
-                    Some(backtrack_targets.as_slice())
+                    update_e2_sweep_pitch_core_proposal(
+                        E2_UPDATE_SCHEDULE,
+                        &mut agent_indices,
+                        &positions_before_update,
+                        &mut pitch_cores,
+                        space,
+                        landscape
+                            .as_ref()
+                            .expect("proposal landscape missing for baseline"),
+                        &workspace,
+                        &env_scan,
+                        &density_scan,
+                        &du_scan,
+                        &erb_scan,
+                        &log2_ratio_scan,
+                        min_idx,
+                        max_idx,
+                        score_sign,
+                        E2_CROWDING_WEIGHT,
+                        &kernel_params,
+                        temperature,
+                        sweep,
+                        block_backtrack,
+                        if block_backtrack {
+                            Some(backtrack_targets.as_slice())
+                        } else {
+                            None
+                        },
+                        &mut rng,
+                    )
+                }
+            }
+            E2Condition::NoCrowding => {
+                if score_sign < 0.0 {
+                    update_e2_sweep_scored_loo(
+                        E2_UPDATE_SCHEDULE,
+                        &mut agent_indices,
+                        &positions_before_update,
+                        space,
+                        &workspace,
+                        &env_scan,
+                        &density_scan,
+                        &du_scan,
+                        &erb_scan,
+                        &log2_ratio_scan,
+                        min_idx,
+                        max_idx,
+                        k_bins,
+                        score_sign,
+                        0.0,
+                        &kernel_params,
+                        temperature,
+                        sweep,
+                        block_backtrack,
+                        if block_backtrack {
+                            Some(backtrack_targets.as_slice())
+                        } else {
+                            None
+                        },
+                        &mut rng,
+                    )
                 } else {
-                    None
-                },
-                &mut rng,
-            ),
+                    update_e2_sweep_pitch_core_proposal(
+                        E2_UPDATE_SCHEDULE,
+                        &mut agent_indices,
+                        &positions_before_update,
+                        &mut pitch_cores,
+                        space,
+                        landscape
+                            .as_ref()
+                            .expect("proposal landscape missing for no crowding"),
+                        &workspace,
+                        &env_scan,
+                        &density_scan,
+                        &du_scan,
+                        &erb_scan,
+                        &log2_ratio_scan,
+                        min_idx,
+                        max_idx,
+                        score_sign,
+                        0.0,
+                        &kernel_params,
+                        temperature,
+                        sweep,
+                        block_backtrack,
+                        if block_backtrack {
+                            Some(backtrack_targets.as_slice())
+                        } else {
+                            None
+                        },
+                        &mut rng,
+                    )
+                }
+            }
             E2Condition::NoHillClimb => {
                 let (moved, attempts, abs_delta_sum, abs_delta_moved_sum) = update_e2_sweep_nohill(
                     E2_UPDATE_SCHEDULE,
@@ -3968,13 +4077,21 @@ fn run_e2_once_cfg(
                     sweep,
                     &mut rng,
                 );
-                let mut stats = score_stats_at_indices(
-                    &agent_indices,
-                    &c_score_scan,
+                let mut stats = score_stats_at_indices_loo_reused(
+                    space,
+                    &workspace,
+                    &env_scan,
+                    &density_scan,
+                    &du_scan,
                     &erb_scan,
+                    &positions_before_update,
+                    &positions_before_update,
+                    &agent_indices,
                     score_sign,
                     E2_CROWDING_WEIGHT,
                     &kernel_params,
+                    &mut nohill_env_loo,
+                    &mut nohill_density_loo,
                 );
                 if !agent_indices.is_empty() {
                     stats.moved_frac = moved as f32 / agent_indices.len() as f32;
@@ -3994,29 +4111,59 @@ fn run_e2_once_cfg(
             E2Condition::ShuffledLandscape => {
                 let shuffled_scores: Vec<f32> =
                     shuffle_perm.iter().map(|&i| c_score_scan[i]).collect();
-                update_e2_sweep_prescored(
-                    E2_UPDATE_SCHEDULE,
-                    &mut agent_indices,
-                    &positions_before_update,
-                    &shuffled_scores,
-                    &erb_scan,
-                    &log2_ratio_scan,
-                    min_idx,
-                    max_idx,
-                    k_bins,
-                    score_sign,
-                    E2_CROWDING_WEIGHT,
-                    &kernel_params,
-                    temperature,
-                    sweep,
-                    block_backtrack,
-                    if block_backtrack {
-                        Some(backtrack_targets.as_slice())
-                    } else {
-                        None
-                    },
-                    &mut rng,
-                )
+                if score_sign < 0.0 {
+                    update_e2_sweep_prescored(
+                        E2_UPDATE_SCHEDULE,
+                        &mut agent_indices,
+                        &positions_before_update,
+                        &shuffled_scores,
+                        &erb_scan,
+                        &log2_ratio_scan,
+                        min_idx,
+                        max_idx,
+                        k_bins,
+                        score_sign,
+                        E2_CROWDING_WEIGHT,
+                        &kernel_params,
+                        temperature,
+                        sweep,
+                        block_backtrack,
+                        if block_backtrack {
+                            Some(backtrack_targets.as_slice())
+                        } else {
+                            None
+                        },
+                        &mut rng,
+                    )
+                } else {
+                    update_e2_sweep_pitch_core_proposal_prescored(
+                        E2_UPDATE_SCHEDULE,
+                        &mut agent_indices,
+                        &positions_before_update,
+                        &mut pitch_cores,
+                        space,
+                        landscape
+                            .as_ref()
+                            .expect("proposal landscape missing for shuffled"),
+                        &shuffled_scores,
+                        &erb_scan,
+                        &log2_ratio_scan,
+                        min_idx,
+                        max_idx,
+                        score_sign,
+                        E2_CROWDING_WEIGHT,
+                        &kernel_params,
+                        temperature,
+                        sweep,
+                        block_backtrack,
+                        if block_backtrack {
+                            Some(backtrack_targets.as_slice())
+                        } else {
+                            None
+                        },
+                        &mut rng,
+                    )
+                }
             }
         };
         e2_update_backtrack_targets(
@@ -4024,23 +4171,6 @@ fn run_e2_once_cfg(
             &positions_before_update,
             &agent_indices,
         );
-        if use_nohill {
-            let (mean_c_score_loo_current, mean_c_score_loo_chosen) =
-                mean_c_score_loo_pair_at_indices_with_prev_reused(
-                    space,
-                    &workspace,
-                    &env_scan,
-                    &density_scan,
-                    &du_scan,
-                    &positions_before_update,
-                    &positions_before_update,
-                    &agent_indices,
-                    &mut nohill_env_loo,
-                    &mut nohill_density_loo,
-                );
-            stats.mean_c_score_current_loo = mean_c_score_loo_current;
-            stats.mean_c_score_chosen_loo = mean_c_score_loo_chosen;
-        }
         let condition_label = match condition {
             E2Condition::Baseline => "baseline",
             E2Condition::NoCrowding => "nocrowd",
@@ -4154,6 +4284,30 @@ fn e2_seed_sweep(
     kernel: Option<ConsonanceKernel>,
     r_shift_bins: i32,
 ) -> (Vec<E2Run>, E2SweepStats) {
+    e2_seed_sweep_cfg(
+        space,
+        anchor_hz,
+        condition,
+        step_semitones,
+        phase_mode,
+        kernel,
+        r_shift_bins,
+        E2_N_AGENTS,
+        2.0,
+    )
+}
+
+fn e2_seed_sweep_cfg(
+    space: &Log2Space,
+    anchor_hz: f32,
+    condition: E2Condition,
+    step_semitones: f32,
+    phase_mode: E2PhaseMode,
+    kernel: Option<ConsonanceKernel>,
+    r_shift_bins: i32,
+    n_agents: usize,
+    range_oct: f32,
+) -> (Vec<E2Run>, E2SweepStats) {
     e2_seed_sweep_with_threads(
         space,
         anchor_hz,
@@ -4162,6 +4316,8 @@ fn e2_seed_sweep(
         phase_mode,
         kernel,
         r_shift_bins,
+        n_agents,
+        range_oct,
         None,
     )
 }
@@ -4174,6 +4330,8 @@ fn e2_seed_sweep_with_threads(
     phase_mode: E2PhaseMode,
     kernel: Option<ConsonanceKernel>,
     r_shift_bins: i32,
+    n_agents: usize,
+    range_oct: f32,
     max_worker_threads: Option<usize>,
 ) -> (Vec<E2Run>, E2SweepStats) {
     let seeds = &E2_SEEDS;
@@ -4186,7 +4344,7 @@ fn e2_seed_sweep_with_threads(
     let runs = if worker_count <= 1 || seeds.len() <= 1 {
         let mut runs = Vec::with_capacity(seeds.len());
         for &seed in seeds {
-            runs.push(run_e2_once(
+            runs.push(run_e2_once_cfg(
                 space,
                 anchor_hz,
                 seed,
@@ -4195,6 +4353,8 @@ fn e2_seed_sweep_with_threads(
                 phase_mode,
                 kernel,
                 r_shift_bins,
+                n_agents,
+                range_oct,
             ));
         }
         runs
@@ -4214,7 +4374,7 @@ fn e2_seed_sweep_with_threads(
                             break;
                         }
                         let seed = seeds[idx];
-                        let run = run_e2_once(
+                        let run = run_e2_once_cfg(
                             space,
                             anchor_hz,
                             seed,
@@ -4223,6 +4383,8 @@ fn e2_seed_sweep_with_threads(
                             phase_mode,
                             kernel,
                             r_shift_bins,
+                            n_agents,
+                            range_oct,
                         );
                         let mut guard = runs.lock().expect("runs lock poisoned");
                         guard[idx] = Some(run);
@@ -17841,7 +18003,7 @@ fn update_e2_sweep_scored_loo(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, dead_code)]
 fn update_e2_sweep_prescored(
     schedule: E2UpdateSchedule,
     indices: &mut [usize],
@@ -18395,6 +18557,7 @@ fn update_agent_indices_scored_stats_with_order_loo(
     }
 }
 
+#[allow(dead_code)]
 fn score_stats_at_indices(
     indices: &[usize],
     c_score_scan: &[f32],
@@ -18466,6 +18629,133 @@ fn score_stats_at_indices(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn score_stats_at_indices_loo_reused(
+    space: &Log2Space,
+    workspace: &ConsonanceWorkspace,
+    env_total: &[f32],
+    density_total: &[f32],
+    du_scan: &[f32],
+    erb_scan: &[f32],
+    prev_indices: &[usize],
+    current_eval_indices: &[usize],
+    chosen_eval_indices: &[usize],
+    score_sign: f32,
+    crowding_weight: f32,
+    kernel_params: &KernelParams,
+    env_loo: &mut Vec<f32>,
+    density_loo: &mut Vec<f32>,
+) -> UpdateStats {
+    if prev_indices.is_empty() || current_eval_indices.is_empty() || chosen_eval_indices.is_empty()
+    {
+        return UpdateStats {
+            mean_c_score_current_loo: 0.0,
+            mean_c_score_chosen_loo: 0.0,
+            mean_score: 0.0,
+            mean_crowding: 0.0,
+            moved_frac: 0.0,
+            accepted_worse_frac: 0.0,
+            attempted_update_frac: 0.0,
+            moved_given_attempt_frac: 0.0,
+            mean_abs_delta_semitones: 0.0,
+            mean_abs_delta_semitones_moved: 0.0,
+        };
+    }
+    debug_assert_eq!(
+        prev_indices.len(),
+        current_eval_indices.len(),
+        "prev/current eval length mismatch"
+    );
+    debug_assert_eq!(
+        prev_indices.len(),
+        chosen_eval_indices.len(),
+        "prev/chosen eval length mismatch"
+    );
+
+    let prev_erb: Vec<f32> = prev_indices.iter().map(|&idx| erb_scan[idx]).collect();
+    let mut current_sum = 0.0f32;
+    let mut current_count = 0u32;
+    let mut chosen_sum = 0.0f32;
+    let mut chosen_count = 0u32;
+    let mut score_sum = 0.0f32;
+    let mut score_count = 0u32;
+    let mut crowding_sum = 0.0f32;
+    let mut crowding_count = 0u32;
+
+    for i in 0..prev_indices.len() {
+        let prev_idx = prev_indices[i];
+        let current_eval_idx = current_eval_indices[i];
+        let chosen_eval_idx = chosen_eval_indices[i];
+        let loo_c_score_scan = e2_loo_c_score_scan_for_agent_reused(
+            space,
+            workspace,
+            env_total,
+            density_total,
+            du_scan,
+            prev_idx,
+            env_loo,
+            density_loo,
+        );
+        let current_value = loo_c_score_scan[current_eval_idx];
+        let chosen_value = loo_c_score_scan[chosen_eval_idx];
+        if current_value.is_finite() {
+            current_sum += current_value;
+            current_count += 1;
+        }
+        if chosen_value.is_finite() {
+            chosen_sum += chosen_value;
+            chosen_count += 1;
+        }
+
+        let chosen_erb = erb_scan[chosen_eval_idx];
+        let mut crowding = 0.0f32;
+        for (j, &other_erb) in prev_erb.iter().enumerate() {
+            if i == j {
+                continue;
+            }
+            crowding += crowding_runtime_delta_erb(kernel_params, chosen_erb - other_erb);
+        }
+        let score = score_sign * chosen_value - crowding_weight * crowding;
+        if score.is_finite() {
+            score_sum += score;
+            score_count += 1;
+        }
+        if crowding.is_finite() {
+            crowding_sum += crowding;
+            crowding_count += 1;
+        }
+    }
+
+    UpdateStats {
+        mean_c_score_current_loo: if current_count > 0 {
+            current_sum / current_count as f32
+        } else {
+            0.0
+        },
+        mean_c_score_chosen_loo: if chosen_count > 0 {
+            chosen_sum / chosen_count as f32
+        } else {
+            0.0
+        },
+        mean_score: if score_count > 0 {
+            score_sum / score_count as f32
+        } else {
+            0.0
+        },
+        mean_crowding: if crowding_count > 0 {
+            crowding_sum / crowding_count as f32
+        } else {
+            0.0
+        },
+        moved_frac: 0.0,
+        accepted_worse_frac: 0.0,
+        attempted_update_frac: 0.0,
+        moved_given_attempt_frac: 0.0,
+        mean_abs_delta_semitones: 0.0,
+        mean_abs_delta_semitones_moved: 0.0,
+    }
+}
+
 fn mean_at_indices(values: &[f32], indices: &[usize]) -> f32 {
     if indices.is_empty() {
         return 0.0;
@@ -18474,7 +18764,7 @@ fn mean_at_indices(values: &[f32], indices: &[usize]) -> f32 {
     sum / indices.len() as f32
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, dead_code)]
 fn mean_c_score_loo_pair_at_indices_with_prev_reused(
     space: &Log2Space,
     workspace: &ConsonanceWorkspace,
@@ -25853,6 +26143,108 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "slow fig2-scale regression"]
+    fn proposal_based_e2_controls_show_expected_ablation_pattern() {
+        let space = Log2Space::new(20.0, 8000.0, 120);
+        let anchor_hz = E4_ANCHOR_HZ;
+        let seeds = [E2_SEEDS[0], E2_SEEDS[1]];
+
+        let mut baseline_gain = Vec::new();
+        let mut nohill_gain = Vec::new();
+        let mut baseline_bins_end = Vec::new();
+        let mut nocrowd_bins_end = Vec::new();
+
+        for &seed in &seeds {
+            let baseline = run_e2_once_cfg(
+                &space,
+                anchor_hz,
+                seed,
+                E2Condition::Baseline,
+                E2_STEP_SEMITONES,
+                E2PhaseMode::DissonanceThenConsonance,
+                None,
+                0,
+                E2_N_AGENTS,
+                2.0,
+            );
+            let nohill = run_e2_once_cfg(
+                &space,
+                anchor_hz,
+                seed,
+                E2Condition::NoHillClimb,
+                E2_STEP_SEMITONES,
+                E2PhaseMode::DissonanceThenConsonance,
+                None,
+                0,
+                E2_N_AGENTS,
+                2.0,
+            );
+            let nocrowd = run_e2_once_cfg(
+                &space,
+                anchor_hz,
+                seed,
+                E2Condition::NoCrowding,
+                E2_STEP_SEMITONES,
+                E2PhaseMode::DissonanceThenConsonance,
+                None,
+                0,
+                E2_N_AGENTS,
+                2.0,
+            );
+
+            let mid = E2_PHASE_SWITCH_STEP;
+            let baseline_mid = baseline
+                .mean_c_score_loo_series
+                .get(mid)
+                .copied()
+                .unwrap_or_default();
+            let baseline_end = baseline
+                .mean_c_score_loo_series
+                .last()
+                .copied()
+                .unwrap_or_default();
+            let nohill_mid = nohill
+                .mean_c_score_loo_series
+                .get(mid)
+                .copied()
+                .unwrap_or_default();
+            let nohill_end = nohill
+                .mean_c_score_loo_series
+                .last()
+                .copied()
+                .unwrap_or_default();
+
+            baseline_gain.push(baseline_end - baseline_mid);
+            nohill_gain.push(nohill_end - nohill_mid);
+            baseline_bins_end.push(diversity_metrics_for_run(&baseline).unique_bins as f32);
+            nocrowd_bins_end.push(diversity_metrics_for_run(&nocrowd).unique_bins as f32);
+        }
+
+        let mean = |values: &[f32]| values.iter().copied().sum::<f32>() / values.len() as f32;
+        let baseline_gain_mean = mean(&baseline_gain);
+        let nohill_gain_mean = mean(&nohill_gain);
+        let baseline_bins_mean = mean(&baseline_bins_end);
+        let nocrowd_bins_mean = mean(&nocrowd_bins_end);
+
+        println!(
+            "baseline_gain_mean={baseline_gain_mean:.6} nohill_gain_mean={nohill_gain_mean:.6} baseline_bins_mean={baseline_bins_mean:.6} nocrowd_bins_mean={nocrowd_bins_mean:.6}"
+        );
+
+        assert!(
+            baseline_gain_mean > 0.02,
+            "expected proposal baseline post-switch LOO gain, got {baseline_gain_mean}"
+        );
+        assert!(
+            baseline_gain_mean > nohill_gain_mean + 0.01,
+            "expected baseline gain to exceed no-hill gain (baseline={baseline_gain_mean}, nohill={nohill_gain_mean})"
+        );
+        assert!(
+            baseline_bins_mean > nocrowd_bins_mean,
+            "expected baseline to retain more unique bins (baseline={baseline_bins_mean}, nocrowd={nocrowd_bins_mean})"
+        );
+    }
+
+    #[test]
     fn norep_mean_c_score_loo_series_is_finite() {
         assert_mean_c_score_loo_series_finite(
             E2Condition::NoCrowding,
@@ -27060,11 +27452,8 @@ fn build_pitch_core_landscape(
 ) -> (Landscape, Vec<f32>, Vec<f32>, f32, RState01Stats) {
     let (c_score_scan, c_level_scan, density_mass, r_state_stats) =
         compute_c_score_level_scans(space, workspace, env_scan, density_scan, du_scan);
-    let mut landscape = Landscape::new(space.clone());
-    landscape.roughness_kernel_params = KernelParams::default();
-    landscape.consonance_field_score = c_score_scan.clone();
-    landscape.consonance_field_level = c_level_scan.clone();
-    landscape.subjective_intensity = env_scan.to_vec();
+    let landscape =
+        build_pitch_core_landscape_from_scans(space, &c_score_scan, &c_level_scan, env_scan);
     (
         landscape,
         c_score_scan,
@@ -27072,6 +27461,46 @@ fn build_pitch_core_landscape(
         density_mass,
         r_state_stats,
     )
+}
+
+fn build_pitch_core_landscape_from_scans(
+    space: &Log2Space,
+    c_score_scan: &[f32],
+    c_level_scan: &[f32],
+    env_scan: &[f32],
+) -> Landscape {
+    let mut landscape = Landscape::new(space.clone());
+    landscape.roughness_kernel_params = KernelParams::default();
+    landscape.consonance_field_score = c_score_scan.to_vec();
+    landscape.consonance_field_level = c_level_scan.to_vec();
+    landscape.subjective_intensity = env_scan.to_vec();
+    landscape
+}
+
+fn build_e2_pitch_cores(
+    space: &Log2Space,
+    agent_indices: &[usize],
+    step_semitones: f32,
+) -> Vec<PitchHillClimbPitchCore> {
+    let mut pitch_cores = Vec::with_capacity(agent_indices.len());
+    for &idx in agent_indices {
+        let mut core = PitchHillClimbPitchCore::new(
+            step_semitones * 100.0,
+            space.centers_hz[idx].log2(),
+            0.1,
+            0.0,
+            0.0,
+            0.0,
+        );
+        core.set_global_peaks(E2_PROPOSAL_GLOBAL_PEAKS, E2_PROPOSAL_GLOBAL_MIN_SEP_CENTS);
+        core.set_ratio_candidates(false, 0);
+        core.set_move_cost_coeff(0.0);
+        core.set_improvement_threshold(0.0);
+        core.set_leave_self_out(true);
+        core.set_crowding(0.0, 60.0, true);
+        pitch_cores.push(core);
+    }
+    pitch_cores
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -27125,6 +27554,8 @@ fn update_e2_sweep_pitch_core_proposal(
     kernel_params: &KernelParams,
     temperature: f32,
     sweep: usize,
+    block_backtrack: bool,
+    backtrack_targets: Option<&[usize]>,
     rng: &mut StdRng,
 ) -> UpdateStats {
     if indices.is_empty() {
@@ -27203,6 +27634,11 @@ fn update_e2_sweep_pitch_core_proposal(
             kernel_params,
         );
         let c_score_current = loo_c_score_scan[agent_idx];
+        let backtrack_target = if block_backtrack {
+            backtrack_targets.and_then(|prev| prev.get(agent_i).copied())
+        } else {
+            None
+        };
         let update_allowed = base_update_allowed;
         if update_allowed {
             attempt_count += 1;
@@ -27257,19 +27693,26 @@ fn update_e2_sweep_pitch_core_proposal(
                 crowding_weight,
                 kernel_params,
             );
-            let delta = cand_score - current_score;
-            if delta > E2_SCORE_IMPROVE_EPS {
-                (proposed_idx, cand_score, cand_crowding, false)
-            } else if delta < 0.0 {
-                let (accept, acc_worse) =
-                    metropolis_accept(delta, temperature, u01_by_agent[agent_i]);
-                if accept {
-                    (proposed_idx, cand_score, cand_crowding, acc_worse)
+            if let Some(prev_idx) = backtrack_target
+                && proposed_idx == prev_idx
+                && (cand_score - current_score) <= E2_BACKTRACK_ALLOW_EPS
+            {
+                (agent_idx, current_score, current_crowding, false)
+            } else {
+                let delta = cand_score - current_score;
+                if delta > E2_SCORE_IMPROVE_EPS {
+                    (proposed_idx, cand_score, cand_crowding, false)
+                } else if delta < 0.0 {
+                    let (accept, acc_worse) =
+                        metropolis_accept(delta, temperature, u01_by_agent[agent_i]);
+                    if accept {
+                        (proposed_idx, cand_score, cand_crowding, acc_worse)
+                    } else {
+                        (agent_idx, current_score, current_crowding, false)
+                    }
                 } else {
                     (agent_idx, current_score, current_crowding, false)
                 }
-            } else {
-                (agent_idx, current_score, current_crowding, false)
             }
         } else {
             (agent_idx, current_score, current_crowding, false)
@@ -27281,6 +27724,248 @@ fn update_e2_sweep_pitch_core_proposal(
         let abs_delta = delta_semitones.abs();
         let abs_delta_moved = if moved { abs_delta } else { 0.0 };
         let c_score_chosen = loo_c_score_scan[chosen_idx];
+
+        if moved {
+            moved_count += 1;
+        }
+        if accepted_worse {
+            accepted_worse_count += 1;
+        }
+        abs_delta_sum += abs_delta;
+        abs_delta_moved_sum += abs_delta_moved;
+        if c_score_current.is_finite() {
+            c_score_current_sum += c_score_current;
+            c_score_current_count += 1;
+        }
+        if c_score_chosen.is_finite() {
+            c_score_chosen_sum += c_score_chosen;
+            c_score_chosen_count += 1;
+        }
+        if chosen_score_val.is_finite() {
+            score_sum += chosen_score_val;
+            score_count += 1;
+        }
+        if chosen_crowding_val.is_finite() {
+            crowding_sum += chosen_crowding_val;
+            crowding_count += 1;
+        }
+    }
+
+    let n = indices.len() as f32;
+    UpdateStats {
+        mean_c_score_current_loo: if c_score_current_count > 0 {
+            c_score_current_sum / c_score_current_count as f32
+        } else {
+            0.0
+        },
+        mean_c_score_chosen_loo: if c_score_chosen_count > 0 {
+            c_score_chosen_sum / c_score_chosen_count as f32
+        } else {
+            0.0
+        },
+        mean_score: if score_count > 0 {
+            score_sum / score_count as f32
+        } else {
+            0.0
+        },
+        mean_crowding: if crowding_count > 0 {
+            crowding_sum / crowding_count as f32
+        } else {
+            0.0
+        },
+        moved_frac: moved_count as f32 / n,
+        accepted_worse_frac: accepted_worse_count as f32 / n,
+        attempted_update_frac: attempt_count as f32 / n,
+        moved_given_attempt_frac: if attempt_count > 0 {
+            moved_count as f32 / attempt_count as f32
+        } else {
+            0.0
+        },
+        mean_abs_delta_semitones: abs_delta_sum / n,
+        mean_abs_delta_semitones_moved: if moved_count > 0 {
+            abs_delta_moved_sum / moved_count as f32
+        } else {
+            0.0
+        },
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn update_e2_sweep_pitch_core_proposal_prescored(
+    schedule: E2UpdateSchedule,
+    indices: &mut [usize],
+    prev_indices: &[usize],
+    pitch_cores: &mut [PitchHillClimbPitchCore],
+    space: &Log2Space,
+    landscape: &Landscape,
+    prescored_c_score_scan: &[f32],
+    erb_scan: &[f32],
+    log2_ratio_scan: &[f32],
+    min_idx: usize,
+    max_idx: usize,
+    score_sign: f32,
+    crowding_weight: f32,
+    kernel_params: &KernelParams,
+    temperature: f32,
+    sweep: usize,
+    block_backtrack: bool,
+    backtrack_targets: Option<&[usize]>,
+    rng: &mut StdRng,
+) -> UpdateStats {
+    if indices.is_empty() {
+        return UpdateStats {
+            mean_c_score_current_loo: 0.0,
+            mean_c_score_chosen_loo: 0.0,
+            mean_score: 0.0,
+            mean_crowding: 0.0,
+            moved_frac: 0.0,
+            accepted_worse_frac: 0.0,
+            attempted_update_frac: 0.0,
+            moved_given_attempt_frac: 0.0,
+            mean_abs_delta_semitones: 0.0,
+            mean_abs_delta_semitones_moved: 0.0,
+        };
+    }
+
+    debug_assert_eq!(indices.len(), pitch_cores.len());
+    let mut order: Vec<usize> = (0..indices.len()).collect();
+    if matches!(schedule, E2UpdateSchedule::RandomSingle) {
+        order.shuffle(rng);
+    }
+    let u_move_by_agent: Vec<f32> = if matches!(schedule, E2UpdateSchedule::Lazy) {
+        (0..indices.len()).map(|_| rng.random::<f32>()).collect()
+    } else {
+        vec![0.0; indices.len()]
+    };
+    let u01_by_agent: Vec<f32> = (0..indices.len()).map(|_| rng.random::<f32>()).collect();
+    let prev_erb: Vec<f32> = prev_indices.iter().map(|&idx| erb_scan[idx]).collect();
+    let mut c_score_current_sum = 0.0f32;
+    let mut c_score_current_count = 0u32;
+    let mut c_score_chosen_sum = 0.0f32;
+    let mut c_score_chosen_count = 0u32;
+    let mut score_sum = 0.0f32;
+    let mut score_count = 0u32;
+    let mut crowding_sum = 0.0f32;
+    let mut crowding_count = 0u32;
+    let mut abs_delta_sum = 0.0f32;
+    let mut abs_delta_moved_sum = 0.0f32;
+    let mut attempt_count = 0usize;
+    let mut moved_count = 0usize;
+    let mut accepted_worse_count = 0usize;
+
+    for &agent_i in &order {
+        let base_update_allowed = match schedule {
+            E2UpdateSchedule::Checkerboard => (agent_i + sweep).is_multiple_of(2),
+            E2UpdateSchedule::Lazy => u_move_by_agent[agent_i] < E2_LAZY_MOVE_PROB.clamp(0.0, 1.0),
+            E2UpdateSchedule::RandomSingle => true,
+        };
+
+        let agent_idx = prev_indices[agent_i];
+        let current_pitch_log2 = space.centers_hz[agent_idx].log2();
+        let (_, current_score, current_crowding) = e2_objective_score_at_log2(
+            space,
+            prescored_c_score_scan,
+            erb_scan,
+            &prev_erb,
+            agent_i,
+            current_pitch_log2,
+            min_idx,
+            max_idx,
+            score_sign,
+            crowding_weight,
+            kernel_params,
+        );
+        let c_score_current = prescored_c_score_scan[agent_idx];
+        let backtrack_target = if block_backtrack {
+            backtrack_targets.and_then(|prev| prev.get(agent_i).copied())
+        } else {
+            None
+        };
+        let update_allowed = base_update_allowed;
+        if update_allowed {
+            attempt_count += 1;
+        }
+
+        let (chosen_idx, chosen_score_val, chosen_crowding_val, accepted_worse) = if update_allowed
+        {
+            let neighbor_pitch_log2: Vec<f32> = prev_indices
+                .iter()
+                .enumerate()
+                .filter_map(|(j, &idx)| {
+                    if j == agent_i {
+                        None
+                    } else {
+                        Some(space.centers_hz[idx].log2())
+                    }
+                })
+                .collect();
+            let proposal = pitch_cores[agent_i].propose_with_scorer(
+                current_pitch_log2,
+                current_pitch_log2,
+                landscape,
+                &neighbor_pitch_log2,
+                rng,
+                |pitch_log2| {
+                    e2_objective_score_at_log2(
+                        space,
+                        prescored_c_score_scan,
+                        erb_scan,
+                        &prev_erb,
+                        agent_i,
+                        pitch_log2,
+                        min_idx,
+                        max_idx,
+                        score_sign,
+                        crowding_weight,
+                        kernel_params,
+                    )
+                    .1
+                },
+            );
+            let (proposed_idx, cand_score, cand_crowding) = e2_objective_score_at_log2(
+                space,
+                prescored_c_score_scan,
+                erb_scan,
+                &prev_erb,
+                agent_i,
+                proposal.target_pitch_log2,
+                min_idx,
+                max_idx,
+                score_sign,
+                crowding_weight,
+                kernel_params,
+            );
+            if let Some(prev_idx) = backtrack_target
+                && proposed_idx == prev_idx
+                && (cand_score - current_score) <= E2_BACKTRACK_ALLOW_EPS
+            {
+                (agent_idx, current_score, current_crowding, false)
+            } else {
+                let delta = cand_score - current_score;
+                if delta > E2_SCORE_IMPROVE_EPS {
+                    (proposed_idx, cand_score, cand_crowding, false)
+                } else if delta < 0.0 {
+                    let (accept, acc_worse) =
+                        metropolis_accept(delta, temperature, u01_by_agent[agent_i]);
+                    if accept {
+                        (proposed_idx, cand_score, cand_crowding, acc_worse)
+                    } else {
+                        (agent_idx, current_score, current_crowding, false)
+                    }
+                } else {
+                    (agent_idx, current_score, current_crowding, false)
+                }
+            }
+        } else {
+            (agent_idx, current_score, current_crowding, false)
+        };
+
+        indices[agent_i] = chosen_idx;
+        let moved = chosen_idx != agent_idx;
+        let delta_semitones = 12.0 * (log2_ratio_scan[chosen_idx] - log2_ratio_scan[agent_idx]);
+        let abs_delta = delta_semitones.abs();
+        let abs_delta_moved = if moved { abs_delta } else { 0.0 };
+        let c_score_chosen = prescored_c_score_scan[chosen_idx];
 
         if moved {
             moved_count += 1;
@@ -27377,24 +28062,7 @@ fn run_e2_once_proposal_cfg(
     let kernel_params = KernelParams::default();
     let workspace = build_consonance_workspace(space);
     let k_bins = k_from_semitones(step_semitones);
-    let mut pitch_cores = Vec::with_capacity(n_agents);
-    for &idx in &agent_indices {
-        let mut core = PitchHillClimbPitchCore::new(
-            step_semitones * 100.0,
-            space.centers_hz[idx].log2(),
-            0.1,
-            0.0,
-            0.0,
-            0.0,
-        );
-        core.set_global_peaks(E2_PROPOSAL_GLOBAL_PEAKS, E2_PROPOSAL_GLOBAL_MIN_SEP_CENTS);
-        core.set_ratio_candidates(false, 0);
-        core.set_move_cost_coeff(0.0);
-        core.set_improvement_threshold(0.0);
-        core.set_leave_self_out(true);
-        core.set_crowding(0.0, 60.0, true);
-        pitch_cores.push(core);
-    }
+    let mut pitch_cores = build_e2_pitch_cores(space, &agent_indices, step_semitones);
 
     let mut mean_c_series = Vec::with_capacity(E2_SWEEPS);
     let mut mean_c_level_series = Vec::with_capacity(E2_SWEEPS);
@@ -27523,6 +28191,12 @@ fn run_e2_once_proposal_cfg(
                 &kernel_params,
                 temperature,
                 sweep,
+                block_backtrack,
+                if block_backtrack {
+                    Some(backtrack_targets.as_slice())
+                } else {
+                    None
+                },
                 &mut rng,
             )
         };
