@@ -8,19 +8,19 @@ use conchordal::core::modulation::{NeuralRhythms, RhythmBand};
 use conchordal::core::roughness_kernel::{KernelParams, RoughnessKernel};
 use conchordal::core::timebase::Timebase;
 use conchordal::life::articulation_core::{AnyArticulationCore, ArticulationState};
+use conchordal::life::control::{AgentControl, PitchCoreKind, PitchMode};
 use conchordal::life::individual::SoundBody;
-use conchordal::life::control::{AgentControl, PhonationType, PitchCoreKind, PitchMode};
 use conchordal::life::lifecycle::LifecycleConfig;
 use conchordal::life::metabolism_policy::MetabolismPolicy;
 use conchordal::life::population::Population;
 use conchordal::life::scenario::{
-    Action, ArticulationCoreConfig, EnvelopeConfig, RhythmCouplingMode, SpawnSpec,
+    Action, ArticulationCoreConfig, EnvelopeConfig, PhonationSpec, RhythmCouplingMode, SpawnSpec,
     SpawnStrategy,
 };
 use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
-use rand::rngs::SmallRng;
 use rand::prelude::SliceRandom;
+use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -273,13 +273,15 @@ impl E4SimConfig {
             cfg.env_partial_decay = sanitize_env_partial_decay(decay);
         }
         if let Some(exploration) = overrides.exploration
-            && exploration.is_finite() {
-                cfg.exploration = exploration.clamp(0.0, 1.0);
-            }
+            && exploration.is_finite()
+        {
+            cfg.exploration = exploration.clamp(0.0, 1.0);
+        }
         if let Some(persistence) = overrides.persistence
-            && persistence.is_finite() {
-                cfg.persistence = persistence.clamp(0.0, 1.0);
-            }
+            && persistence.is_finite()
+        {
+            cfg.persistence = persistence.clamp(0.0, 1.0);
+        }
         if let Some(step) = overrides.neighbor_step_cents {
             cfg.neighbor_step_cents = sanitize_neighbor_step_cents(step);
         }
@@ -629,7 +631,11 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
             } else {
                 0.0
             };
-            out.snapshots.push(E6PitchSnapshot { step, freqs_hz, phase_coherence });
+            out.snapshots.push(E6PitchSnapshot {
+                step,
+                freqs_hz,
+                phase_coherence,
+            });
         }
 
         let mut respawn_ids: Vec<u64> = Vec::new();
@@ -1757,11 +1763,11 @@ fn e6_spawn_spec(anchor_hz: f32, landscape_weight: f32) -> SpawnSpec {
     control.pitch.freq = anchor_hz.max(1.0);
     control.pitch.range_oct = E3_RANGE_OCT;
     control.pitch.landscape_weight = landscape_weight;
-    control.pitch.gravity = 0.0;          // no tessitura pull
+    control.pitch.gravity = 0.0; // no tessitura pull
     control.pitch.exploration = 0.5;
     control.pitch.persistence = 0.5;
     // perceptual repulsion: enabled=true (default), novelty_bias=1.0 (default)
-    control.phonation.r#type = PhonationType::Hold;
+    control.phonation.spec = PhonationSpec::default();
 
     let lifecycle = e3_lifecycle(E3Condition::Baseline);
     let articulation = ArticulationCoreConfig::Entrain {
@@ -1783,7 +1789,7 @@ fn e3_spawn_spec(condition: E3Condition, anchor_hz: f32) -> SpawnSpec {
     let mut control = AgentControl::default();
     control.pitch.mode = PitchMode::Lock;
     control.pitch.freq = anchor_hz.max(1.0);
-    control.phonation.r#type = PhonationType::Hold;
+    control.phonation.spec = PhonationSpec::default();
     let lifecycle = e3_lifecycle(condition);
     let articulation = ArticulationCoreConfig::Entrain {
         lifecycle,
@@ -1842,7 +1848,7 @@ fn anchor_control(anchor_hz: f32) -> AgentControl {
     let mut control = AgentControl::default();
     control.pitch.mode = PitchMode::Lock;
     control.pitch.freq = anchor_hz.max(1.0);
-    control.phonation.r#type = PhonationType::Hold;
+    control.phonation.spec = PhonationSpec::default();
     control
 }
 
@@ -1855,7 +1861,7 @@ fn voice_control(cfg: &E4SimConfig) -> AgentControl {
     control.pitch.gravity = 0.0;
     control.pitch.exploration = cfg.exploration;
     control.pitch.persistence = cfg.persistence;
-    control.phonation.r#type = PhonationType::Hold;
+    control.phonation.spec = PhonationSpec::default();
     control
 }
 
