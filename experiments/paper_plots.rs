@@ -15,21 +15,22 @@ use plotters::prelude::*;
 
 use crate::sim::{
     E3Condition, E3DeathRecord, E3RunConfig, E4_ANCHOR_HZ, E4RuntimeOverrides, E4TailSamples,
-    E6Condition, E6PitchSnapshot, E6RunConfig, E6RunResult, e3_policy_params, e3_reference_landscape, e3_reference_landscape_with_partials,
-    e4_paper_meta, run_e3_collect_deaths, run_e4_condition_tail_samples,
-    run_e4_condition_tail_samples_with_wr, run_e4_mirror_schedule_samples, run_e6,
-    set_e4_runtime_overrides,
+    E6Condition, E6PitchSnapshot, E6RunConfig, E6RunResult, e3_policy_params,
+    e3_reference_landscape, e3_reference_landscape_with_partials, e4_paper_meta,
+    run_e3_collect_deaths, run_e4_condition_tail_samples, run_e4_condition_tail_samples_with_wr,
+    run_e4_mirror_schedule_samples, run_e6, set_e4_runtime_overrides,
 };
 use conchordal::core::consonance_kernel::{ConsonanceKernel, ConsonanceRepresentationParams};
-use conchordal::core::phase::wrap_pm_pi;
-use conchordal::life::articulation_core::kuramoto_phase_step;
 use conchordal::core::harmonicity_kernel::{HarmonicityKernel, HarmonicityParams};
-use conchordal::core::landscape::{LandscapeParams, RoughnessScalarMode};
+use conchordal::core::landscape::{Landscape, LandscapeParams, RoughnessScalarMode};
 use conchordal::core::log2space::{Log2Space, sample_scan_linear_log2};
+use conchordal::core::phase::wrap_pm_pi;
 use conchordal::core::psycho_state;
 use conchordal::core::roughness_kernel::{
     KernelParams, RoughnessKernel, crowding_runtime_delta_erb, erb_grid,
 };
+use conchordal::life::articulation_core::kuramoto_phase_step;
+use conchordal::life::individual::PitchHillClimbPitchCore;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -57,6 +58,8 @@ const E2_C_LEVEL_THETA: f32 = 0.0;
 const E2_ACCEPT_ENABLED: bool = true;
 const E2_ACCEPT_T0: f32 = 0.05;
 const E2_ACCEPT_TAU_STEPS: f32 = 30.0;
+const E2_PROPOSAL_GLOBAL_PEAKS: usize = 0;
+const E2_PROPOSAL_GLOBAL_MIN_SEP_CENTS: f32 = 20.0;
 const E2_ACCEPT_RESET_ON_PHASE: bool = true;
 const E2_SCORE_IMPROVE_EPS: f32 = 1e-4;
 const E2_ANTI_BACKTRACK_ENABLED: bool = true;
@@ -111,23 +114,23 @@ impl E2InitMode {
 const E2_INIT_MODE: E2InitMode = E2InitMode::RejectConsonant;
 // Just-intonation positions: 12 * log2(ratio) semitones
 const E2_CONSONANT_STEPS: [f32; 8] = [
-    0.0,                    // 1:1 unison
-    3.1564128,              // 6:5 minor third
-    3.8631372,              // 5:4 major third
-    4.9804499,              // 4:3 perfect fourth
-    7.0195501,              // 3:2 perfect fifth
-    8.136_863,              // 8:5 minor sixth
-    8.843_587,              // 5:3 major sixth
-    12.0,                   // 2:1 octave
+    0.0,       // 1:1 unison
+    3.1564128, // 6:5 minor third
+    3.8631372, // 5:4 major third
+    4.9804499, // 4:3 perfect fourth
+    7.0195501, // 3:2 perfect fifth
+    8.136_863, // 8:5 minor sixth
+    8.843_587, // 5:3 major sixth
+    12.0,      // 2:1 octave
 ];
 const E2_CONSONANT_TARGETS_CORE: [f32; 3] = [3.1564128, 3.8631372, 7.0195501];
 const E2_CONSONANT_TARGETS_EXTENDED: [f32; 6] = [
-    3.1564128,  // 6:5 minor third
-    3.8631372,  // 5:4 major third
-    4.9804499,  // 4:3 perfect fourth
-    7.0195501,  // 3:2 perfect fifth
-    8.136_863,  // 8:5 minor sixth
-    8.843_587,  // 5:3 major sixth
+    3.1564128, // 6:5 minor third
+    3.8631372, // 5:4 major third
+    4.9804499, // 4:3 perfect fourth
+    7.0195501, // 3:2 perfect fifth
+    8.136_863, // 8:5 minor sixth
+    8.843_587, // 5:3 major sixth
 ];
 const E2_CONSONANT_WINDOW_ST: f32 = 0.25;
 const E2_PERM_MAX_EXACT_COMBOS: u64 = 500_000;
@@ -282,8 +285,8 @@ const E5_SEEDS: [u64; 20] = [
 const E5_REPRESENTATIVE_SEED_IDX: usize = 2;
 
 const PAL_E5_VITALITY: RGBColor = PAL_CD; // cobalt blue for vitality condition
-const PAL_E5_UNIFORM: RGBColor = PAL_R;   // dark rose for uniform condition
-const PAL_E5_CONTROL: RGBColor = PAL_C;   // purple grey for control
+const PAL_E5_UNIFORM: RGBColor = PAL_R; // dark rose for uniform condition
+const PAL_E5_CONTROL: RGBColor = PAL_C; // purple grey for control
 
 const E6_FIRST_K: usize = 20;
 const E6_POP_SIZE: usize = 32;
@@ -537,6 +540,8 @@ fn usage() -> String {
         "  paper --exp e4 --e4-env-partials 9 --e4-env-decay 0.8",
         "  paper --exp e4 --e4-dyn-exploration 0.9 --e4-dyn-persistence 0.1",
         "  paper --exp e4 --e4-dyn-step-cents 75",
+        "  paper --e2-render-baseline 5 4 2",
+        "  paper --e2-render-proposal 5 4 2",
         "If no experiment is specified, paper defaults (E1,E2,E3,E5,E6) run.",
         "Use --exp e4 to run E4 explicitly.",
         "E4 histogram dumps default to off (use --e4-hist on to enable).",
@@ -544,6 +549,8 @@ fn usage() -> String {
         "E4 wr probe default to off (use --e4-wr on to enable).",
         "E4 fit debug CSV default to off (use --e4-debug-fit-metrics on to enable).",
         "E2 uses dissonance_then_consonance phase schedule.",
+        "--e2-render-baseline N P [OCT] writes seed-0 baseline replay WAVs for N agents, P render partials, and optional OCT total range.",
+        "--e2-render-proposal N P [OCT] writes a proposal-based replay using step + local/global peak + ratio candidates.",
         "Outputs are written to experiments/plots/<exp>/ (e.g. experiments/plots/e2).",
         "By default only selected experiment dirs are overwritten.",
         "Use --clean to clear experiments/plots before running.",
@@ -670,6 +677,26 @@ fn parse_experiments(args: &[String]) -> Result<Vec<Experiment>, String> {
             i += 1;
             continue;
         }
+        if arg == "--e2-render-baseline" {
+            if i + 2 >= args.len() {
+                return Err(format!("Missing values after {arg}\n{}", usage()));
+            }
+            i += 3;
+            if i < args.len() && !args[i].starts_with('-') {
+                i += 1;
+            }
+            continue;
+        }
+        if arg == "--e2-render-proposal" {
+            if i + 2 >= args.len() {
+                return Err(format!("Missing values after {arg}\n{}", usage()));
+            }
+            i += 3;
+            if i < args.len() && !args[i].starts_with('-') {
+                i += 1;
+            }
+            continue;
+        }
         if arg == "--e2-replay" || arg == "--e2-quick" {
             i += 1;
             continue;
@@ -769,6 +796,90 @@ fn parse_e4_hist(args: &[String]) -> Result<bool, String> {
             usage()
         )),
     }
+}
+
+fn parse_e2_render_baseline(args: &[String]) -> Result<Option<(usize, u32, f32)>, String> {
+    let Some(pos) = args.iter().position(|arg| arg == "--e2-render-baseline") else {
+        return Ok(None);
+    };
+    if pos + 2 >= args.len() {
+        return Err(format!(
+            "Missing values after --e2-render-baseline\n{}",
+            usage()
+        ));
+    }
+    let n_agents = args[pos + 1].parse::<usize>().map_err(|_| {
+        format!(
+            "Invalid N for --e2-render-baseline: {}\n{}",
+            args[pos + 1],
+            usage()
+        )
+    })?;
+    let partials = args[pos + 2].parse::<u32>().map_err(|_| {
+        format!(
+            "Invalid P for --e2-render-baseline: {}\n{}",
+            args[pos + 2],
+            usage()
+        )
+    })?;
+    let octaves = if pos + 3 < args.len() && !args[pos + 3].starts_with('-') {
+        args[pos + 3].parse::<f32>().map_err(|_| {
+            format!(
+                "Invalid OCT for --e2-render-baseline: {}\n{}",
+                args[pos + 3],
+                usage()
+            )
+        })?
+    } else {
+        2.0
+    };
+    Ok(Some((
+        n_agents.max(1),
+        partials.clamp(1, 16),
+        octaves.clamp(0.5, 6.0),
+    )))
+}
+
+fn parse_e2_render_proposal(args: &[String]) -> Result<Option<(usize, u32, f32)>, String> {
+    let Some(pos) = args.iter().position(|arg| arg == "--e2-render-proposal") else {
+        return Ok(None);
+    };
+    if pos + 2 >= args.len() {
+        return Err(format!(
+            "Missing values after --e2-render-proposal\n{}",
+            usage()
+        ));
+    }
+    let n_agents = args[pos + 1].parse::<usize>().map_err(|_| {
+        format!(
+            "Invalid N for --e2-render-proposal: {}\n{}",
+            args[pos + 1],
+            usage()
+        )
+    })?;
+    let partials = args[pos + 2].parse::<u32>().map_err(|_| {
+        format!(
+            "Invalid P for --e2-render-proposal: {}\n{}",
+            args[pos + 2],
+            usage()
+        )
+    })?;
+    let octaves = if pos + 3 < args.len() && !args[pos + 3].starts_with('-') {
+        args[pos + 3].parse::<f32>().map_err(|_| {
+            format!(
+                "Invalid OCT for --e2-render-proposal: {}\n{}",
+                args[pos + 3],
+                usage()
+            )
+        })?
+    } else {
+        2.0
+    };
+    Ok(Some((
+        n_agents.max(1),
+        partials.clamp(1, 16),
+        octaves.clamp(0.5, 6.0),
+    )))
 }
 
 fn parse_e4_kernel_gate(args: &[String]) -> Result<bool, String> {
@@ -1027,6 +1138,18 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
+    if let Some((n_agents, render_partials, range_oct)) =
+        parse_e2_render_baseline(&args).map_err(io::Error::other)?
+    {
+        generate_e2_baseline_render(n_agents, render_partials, range_oct)?;
+        return Ok(());
+    }
+    if let Some((n_agents, render_partials, range_oct)) =
+        parse_e2_render_proposal(&args).map_err(io::Error::other)?
+    {
+        generate_e2_proposal_render(n_agents, render_partials, range_oct)?;
+        return Ok(());
+    }
     // Handle --e2-replay: generate WAV with pure sine replay and exit
     if args.iter().any(|arg| arg == "--e2-replay") {
         let out_path = PathBuf::from("supplementary_audio/audio/15_exp1_replay.wav");
@@ -1101,8 +1224,14 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
                 }
                 Experiment::E2 => {
                     let h = s.spawn(move || {
-                        plot_e2_emergent_harmony(out_dir, space_ref, anchor_hz, e2_phase_mode, e2_quick)
-                            .map_err(|err| io::Error::other(err.to_string()))
+                        plot_e2_emergent_harmony(
+                            out_dir,
+                            space_ref,
+                            anchor_hz,
+                            e2_phase_mode,
+                            e2_quick,
+                        )
+                        .map_err(|err| io::Error::other(err.to_string()))
                     });
                     handles.push((exp.label(), h));
                 }
@@ -1262,7 +1391,8 @@ fn plot_e1_landscape_scan(
 
     let mut perc_c_field_scan = vec![0.0f32; space.n_bins()];
     let mut perc_c_density_scan = vec![0.0f32; space.n_bins()];
-    let density_kernel = ConsonanceKernel::density_with_rho(params.consonance_density_roughness_gain);
+    let density_kernel =
+        ConsonanceKernel::density_with_rho(params.consonance_density_roughness_gain);
     for i in 0..space.n_bins() {
         let h01 = perc_h_state01_scan[i];
         let r01 = perc_r_state01_scan[i];
@@ -1321,20 +1451,14 @@ fn plot_e1_landscape_scan(
     // Run the same consonance scan at additional anchors and compare peak positions.
     {
         /// Find local-max bins of c_field within ±1 octave of anchor, return as (ratio, c_value).
-        fn find_peaks(
-            c_field: &[f32],
-            log2_ratios: &[f32],
-        ) -> Vec<(f32, f32)> {
+        fn find_peaks(c_field: &[f32], log2_ratios: &[f32]) -> Vec<(f32, f32)> {
             let mut peaks = Vec::new();
             for i in 1..c_field.len() - 1 {
                 let r = log2_ratios[i];
                 if r.abs() > 1.0 {
                     continue; // within ±1 octave
                 }
-                if c_field[i] > c_field[i - 1]
-                    && c_field[i] > c_field[i + 1]
-                    && c_field[i] > 0.1
-                {
+                if c_field[i] > c_field[i - 1] && c_field[i] > c_field[i + 1] && c_field[i] > 0.1 {
                     peaks.push((r, c_field[i]));
                 }
             }
@@ -1373,11 +1497,7 @@ fn plot_e1_landscape_scan(
                 c_field[i] = if c.is_finite() { c } else { 0.0 };
             }
             let alt_log2 = alt_hz.log2();
-            let ratios: Vec<f32> = space
-                .centers_log2
-                .iter()
-                .map(|&l| l - alt_log2)
-                .collect();
+            let ratios: Vec<f32> = space.centers_log2.iter().map(|&l| l - alt_log2).collect();
             find_peaks(&c_field, &ratios)
         }
 
@@ -1405,21 +1525,15 @@ fn plot_e1_landscape_scan(
         );
 
         // Compare: for each 220 Hz peak, find nearest peak in alt scan and report shift in cents
-        fn compare_peaks(
-            ref_peaks: &[(f32, f32)],
-            alt_peaks: &[(f32, f32)],
-        ) -> Vec<f64> {
+        fn compare_peaks(ref_peaks: &[(f32, f32)], alt_peaks: &[(f32, f32)]) -> Vec<f64> {
             let mut shifts = Vec::new();
             for &(r_ref, _) in ref_peaks {
-                if let Some(&(r_alt, _)) = alt_peaks
-                    .iter()
-                    .min_by(|a, b| {
-                        (a.0 - r_ref)
-                            .abs()
-                            .partial_cmp(&(b.0 - r_ref).abs())
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                {
+                if let Some(&(r_alt, _)) = alt_peaks.iter().min_by(|a, b| {
+                    (a.0 - r_ref)
+                        .abs()
+                        .partial_cmp(&(b.0 - r_ref).abs())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                }) {
                     // shift in cents: (r_alt - r_ref) * 1200
                     shifts.push(((r_alt - r_ref) as f64) * 1200.0);
                 }
@@ -1430,14 +1544,8 @@ fn plot_e1_landscape_scan(
         let shifts_110 = compare_peaks(&peaks_220, &peaks_110);
         let shifts_440 = compare_peaks(&peaks_220, &peaks_440);
 
-        let max_shift_110 = shifts_110
-            .iter()
-            .map(|s| s.abs())
-            .fold(0.0f64, f64::max);
-        let max_shift_440 = shifts_440
-            .iter()
-            .map(|s| s.abs())
-            .fold(0.0f64, f64::max);
+        let max_shift_110 = shifts_110.iter().map(|s| s.abs()).fold(0.0f64, f64::max);
+        let max_shift_440 = shifts_440.iter().map(|s| s.abs()).fold(0.0f64, f64::max);
         let overall_max = max_shift_110.max(max_shift_440);
 
         let mut report = String::new();
@@ -1449,7 +1557,12 @@ fn plot_e1_landscape_scan(
         ));
         report.push_str("Peaks (log2 ratio, c_field):\n");
         for (r, c) in &peaks_220 {
-            report.push_str(&format!("  ratio={:.4} ({:.1} cents), c={:.4}\n", r, r * 1200.0, c));
+            report.push_str(&format!(
+                "  ratio={:.4} ({:.1} cents), c={:.4}\n",
+                r,
+                r * 1200.0,
+                c
+            ));
         }
         report.push('\n');
         for (alt_hz_val, alt_peaks, shifts) in [
@@ -1464,7 +1577,9 @@ fn plot_e1_landscape_scan(
             for (r, c) in alt_peaks {
                 report.push_str(&format!(
                     "  ratio={:.4} ({:.1} cents), c={:.4}\n",
-                    r, r * 1200.0, c
+                    r,
+                    r * 1200.0,
+                    c
                 ));
             }
             let max_s = shifts.iter().map(|s| s.abs()).fold(0.0f64, f64::max);
@@ -1478,10 +1593,7 @@ fn plot_e1_landscape_scan(
             overall_max
         ));
 
-        write_with_log(
-            out_dir.join("paper_e1_anchor_robustness.txt"),
-            report,
-        )?;
+        write_with_log(out_dir.join("paper_e1_anchor_robustness.txt"), report)?;
     }
 
     Ok(())
@@ -1494,74 +1606,81 @@ fn plot_e2_emergent_harmony(
     phase_mode: E2PhaseMode,
     quick: bool,
 ) -> Result<(), Box<dyn Error>> {
-    let (baseline_runs, baseline_stats, nohill_runs, nohill_stats, norep_runs, norep_stats, shuffled_runs) =
-        std::thread::scope(|scope| {
-            let baseline_handle = scope.spawn(|| {
-                e2_seed_sweep(
-                    space,
-                    anchor_hz,
-                    E2Condition::Baseline,
-                    E2_STEP_SEMITONES,
-                    phase_mode,
-                    None,
-                    0,
-                )
-            });
-            let nohill_handle = scope.spawn(|| {
-                e2_seed_sweep(
-                    space,
-                    anchor_hz,
-                    E2Condition::NoHillClimb,
-                    E2_STEP_SEMITONES,
-                    phase_mode,
-                    None,
-                    0,
-                )
-            });
-            let norep_handle = scope.spawn(|| {
-                e2_seed_sweep(
-                    space,
-                    anchor_hz,
-                    E2Condition::NoCrowding,
-                    E2_STEP_SEMITONES,
-                    phase_mode,
-                    None,
-                    0,
-                )
-            });
-            let shuffled_handle = scope.spawn(|| {
-                e2_seed_sweep(
-                    space,
-                    anchor_hz,
-                    E2Condition::ShuffledLandscape,
-                    E2_STEP_SEMITONES,
-                    phase_mode,
-                    None,
-                    0,
-                )
-            });
-            let (baseline_runs, baseline_stats) = baseline_handle
-                .join()
-                .expect("baseline seed sweep thread panicked");
-            let (nohill_runs, nohill_stats) = nohill_handle
-                .join()
-                .expect("nohill seed sweep thread panicked");
-            let (norep_runs, norep_stats) = norep_handle
-                .join()
-                .expect("norep seed sweep thread panicked");
-            let (shuffled_runs, _shuffled_stats) = shuffled_handle
-                .join()
-                .expect("shuffled seed sweep thread panicked");
-            (
-                baseline_runs,
-                baseline_stats,
-                nohill_runs,
-                nohill_stats,
-                norep_runs,
-                norep_stats,
-                shuffled_runs,
+    let (
+        baseline_runs,
+        baseline_stats,
+        nohill_runs,
+        nohill_stats,
+        norep_runs,
+        norep_stats,
+        shuffled_runs,
+    ) = std::thread::scope(|scope| {
+        let baseline_handle = scope.spawn(|| {
+            e2_seed_sweep(
+                space,
+                anchor_hz,
+                E2Condition::Baseline,
+                E2_STEP_SEMITONES,
+                phase_mode,
+                None,
+                0,
             )
         });
+        let nohill_handle = scope.spawn(|| {
+            e2_seed_sweep(
+                space,
+                anchor_hz,
+                E2Condition::NoHillClimb,
+                E2_STEP_SEMITONES,
+                phase_mode,
+                None,
+                0,
+            )
+        });
+        let norep_handle = scope.spawn(|| {
+            e2_seed_sweep(
+                space,
+                anchor_hz,
+                E2Condition::NoCrowding,
+                E2_STEP_SEMITONES,
+                phase_mode,
+                None,
+                0,
+            )
+        });
+        let shuffled_handle = scope.spawn(|| {
+            e2_seed_sweep(
+                space,
+                anchor_hz,
+                E2Condition::ShuffledLandscape,
+                E2_STEP_SEMITONES,
+                phase_mode,
+                None,
+                0,
+            )
+        });
+        let (baseline_runs, baseline_stats) = baseline_handle
+            .join()
+            .expect("baseline seed sweep thread panicked");
+        let (nohill_runs, nohill_stats) = nohill_handle
+            .join()
+            .expect("nohill seed sweep thread panicked");
+        let (norep_runs, norep_stats) = norep_handle
+            .join()
+            .expect("norep seed sweep thread panicked");
+        let (shuffled_runs, _shuffled_stats) = shuffled_handle
+            .join()
+            .expect("shuffled seed sweep thread panicked");
+        (
+            baseline_runs,
+            baseline_stats,
+            nohill_runs,
+            nohill_stats,
+            norep_runs,
+            norep_stats,
+            shuffled_runs,
+        )
+    });
     let rep_index = pick_representative_run_index(&baseline_runs);
     let baseline_run = &baseline_runs[rep_index];
     let marker_steps = e2_marker_steps(phase_mode);
@@ -2455,11 +2574,8 @@ fn plot_e2_emergent_harmony(
                 0.0
             };
             let sd = if n > 1 {
-                let var = ji_scores
-                    .iter()
-                    .map(|x| (x - mean).powi(2))
-                    .sum::<f32>()
-                    / (n - 1) as f32;
+                let var =
+                    ji_scores.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / (n - 1) as f32;
                 var.sqrt()
             } else {
                 0.0
@@ -2474,7 +2590,10 @@ fn plot_e2_emergent_harmony(
 
     // ── Consonance-only control (supplementary) ──
     if !quick && phase_mode == E2PhaseMode::DissonanceThenConsonance {
-        eprintln!("  Running consonance-only control (baseline × {} seeds)...", E2_SEEDS.len());
+        eprintln!(
+            "  Running consonance-only control (baseline × {} seeds)...",
+            E2_SEEDS.len()
+        );
         let (co_runs, co_stats) = e2_seed_sweep(
             space,
             anchor_hz,
@@ -2532,7 +2651,9 @@ fn plot_e2_emergent_harmony(
                     for &st in &r.final_semitones {
                         for &st2 in &r.final_semitones {
                             let d = (st - st2).abs();
-                            if d < 1e-6 { continue; }
+                            if d < 1e-6 {
+                                continue;
+                            }
                             let d_mod = d % 12.0;
                             let idx = (d_mod / bin_st).round() as usize;
                             if idx < n_bins {
@@ -2541,7 +2662,9 @@ fn plot_e2_emergent_harmony(
                         }
                     }
                     let total: u32 = hist.iter().sum();
-                    if total == 0 { return 0.0; }
+                    if total == 0 {
+                        return 0.0;
+                    }
                     let mut h = 0.0f32;
                     for &c in &hist {
                         if c > 0 {
@@ -2567,7 +2690,9 @@ fn plot_e2_emergent_harmony(
             let va = sa * sa / na;
             let vb = sb * sb / nb;
             let denom = (va + vb).sqrt();
-            if denom < 1e-15 { return (0.0, 1.0); }
+            if denom < 1e-15 {
+                return (0.0, 1.0);
+            }
             let t = (ma - mb) / denom;
             // df via Welch-Satterthwaite
             let df = (va + vb).powi(2) / (va * va / (na - 1.0) + vb * vb / (nb - 1.0));
@@ -2577,12 +2702,21 @@ fn plot_e2_emergent_harmony(
             let x = df64 / (df64 + t_abs * t_abs);
             // Regularized incomplete beta via continued fraction
             fn ln_gamma(x: f64) -> f64 {
-                let coeffs = [76.18009172947146, -86.50532032941677, 24.01409824083091,
-                    -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+                let coeffs = [
+                    76.18009172947146,
+                    -86.50532032941677,
+                    24.01409824083091,
+                    -1.231739572450155,
+                    0.1208650973866179e-2,
+                    -0.5395239384953e-5,
+                ];
                 let mut y = x;
                 let tmp = x + 5.5 - (x + 0.5) * (x + 5.5).ln();
                 let mut ser = 1.000000000190015_f64;
-                for &c in &coeffs { y += 1.0; ser += c / y; }
+                for &c in &coeffs {
+                    y += 1.0;
+                    ser += c / y;
+                }
                 -tmp + (2.5066282746310005 * ser / x).ln()
             }
             fn betacf(a: f64, b: f64, x: f64) -> f64 {
@@ -2590,27 +2724,51 @@ fn plot_e2_emergent_harmony(
                 let (qab, qap, qam) = (a + b, a + 1.0, a - 1.0);
                 let mut c = 1.0_f64;
                 let mut d = (1.0 - qab * x / qap).recip();
-                if d.abs() < fpmin { d = fpmin; }
+                if d.abs() < fpmin {
+                    d = fpmin;
+                }
                 let mut h = d;
                 for m in 1..=200 {
                     let mf = m as f64;
                     let aa = mf * (b - mf) * x / ((qam + 2.0 * mf) * (a + 2.0 * mf));
-                    d = 1.0 + aa * d; if d.abs() < fpmin { d = fpmin; }
-                    c = 1.0 + aa / c; if c.abs() < fpmin { c = fpmin; }
-                    d = d.recip(); h *= d * c;
+                    d = 1.0 + aa * d;
+                    if d.abs() < fpmin {
+                        d = fpmin;
+                    }
+                    c = 1.0 + aa / c;
+                    if c.abs() < fpmin {
+                        c = fpmin;
+                    }
+                    d = d.recip();
+                    h *= d * c;
                     let aa = -(a + mf) * (qab + mf) * x / ((a + 2.0 * mf) * (qap + 2.0 * mf));
-                    d = 1.0 + aa * d; if d.abs() < fpmin { d = fpmin; }
-                    c = 1.0 + aa / c; if c.abs() < fpmin { c = fpmin; }
-                    d = d.recip(); let delta = d * c; h *= delta;
-                    if (delta - 1.0).abs() < eps { break; }
+                    d = 1.0 + aa * d;
+                    if d.abs() < fpmin {
+                        d = fpmin;
+                    }
+                    c = 1.0 + aa / c;
+                    if c.abs() < fpmin {
+                        c = fpmin;
+                    }
+                    d = d.recip();
+                    let delta = d * c;
+                    h *= delta;
+                    if (delta - 1.0).abs() < eps {
+                        break;
+                    }
                 }
                 h
             }
             fn rib(a: f64, b: f64, x: f64) -> f64 {
-                if x <= 0.0 { return 0.0; }
-                if x >= 1.0 { return 1.0; }
-                let bt = (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b)
-                    + a * x.ln() + b * (1.0 - x).ln()).exp();
+                if x <= 0.0 {
+                    return 0.0;
+                }
+                if x >= 1.0 {
+                    return 1.0;
+                }
+                let bt =
+                    (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b) + a * x.ln() + b * (1.0 - x).ln())
+                        .exp();
                 if x < (a + 1.0) / (a + b + 2.0) {
                     bt * betacf(a, b, x) / a
                 } else {
@@ -2621,8 +2779,14 @@ fn plot_e2_emergent_harmony(
             (t, p)
         }
 
-        let bins_vec_co: Vec<f32> = co_diversity.iter().map(|r| r.metrics.unique_bins as f32).collect();
-        let bins_vec_cur: Vec<f32> = cur_diversity.iter().map(|r| r.metrics.unique_bins as f32).collect();
+        let bins_vec_co: Vec<f32> = co_diversity
+            .iter()
+            .map(|r| r.metrics.unique_bins as f32)
+            .collect();
+        let bins_vec_cur: Vec<f32> = cur_diversity
+            .iter()
+            .map(|r| r.metrics.unique_bins as f32)
+            .collect();
         let nn_vec_co: Vec<f32> = co_diversity.iter().map(|r| r.metrics.nn_mean).collect();
         let nn_vec_cur: Vec<f32> = cur_diversity.iter().map(|r| r.metrics.nn_mean).collect();
         let (t_bins, p_bins) = welch_t(&bins_vec_co, &bins_vec_cur);
@@ -2641,16 +2805,40 @@ fn plot_e2_emergent_harmony(
              NN distance (st)        {:.3} ± {:.3}      {:.3} ± {:.3}      {:.2}      {:.4}\n\
              Interval entropy        {:.3} ± {:.3}      {:.3} ± {:.3}      {:.2}      {:.4}\n",
             E2_SEEDS.len(),
-            cur_c_m, cur_c_s, co_c_m, co_c_s, t_c, p_c,
-            cur_bins_m, cur_bins_s, co_bins_m, co_bins_s, t_bins, p_bins,
-            cur_nn_m, cur_nn_s, co_nn_m, co_nn_s, t_nn, p_nn,
-            cur_ent_m, cur_ent_s, co_ent_m, co_ent_s, t_ent, p_ent,
+            cur_c_m,
+            cur_c_s,
+            co_c_m,
+            co_c_s,
+            t_c,
+            p_c,
+            cur_bins_m,
+            cur_bins_s,
+            co_bins_m,
+            co_bins_s,
+            t_bins,
+            p_bins,
+            cur_nn_m,
+            cur_nn_s,
+            co_nn_m,
+            co_nn_s,
+            t_nn,
+            p_nn,
+            cur_ent_m,
+            cur_ent_s,
+            co_ent_m,
+            co_ent_s,
+            t_ent,
+            p_ent,
         );
 
         // Also output time series for consonance-only
         let co_ci95_c = std_series_to_ci95(&co_stats.std_c_score_loo, co_stats.n);
-        let mut ts_csv = String::from("step,curriculum_mean,curriculum_ci95,consonly_mean,consonly_ci95\n");
-        let len = co_stats.mean_c_score_loo.len().min(baseline_stats.mean_c_score_loo.len());
+        let mut ts_csv =
+            String::from("step,curriculum_mean,curriculum_ci95,consonly_mean,consonly_ci95\n");
+        let len = co_stats
+            .mean_c_score_loo
+            .len()
+            .min(baseline_stats.mean_c_score_loo.len());
         for i in 0..len {
             ts_csv.push_str(&format!(
                 "{},{:.6},{:.6},{:.6},{:.6}\n",
@@ -2662,8 +2850,14 @@ fn plot_e2_emergent_harmony(
             ));
         }
 
-        write_with_log(out_dir.join("paper_e2_consonance_only_comparison.txt"), report)?;
-        write_with_log(out_dir.join("paper_e2_consonance_only_timeseries.csv"), ts_csv)?;
+        write_with_log(
+            out_dir.join("paper_e2_consonance_only_comparison.txt"),
+            report,
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_consonance_only_timeseries.csv"),
+            ts_csv,
+        )?;
         eprintln!("  Consonance-only control written.");
     }
 
@@ -2691,7 +2885,11 @@ fn plot_e2_emergent_harmony(
                 .map(|r| {
                     let from = start + burn;
                     let slice = &r.mean_c_score_chosen_loo_series[from..];
-                    if slice.is_empty() { 0.0 } else { slice.iter().sum::<f32>() / slice.len() as f32 }
+                    if slice.is_empty() {
+                        0.0
+                    } else {
+                        slice.iter().sum::<f32>() / slice.len() as f32
+                    }
                 })
                 .collect()
         }
@@ -2709,17 +2907,26 @@ fn plot_e2_emergent_harmony(
                     for &st in &r.final_semitones {
                         for &st2 in &r.final_semitones {
                             let d = (st - st2).abs();
-                            if d < 1e-6 { continue; }
+                            if d < 1e-6 {
+                                continue;
+                            }
                             let d_mod = d % 12.0;
                             let idx = (d_mod / bin_st).round() as usize;
-                            if idx < n_bins { hist[idx] += 1; }
+                            if idx < n_bins {
+                                hist[idx] += 1;
+                            }
                         }
                     }
                     let total: u32 = hist.iter().sum();
-                    if total == 0 { return 0.0; }
+                    if total == 0 {
+                        return 0.0;
+                    }
                     let mut h = 0.0f32;
                     for &c in &hist {
-                        if c > 0 { let p = c as f32 / total as f32; h -= p * p.ln(); }
+                        if c > 0 {
+                            let p = c as f32 / total as f32;
+                            h -= p * p.ln();
+                        }
                     }
                     h
                 })
@@ -2738,19 +2945,30 @@ fn plot_e2_emergent_harmony(
             let va = sa * sa / na;
             let vb = sb * sb / nb;
             let denom = (va + vb).sqrt();
-            if denom < 1e-15 { return (0.0, 1.0); }
+            if denom < 1e-15 {
+                return (0.0, 1.0);
+            }
             let t = (ma - mb) / denom;
             let df = (va + vb).powi(2) / (va * va / (na - 1.0) + vb * vb / (nb - 1.0));
             let t_abs = t.abs() as f64;
             let df64 = df as f64;
             let x = df64 / (df64 + t_abs * t_abs);
             fn ln_gamma(x: f64) -> f64 {
-                let coeffs = [76.18009172947146, -86.50532032941677, 24.01409824083091,
-                    -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+                let coeffs = [
+                    76.18009172947146,
+                    -86.50532032941677,
+                    24.01409824083091,
+                    -1.231739572450155,
+                    0.1208650973866179e-2,
+                    -0.5395239384953e-5,
+                ];
                 let mut y = x;
                 let tmp = x + 5.5 - (x + 0.5) * (x + 5.5).ln();
                 let mut ser = 1.000000000190015_f64;
-                for &c in &coeffs { y += 1.0; ser += c / y; }
+                for &c in &coeffs {
+                    y += 1.0;
+                    ser += c / y;
+                }
                 -tmp + (2.5066282746310005 * ser / x).ln()
             }
             fn betacf(a: f64, b: f64, x: f64) -> f64 {
@@ -2758,27 +2976,51 @@ fn plot_e2_emergent_harmony(
                 let (qab, qap, qam) = (a + b, a + 1.0, a - 1.0);
                 let mut c = 1.0_f64;
                 let mut d = (1.0 - qab * x / qap).recip();
-                if d.abs() < fpmin { d = fpmin; }
+                if d.abs() < fpmin {
+                    d = fpmin;
+                }
                 let mut h = d;
                 for m in 1..=200 {
                     let mf = m as f64;
                     let aa = mf * (b - mf) * x / ((qam + 2.0 * mf) * (a + 2.0 * mf));
-                    d = 1.0 + aa * d; if d.abs() < fpmin { d = fpmin; }
-                    c = 1.0 + aa / c; if c.abs() < fpmin { c = fpmin; }
-                    d = d.recip(); h *= d * c;
+                    d = 1.0 + aa * d;
+                    if d.abs() < fpmin {
+                        d = fpmin;
+                    }
+                    c = 1.0 + aa / c;
+                    if c.abs() < fpmin {
+                        c = fpmin;
+                    }
+                    d = d.recip();
+                    h *= d * c;
                     let aa = -(a + mf) * (qab + mf) * x / ((a + 2.0 * mf) * (qap + 2.0 * mf));
-                    d = 1.0 + aa * d; if d.abs() < fpmin { d = fpmin; }
-                    c = 1.0 + aa / c; if c.abs() < fpmin { c = fpmin; }
-                    d = d.recip(); let delta = d * c; h *= delta;
-                    if (delta - 1.0).abs() < eps { break; }
+                    d = 1.0 + aa * d;
+                    if d.abs() < fpmin {
+                        d = fpmin;
+                    }
+                    c = 1.0 + aa / c;
+                    if c.abs() < fpmin {
+                        c = fpmin;
+                    }
+                    d = d.recip();
+                    let delta = d * c;
+                    h *= delta;
+                    if (delta - 1.0).abs() < eps {
+                        break;
+                    }
                 }
                 h
             }
             fn rib(a: f64, b: f64, x: f64) -> f64 {
-                if x <= 0.0 { return 0.0; }
-                if x >= 1.0 { return 1.0; }
-                let bt = (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b)
-                    + a * x.ln() + b * (1.0 - x).ln()).exp();
+                if x <= 0.0 {
+                    return 0.0;
+                }
+                if x >= 1.0 {
+                    return 1.0;
+                }
+                let bt =
+                    (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b) + a * x.ln() + b * (1.0 - x).ln())
+                        .exp();
                 if x < (a + 1.0) / (a + b + 2.0) {
                     bt * betacf(a, b, x) / a
                 } else {
@@ -2789,8 +3031,14 @@ fn plot_e2_emergent_harmony(
             (t, p)
         }
 
-        let bins_vec_shuf: Vec<f32> = shuf_diversity.iter().map(|r| r.metrics.unique_bins as f32).collect();
-        let bins_vec_base: Vec<f32> = base_diversity.iter().map(|r| r.metrics.unique_bins as f32).collect();
+        let bins_vec_shuf: Vec<f32> = shuf_diversity
+            .iter()
+            .map(|r| r.metrics.unique_bins as f32)
+            .collect();
+        let bins_vec_base: Vec<f32> = base_diversity
+            .iter()
+            .map(|r| r.metrics.unique_bins as f32)
+            .collect();
         let nn_vec_shuf: Vec<f32> = shuf_diversity.iter().map(|r| r.metrics.nn_mean).collect();
         let nn_vec_base: Vec<f32> = base_diversity.iter().map(|r| r.metrics.nn_mean).collect();
         let (t_bins, p_bins) = welch_t_ctrl(&bins_vec_shuf, &bins_vec_base);
@@ -2809,10 +3057,30 @@ fn plot_e2_emergent_harmony(
              NN distance (st)        {:.3} ± {:.3}      {:.3} ± {:.3}      {:.2}      {:.4}\n\
              Interval entropy        {:.3} ± {:.3}      {:.3} ± {:.3}      {:.2}      {:.4}\n",
             E2_SEEDS.len(),
-            base_c_m, base_c_s, shuf_c_m, shuf_c_s, t_c, p_c,
-            base_bins_m, base_bins_s, shuf_bins_m, shuf_bins_s, t_bins, p_bins,
-            base_nn_m, base_nn_s, shuf_nn_m, shuf_nn_s, t_nn, p_nn,
-            base_ent_m, base_ent_s, shuf_ent_m, shuf_ent_s, t_ent, p_ent,
+            base_c_m,
+            base_c_s,
+            shuf_c_m,
+            shuf_c_s,
+            t_c,
+            p_c,
+            base_bins_m,
+            base_bins_s,
+            shuf_bins_m,
+            shuf_bins_s,
+            t_bins,
+            p_bins,
+            base_nn_m,
+            base_nn_s,
+            shuf_nn_m,
+            shuf_nn_s,
+            t_nn,
+            p_nn,
+            base_ent_m,
+            base_ent_s,
+            shuf_ent_m,
+            shuf_ent_s,
+            t_ent,
+            p_ent,
         );
 
         write_with_log(out_dir.join("paper_e2_shuffled_comparison.txt"), report)?;
@@ -2828,8 +3096,7 @@ fn plot_e2_emergent_harmony(
                     .map_err(|e| e.to_string())
             });
             let cs_handle = scope.spawn(|| {
-                plot_e2_coefficient_sweep(out_dir, space, anchor_hz)
-                    .map_err(|e| e.to_string())
+                plot_e2_coefficient_sweep(out_dir, space, anchor_hz).map_err(|e| e.to_string())
             });
             (
                 tc_handle.join().expect("terrain controls thread panicked"),
@@ -2858,7 +3125,10 @@ fn plot_e2_terrain_controls(
         .collect();
 
     let base_diversity: Vec<DiversityRow> = diversity_rows("baseline", baseline_runs);
-    let base_bins: Vec<f32> = base_diversity.iter().map(|r| r.metrics.unique_bins as f32).collect();
+    let base_bins: Vec<f32> = base_diversity
+        .iter()
+        .map(|r| r.metrics.unique_bins as f32)
+        .collect();
     let base_nns: Vec<f32> = base_diversity.iter().map(|r| r.metrics.nn_mean).collect();
     let (base_bins_m, base_bins_s) = mean_std_scalar(&base_bins);
     let (base_nn_m, base_nn_s) = mean_std_scalar(&base_nns);
@@ -2872,17 +3142,26 @@ fn plot_e2_terrain_controls(
                 for &st in &r.final_semitones {
                     for &st2 in &r.final_semitones {
                         let d = (st - st2).abs();
-                        if d < 1e-6 { continue; }
+                        if d < 1e-6 {
+                            continue;
+                        }
                         let d_mod = d % 12.0;
                         let idx = (d_mod / bin_st).round() as usize;
-                        if idx < n_bins { hist[idx] += 1; }
+                        if idx < n_bins {
+                            hist[idx] += 1;
+                        }
                     }
                 }
                 let total: u32 = hist.iter().sum();
-                if total == 0 { return 0.0; }
+                if total == 0 {
+                    return 0.0;
+                }
                 let mut h = 0.0f32;
                 for &c in &hist {
-                    if c > 0 { let p = c as f32 / total as f32; h -= p * p.ln(); }
+                    if c > 0 {
+                        let p = c as f32 / total as f32;
+                        h -= p * p.ln();
+                    }
                 }
                 h
             })
@@ -2898,7 +3177,11 @@ fn plot_e2_terrain_controls(
             .map(|r| {
                 let from = start + burn;
                 let slice = &r.mean_c_score_chosen_loo_series[from..];
-                if slice.is_empty() { 0.0 } else { slice.iter().sum::<f32>() / slice.len() as f32 }
+                if slice.is_empty() {
+                    0.0
+                } else {
+                    slice.iter().sum::<f32>() / slice.len() as f32
+                }
             })
             .collect()
     }
@@ -2913,19 +3196,30 @@ fn plot_e2_terrain_controls(
         let va = sa * sa / na;
         let vb = sb * sb / nb;
         let denom = (va + vb).sqrt();
-        if denom < 1e-15 { return (0.0, 1.0); }
+        if denom < 1e-15 {
+            return (0.0, 1.0);
+        }
         let t = (ma - mb) / denom;
         let df = (va + vb).powi(2) / (va * va / (na - 1.0) + vb * vb / (nb - 1.0));
         let t_abs = t.abs() as f64;
         let df64 = df as f64;
         let x = df64 / (df64 + t_abs * t_abs);
         fn ln_gamma(x: f64) -> f64 {
-            let coeffs = [76.18009172947146, -86.50532032941677, 24.01409824083091,
-                -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+            let coeffs = [
+                76.18009172947146,
+                -86.50532032941677,
+                24.01409824083091,
+                -1.231739572450155,
+                0.1208650973866179e-2,
+                -0.5395239384953e-5,
+            ];
             let mut y = x;
             let tmp = x + 5.5 - (x + 0.5) * (x + 5.5).ln();
             let mut ser = 1.000000000190015_f64;
-            for &c in &coeffs { y += 1.0; ser += c / y; }
+            for &c in &coeffs {
+                y += 1.0;
+                ser += c / y;
+            }
             -tmp + (2.5066282746310005 * ser / x).ln()
         }
         fn betacf(a: f64, b: f64, x: f64) -> f64 {
@@ -2933,27 +3227,51 @@ fn plot_e2_terrain_controls(
             let (qab, qap, qam) = (a + b, a + 1.0, a - 1.0);
             let mut c = 1.0_f64;
             let mut d = (1.0 - qab * x / qap).recip();
-            if d.abs() < fpmin { d = fpmin; }
+            if d.abs() < fpmin {
+                d = fpmin;
+            }
             let mut h = d;
             for m in 1..=200 {
                 let mf = m as f64;
                 let aa = mf * (b - mf) * x / ((qam + 2.0 * mf) * (a + 2.0 * mf));
-                d = 1.0 + aa * d; if d.abs() < fpmin { d = fpmin; }
-                c = 1.0 + aa / c; if c.abs() < fpmin { c = fpmin; }
-                d = d.recip(); h *= d * c;
+                d = 1.0 + aa * d;
+                if d.abs() < fpmin {
+                    d = fpmin;
+                }
+                c = 1.0 + aa / c;
+                if c.abs() < fpmin {
+                    c = fpmin;
+                }
+                d = d.recip();
+                h *= d * c;
                 let aa = -(a + mf) * (qab + mf) * x / ((a + 2.0 * mf) * (qap + 2.0 * mf));
-                d = 1.0 + aa * d; if d.abs() < fpmin { d = fpmin; }
-                c = 1.0 + aa / c; if c.abs() < fpmin { c = fpmin; }
-                d = d.recip(); let delta = d * c; h *= delta;
-                if (delta - 1.0).abs() < eps { break; }
+                d = 1.0 + aa * d;
+                if d.abs() < fpmin {
+                    d = fpmin;
+                }
+                c = 1.0 + aa / c;
+                if c.abs() < fpmin {
+                    c = fpmin;
+                }
+                d = d.recip();
+                let delta = d * c;
+                h *= delta;
+                if (delta - 1.0).abs() < eps {
+                    break;
+                }
             }
             h
         }
         fn rib(a: f64, b: f64, x: f64) -> f64 {
-            if x <= 0.0 { return 0.0; }
-            if x >= 1.0 { return 1.0; }
-            let bt = (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b)
-                + a * x.ln() + b * (1.0 - x).ln()).exp();
+            if x <= 0.0 {
+                return 0.0;
+            }
+            if x >= 1.0 {
+                return 1.0;
+            }
+            let bt =
+                (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b) + a * x.ln() + b * (1.0 - x).ln())
+                    .exp();
             if x < (a + 1.0) / (a + b + 2.0) {
                 bt * betacf(a, b, x) / a
             } else {
@@ -2972,8 +3290,16 @@ fn plot_e2_terrain_controls(
          Condition        shift_cents  shift_bins  unique_bins       nn_mean           entropy           C_score(ref)\n\
          -----------      ----------   ----------  ----------------  ----------------  ----------------  ----------------\n\
          Baseline         0            0           {:.1} ± {:.1}     {:.3} ± {:.3}     {:.3} ± {:.3}     {:.3} ± {:.3}\n",
-        E2_SEEDS.len(), bins_per_cent,
-        base_bins_m, base_bins_s, base_nn_m, base_nn_s, base_ent_m, base_ent_s, base_c_m, base_c_s,
+        E2_SEEDS.len(),
+        bins_per_cent,
+        base_bins_m,
+        base_bins_s,
+        base_nn_m,
+        base_nn_s,
+        base_ent_m,
+        base_ent_s,
+        base_c_m,
+        base_c_s,
     );
 
     // Run all 4 misalignment shifts in parallel
@@ -2986,21 +3312,47 @@ fn plot_e2_terrain_controls(
         c_v: Vec<f32>,
     }
     let mis_results: Vec<MisResult> = std::thread::scope(|scope| {
-        let handles: Vec<_> = misalign_cents.iter().zip(shifts.iter()).map(|(&cents, &shift)| {
-            scope.spawn(move || {
-                eprintln!("    Misalignment Δ={} cents (shift={} bins)...", cents, shift);
-                let (mis_runs, _) = e2_seed_sweep(
-                    space, anchor_hz, E2Condition::Baseline, E2_STEP_SEMITONES, phase_mode, None, shift,
-                );
-                let mis_div: Vec<DiversityRow> = diversity_rows("misaligned", &mis_runs);
-                let bins_v: Vec<f32> = mis_div.iter().map(|r| r.metrics.unique_bins as f32).collect();
-                let nn_v: Vec<f32> = mis_div.iter().map(|r| r.metrics.nn_mean).collect();
-                let ent_v = entropy_from_runs_tc(&mis_runs);
-                let c_v = post_mean_c_tc(&mis_runs, half, burn);
-                MisResult { cents, shift, bins_v, nn_v, ent_v, c_v }
+        let handles: Vec<_> = misalign_cents
+            .iter()
+            .zip(shifts.iter())
+            .map(|(&cents, &shift)| {
+                scope.spawn(move || {
+                    eprintln!(
+                        "    Misalignment Δ={} cents (shift={} bins)...",
+                        cents, shift
+                    );
+                    let (mis_runs, _) = e2_seed_sweep(
+                        space,
+                        anchor_hz,
+                        E2Condition::Baseline,
+                        E2_STEP_SEMITONES,
+                        phase_mode,
+                        None,
+                        shift,
+                    );
+                    let mis_div: Vec<DiversityRow> = diversity_rows("misaligned", &mis_runs);
+                    let bins_v: Vec<f32> = mis_div
+                        .iter()
+                        .map(|r| r.metrics.unique_bins as f32)
+                        .collect();
+                    let nn_v: Vec<f32> = mis_div.iter().map(|r| r.metrics.nn_mean).collect();
+                    let ent_v = entropy_from_runs_tc(&mis_runs);
+                    let c_v = post_mean_c_tc(&mis_runs, half, burn);
+                    MisResult {
+                        cents,
+                        shift,
+                        bins_v,
+                        nn_v,
+                        ent_v,
+                        c_v,
+                    }
+                })
             })
-        }).collect();
-        handles.into_iter().map(|h| h.join().expect("misalignment thread panicked")).collect()
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("misalignment thread panicked"))
+            .collect()
     });
 
     let mut all_mis_bins: Vec<f32> = Vec::new();
@@ -3034,9 +3386,15 @@ fn plot_e2_terrain_controls(
     let (grand_ent_m, grand_ent_s) = mean_std_scalar(&all_mis_ent);
     let (grand_c_m, grand_c_s) = mean_std_scalar(&all_mis_c);
 
-    let base_bins_rep: Vec<f32> = (0..shifts.len()).flat_map(|_| base_bins.iter().copied()).collect();
-    let base_nns_rep: Vec<f32> = (0..shifts.len()).flat_map(|_| base_nns.iter().copied()).collect();
-    let base_ent_rep: Vec<f32> = (0..shifts.len()).flat_map(|_| base_ent.iter().copied()).collect();
+    let base_bins_rep: Vec<f32> = (0..shifts.len())
+        .flat_map(|_| base_bins.iter().copied())
+        .collect();
+    let base_nns_rep: Vec<f32> = (0..shifts.len())
+        .flat_map(|_| base_nns.iter().copied())
+        .collect();
+    let base_ent_rep: Vec<f32> = (0..shifts.len())
+        .flat_map(|_| base_ent.iter().copied())
+        .collect();
     let (t_bins, p_bins) = welch_t_tc(&all_mis_bins, &base_bins_rep);
     let (t_nn, p_nn) = welch_t_tc(&all_mis_nns, &base_nns_rep);
     let (t_ent, p_ent) = welch_t_tc(&all_mis_ent, &base_ent_rep);
@@ -3069,17 +3427,26 @@ fn plot_e2_coefficient_sweep(
                 for &st in &r.final_semitones {
                     for &st2 in &r.final_semitones {
                         let d = (st - st2).abs();
-                        if d < 1e-6 { continue; }
+                        if d < 1e-6 {
+                            continue;
+                        }
                         let d_mod = d % 12.0;
                         let idx = (d_mod / bin_st).round() as usize;
-                        if idx < n_bins { hist[idx] += 1; }
+                        if idx < n_bins {
+                            hist[idx] += 1;
+                        }
                     }
                 }
                 let total: u32 = hist.iter().sum();
-                if total == 0 { return 0.0; }
+                if total == 0 {
+                    return 0.0;
+                }
                 let mut h = 0.0f32;
                 for &ct in &hist {
-                    if ct > 0 { let p = ct as f32 / total as f32; h -= p * p.ln(); }
+                    if ct > 0 {
+                        let p = ct as f32 / total as f32;
+                        h -= p * p.ln();
+                    }
                 }
                 h
             })
@@ -3097,45 +3464,83 @@ fn plot_e2_coefficient_sweep(
     );
 
     // Run all 16 (b,c) combos in parallel
-    let combos: Vec<(f32, f32)> = b_values.iter()
+    let combos: Vec<(f32, f32)> = b_values
+        .iter()
         .flat_map(|&b| c_values.iter().map(move |&c| (b, c)))
         .collect();
     struct CoeffResult {
         b: f32,
         c: f32,
-        bins_m: f32, bins_s: f32,
-        nn_m: f32, nn_s: f32,
-        ent_m: f32, ent_s: f32,
-        c_m: f32, c_s: f32,
+        bins_m: f32,
+        bins_s: f32,
+        nn_m: f32,
+        nn_s: f32,
+        ent_m: f32,
+        ent_s: f32,
+        c_m: f32,
+        c_s: f32,
     }
     let results: Vec<CoeffResult> = std::thread::scope(|scope| {
-        let handles: Vec<_> = combos.iter().map(|&(b, c)| {
-            scope.spawn(move || {
-                eprintln!("    Coefficient sweep b={:.2}, c={:.2}...", b, c);
-                let kernel = ConsonanceKernel { a: 1.0, b, c, d: 0.0 };
-                let (runs, _) = e2_seed_sweep(
-                    space, anchor_hz, E2Condition::Baseline, E2_STEP_SEMITONES, phase_mode,
-                    Some(kernel), 0,
-                );
-                let div: Vec<DiversityRow> = diversity_rows("sweep", &runs);
-                let bins_v: Vec<f32> = div.iter().map(|r| r.metrics.unique_bins as f32).collect();
-                let nn_v: Vec<f32> = div.iter().map(|r| r.metrics.nn_mean).collect();
-                let ent_v = entropy_from_runs_cs(&runs);
-                let c_scores: Vec<f32> = runs.iter()
-                    .map(|r| {
-                        let from = half + burn;
-                        let slice = &r.mean_c_score_chosen_loo_series[from..];
-                        if slice.is_empty() { 0.0 } else { slice.iter().sum::<f32>() / slice.len() as f32 }
-                    })
-                    .collect();
-                let (bm, bs) = mean_std_scalar(&bins_v);
-                let (nm, ns) = mean_std_scalar(&nn_v);
-                let (em, es) = mean_std_scalar(&ent_v);
-                let (cm, cs) = mean_std_scalar(&c_scores);
-                CoeffResult { b, c, bins_m: bm, bins_s: bs, nn_m: nm, nn_s: ns, ent_m: em, ent_s: es, c_m: cm, c_s: cs }
+        let handles: Vec<_> = combos
+            .iter()
+            .map(|&(b, c)| {
+                scope.spawn(move || {
+                    eprintln!("    Coefficient sweep b={:.2}, c={:.2}...", b, c);
+                    let kernel = ConsonanceKernel {
+                        a: 1.0,
+                        b,
+                        c,
+                        d: 0.0,
+                    };
+                    let (runs, _) = e2_seed_sweep(
+                        space,
+                        anchor_hz,
+                        E2Condition::Baseline,
+                        E2_STEP_SEMITONES,
+                        phase_mode,
+                        Some(kernel),
+                        0,
+                    );
+                    let div: Vec<DiversityRow> = diversity_rows("sweep", &runs);
+                    let bins_v: Vec<f32> =
+                        div.iter().map(|r| r.metrics.unique_bins as f32).collect();
+                    let nn_v: Vec<f32> = div.iter().map(|r| r.metrics.nn_mean).collect();
+                    let ent_v = entropy_from_runs_cs(&runs);
+                    let c_scores: Vec<f32> = runs
+                        .iter()
+                        .map(|r| {
+                            let from = half + burn;
+                            let slice = &r.mean_c_score_chosen_loo_series[from..];
+                            if slice.is_empty() {
+                                0.0
+                            } else {
+                                slice.iter().sum::<f32>() / slice.len() as f32
+                            }
+                        })
+                        .collect();
+                    let (bm, bs) = mean_std_scalar(&bins_v);
+                    let (nm, ns) = mean_std_scalar(&nn_v);
+                    let (em, es) = mean_std_scalar(&ent_v);
+                    let (cm, cs) = mean_std_scalar(&c_scores);
+                    CoeffResult {
+                        b,
+                        c,
+                        bins_m: bm,
+                        bins_s: bs,
+                        nn_m: nm,
+                        nn_s: ns,
+                        ent_m: em,
+                        ent_s: es,
+                        c_m: cm,
+                        c_s: cs,
+                    }
+                })
             })
-        }).collect();
-        handles.into_iter().map(|h| h.join().expect("coeff sweep thread panicked")).collect()
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("coeff sweep thread panicked"))
+            .collect()
     });
     for cr in &results {
         report.push_str(&format!(
@@ -3272,8 +3677,9 @@ fn init_e2_agent_indices_uniform<R: Rng + ?Sized>(
     rng: &mut R,
     min_idx: usize,
     max_idx: usize,
+    n_agents: usize,
 ) -> Vec<usize> {
-    (0..E2_N_AGENTS)
+    (0..n_agents)
         .map(|_| rng.random_range(min_idx..=max_idx))
         .collect()
 }
@@ -3283,9 +3689,10 @@ fn init_e2_agent_indices_reject_consonant<R: Rng + ?Sized>(
     min_idx: usize,
     max_idx: usize,
     log2_ratio_scan: &[f32],
+    n_agents: usize,
 ) -> Vec<usize> {
-    let mut indices = Vec::with_capacity(E2_N_AGENTS);
-    for _ in 0..E2_N_AGENTS {
+    let mut indices = Vec::with_capacity(n_agents);
+    for _ in 0..n_agents {
         let mut last = min_idx;
         let mut chosen = None;
         for _ in 0..E2_INIT_MAX_TRIES {
@@ -3313,16 +3720,49 @@ fn run_e2_once(
     kernel: Option<ConsonanceKernel>,
     r_shift_bins: i32,
 ) -> E2Run {
+    run_e2_once_cfg(
+        space,
+        anchor_hz,
+        seed,
+        condition,
+        step_semitones,
+        phase_mode,
+        kernel,
+        r_shift_bins,
+        E2_N_AGENTS,
+        2.0,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_e2_once_cfg(
+    space: &Log2Space,
+    anchor_hz: f32,
+    seed: u64,
+    condition: E2Condition,
+    step_semitones: f32,
+    phase_mode: E2PhaseMode,
+    kernel: Option<ConsonanceKernel>,
+    r_shift_bins: i32,
+    n_agents: usize,
+    range_oct: f32,
+) -> E2Run {
     let mut rng = seeded_rng(seed);
     let mut anchor_hz_current = anchor_hz;
     let mut log2_ratio_scan = build_log2_ratio_scan(space, anchor_hz_current);
-    let (mut min_idx, mut max_idx) = log2_ratio_bounds(&log2_ratio_scan, -1.0, 1.0);
+    let half_range_oct = 0.5 * range_oct.max(0.01);
+    let (mut min_idx, mut max_idx) =
+        log2_ratio_bounds(&log2_ratio_scan, -half_range_oct, half_range_oct);
 
     let mut agent_indices = match E2_INIT_MODE {
-        E2InitMode::Uniform => init_e2_agent_indices_uniform(&mut rng, min_idx, max_idx),
-        E2InitMode::RejectConsonant => {
-            init_e2_agent_indices_reject_consonant(&mut rng, min_idx, max_idx, &log2_ratio_scan)
-        }
+        E2InitMode::Uniform => init_e2_agent_indices_uniform(&mut rng, min_idx, max_idx, n_agents),
+        E2InitMode::RejectConsonant => init_e2_agent_indices_reject_consonant(
+            &mut rng,
+            min_idx,
+            max_idx,
+            &log2_ratio_scan,
+            n_agents,
+        ),
     };
 
     let (erb_scan, du_scan) = erb_grid(space);
@@ -3357,10 +3797,10 @@ fn run_e2_once(
     let mut r_state01_mean_sum = 0.0f32;
     let mut r_state01_mean_count = 0u32;
 
-    let mut trajectory_semitones = (0..E2_N_AGENTS)
+    let mut trajectory_semitones = (0..n_agents)
         .map(|_| Vec::with_capacity(E2_SWEEPS))
         .collect::<Vec<_>>();
-    let mut trajectory_c_level = (0..E2_N_AGENTS)
+    let mut trajectory_c_level = (0..n_agents)
         .map(|_| Vec::with_capacity(E2_SWEEPS))
         .collect::<Vec<_>>();
     let mut backtrack_targets = agent_indices.clone();
@@ -3393,7 +3833,8 @@ fn run_e2_once(
             let before = anchor_hz_current;
             anchor_hz_current *= E2_ANCHOR_SHIFT_RATIO;
             log2_ratio_scan = build_log2_ratio_scan(space, anchor_hz_current);
-            let (new_min, new_max) = log2_ratio_bounds(&log2_ratio_scan, -1.0, 1.0);
+            let (new_min, new_max) =
+                log2_ratio_bounds(&log2_ratio_scan, -half_range_oct, half_range_oct);
             let (count_min, count_max, respawned) = shift_indices_by_ratio(
                 space,
                 &mut agent_indices,
@@ -3551,7 +3992,8 @@ fn run_e2_once(
                 stats
             }
             E2Condition::ShuffledLandscape => {
-                let shuffled_scores: Vec<f32> = shuffle_perm.iter().map(|&i| c_score_scan[i]).collect();
+                let shuffled_scores: Vec<f32> =
+                    shuffle_perm.iter().map(|&i| c_score_scan[i]).collect();
                 update_e2_sweep_prescored(
                     E2_UPDATE_SCHEDULE,
                     &mut agent_indices,
@@ -3627,9 +4069,9 @@ fn run_e2_once(
         mean_abs_delta_semitones_moved_series.push(stats.mean_abs_delta_semitones_moved);
     }
 
-    let mut final_semitones = Vec::with_capacity(E2_N_AGENTS);
-    let mut final_log2_ratios = Vec::with_capacity(E2_N_AGENTS);
-    let mut final_freqs_hz = Vec::with_capacity(E2_N_AGENTS);
+    let mut final_semitones = Vec::with_capacity(n_agents);
+    let mut final_log2_ratios = Vec::with_capacity(n_agents);
+    let mut final_freqs_hz = Vec::with_capacity(n_agents);
     for &idx in &agent_indices {
         final_semitones.push(12.0 * log2_ratio_scan[idx]);
         final_log2_ratios.push(log2_ratio_scan[idx]);
@@ -3698,7 +4140,7 @@ fn run_e2_once(
         r_ref_peak: workspace.r_ref_peak,
         roughness_k: workspace.params.roughness_k,
         roughness_ref_eps: workspace.params.roughness_ref_eps,
-        n_agents: E2_N_AGENTS,
+        n_agents,
         k_bins,
     }
 }
@@ -3712,7 +4154,16 @@ fn e2_seed_sweep(
     kernel: Option<ConsonanceKernel>,
     r_shift_bins: i32,
 ) -> (Vec<E2Run>, E2SweepStats) {
-    e2_seed_sweep_with_threads(space, anchor_hz, condition, step_semitones, phase_mode, kernel, r_shift_bins, None)
+    e2_seed_sweep_with_threads(
+        space,
+        anchor_hz,
+        condition,
+        step_semitones,
+        phase_mode,
+        kernel,
+        r_shift_bins,
+        None,
+    )
 }
 
 fn e2_seed_sweep_with_threads(
@@ -4381,8 +4832,7 @@ fn plot_e3_metabolic_selection(
                 d = d.recip();
                 h *= d * c;
                 // odd step
-                let aa =
-                    -(a + m_f) * (qab + m_f) * x / ((a + 2.0 * m_f) * (qap + 2.0 * m_f));
+                let aa = -(a + m_f) * (qab + m_f) * x / ((a + 2.0 * m_f) * (qap + 2.0 * m_f));
                 d = 1.0 + aa * d;
                 if d.abs() < fpmin {
                     d = fpmin;
@@ -4409,10 +4859,9 @@ fn plot_e3_metabolic_selection(
             if x >= 1.0 {
                 return 1.0;
             }
-            let bt = (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b)
-                + a * x.ln()
-                + b * (1.0 - x).ln())
-            .exp();
+            let bt =
+                (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b) + a * x.ln() + b * (1.0 - x).ln())
+                    .exp();
             if x < (a + 1.0) / (a + b + 2.0) {
                 bt * betacf(a, b, x) / a
             } else {
@@ -4477,7 +4926,10 @@ fn plot_e3_metabolic_selection(
 
         // Range of raw r
         let base_r_min = baseline_rs.iter().cloned().fold(f64::INFINITY, f64::min);
-        let base_r_max = baseline_rs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let base_r_max = baseline_rs
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
 
         // CI95 for Fisher z mean, back-transformed
         let base_z_ci95 = 1.96 * base_z_sd / (baseline_zs.len() as f64).sqrt();
@@ -4488,7 +4940,10 @@ fn plot_e3_metabolic_selection(
         stats_text.push_str("=== E3 Seed-Level Statistics (Fisher z) ===\n\n");
         stats_text.push_str(&format!(
             "Baseline (n={}): mean r = {:.3} (Fisher z mean={:.4}, SD={:.4})\n",
-            baseline_rs.len(), base_r_mean, base_z_mean, base_z_sd
+            baseline_rs.len(),
+            base_r_mean,
+            base_z_mean,
+            base_z_sd
         ));
         stats_text.push_str(&format!(
             "  raw r: mean={:.3} ± {:.3}, range [{:.2}, {:.2}]\n",
@@ -4512,7 +4967,10 @@ fn plot_e3_metabolic_selection(
         ));
         stats_text.push_str(&format!(
             "NoRecharge (n={}): mean r = {:.3} (Fisher z mean={:.4}, SD={:.4})\n",
-            norecharge_rs.len(), nore_r_mean, nore_z_mean, nore_z_sd
+            norecharge_rs.len(),
+            nore_r_mean,
+            nore_z_mean,
+            nore_z_sd
         ));
         stats_text.push_str(&format!(
             "  raw r: mean={:.3} ± {:.3}\n",
@@ -4532,10 +4990,7 @@ fn plot_e3_metabolic_selection(
         ));
         stats_text.push_str("  (Baseline vs NoRecharge, Fisher z)\n");
 
-        write_with_log(
-            out_dir.join("paper_e3_seed_level_stats.txt"),
-            stats_text,
-        )?;
+        write_with_log(out_dir.join("paper_e3_seed_level_stats.txt"), stats_text)?;
     }
 
     Ok(())
@@ -4716,7 +5171,11 @@ fn pick_e3_representative_seed(outputs: &[E3SeedOutput]) -> Option<u64> {
 fn plot_e5_vitality_entrainment(out_dir: &Path) -> Result<(), Box<dyn Error>> {
     let landscape = e3_reference_landscape(E5_ANCHOR_HZ);
 
-    let conditions = [E5Condition::Vitality, E5Condition::Uniform, E5Condition::Control];
+    let conditions = [
+        E5Condition::Vitality,
+        E5Condition::Uniform,
+        E5Condition::Control,
+    ];
 
     // Run all seeds × conditions
     let mut all_results: Vec<E5VitalityResult> = Vec::new();
@@ -4808,7 +5267,11 @@ fn plot_e5_vitality_entrainment(out_dir: &Path) -> Result<(), Box<dyn Error>> {
             for (i, a) in res.agent_final.iter().enumerate() {
                 csv.push_str(&format!(
                     "{},{},{},{:.6},{:.6}\n",
-                    res.condition.label(), res.seed, i, a.consonance, a.plv,
+                    res.condition.label(),
+                    res.seed,
+                    i,
+                    a.consonance,
+                    a.plv,
                 ));
             }
         }
@@ -4909,9 +5372,8 @@ fn plot_e6_hereditary_adaptation(
         .min(jobs.len())
         .max(1);
     let next = AtomicUsize::new(0);
-    let results_slot: Mutex<Vec<Option<(E6Condition, u64, E6RunResult)>>> = Mutex::new(
-        (0..jobs.len()).map(|_| None).collect(),
-    );
+    let results_slot: Mutex<Vec<Option<(E6Condition, u64, E6RunResult)>>> =
+        Mutex::new((0..jobs.len()).map(|_| None).collect());
     std::thread::scope(|scope| {
         for _ in 0..worker_count {
             scope.spawn(|| {
@@ -5082,11 +5544,7 @@ fn plot_e6_hereditary_adaptation(
 
     // Carry-forward for heatmap: extend each heredity seed's last bins to global_max_step
     {
-        let global_max_step = heat_counts
-            .keys()
-            .map(|(s, _)| *s)
-            .max()
-            .unwrap_or(0);
+        let global_max_step = heat_counts.keys().map(|(s, _)| *s).max().unwrap_or(0);
         for (seed, bins) in &hered_seed_last_bins {
             let last_step = hered_seed_last_step[seed];
             let mut step = last_step + E6_SNAPSHOT_INTERVAL;
@@ -5214,9 +5672,7 @@ fn plot_e6_hereditary_adaptation(
             1.0
         };
         // Cohen's d (pooled SD)
-        let sd_pooled = (((nh - 1.0) * sh * sh + (nr - 1.0) * sr * sr)
-            / (nh + nr - 2.0))
-            .sqrt();
+        let sd_pooled = (((nh - 1.0) * sh * sh + (nr - 1.0) * sr * sr) / (nh + nr - 2.0)).sqrt();
         let ji_d = if sd_pooled > 1e-15 {
             (mh - mr) / sd_pooled
         } else {
@@ -5227,13 +5683,20 @@ fn plot_e6_hereditary_adaptation(
         let x = ji_df / (ji_df + t_abs * t_abs);
         fn ln_gamma_ji(x: f64) -> f64 {
             let coeffs = [
-                76.18009172947146, -86.50532032941677, 24.01409824083091,
-                -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5,
+                76.18009172947146,
+                -86.50532032941677,
+                24.01409824083091,
+                -1.231739572450155,
+                0.1208650973866179e-2,
+                -0.5395239384953e-5,
             ];
             let mut y = x;
             let tmp = x + 5.5 - (x + 0.5) * (x + 5.5).ln();
             let mut ser = 1.000000000190015_f64;
-            for &c in &coeffs { y += 1.0; ser += c / y; }
+            for &c in &coeffs {
+                y += 1.0;
+                ser += c / y;
+            }
             -tmp + (2.5066282746310005 * ser / x).ln()
         }
         fn betacf_ji(a: f64, b: f64, x: f64) -> f64 {
@@ -5241,27 +5704,52 @@ fn plot_e6_hereditary_adaptation(
             let (qab, qap, qam) = (a + b, a + 1.0, a - 1.0);
             let mut c = 1.0_f64;
             let mut d = (1.0 - qab * x / qap).recip();
-            if d.abs() < fpmin { d = fpmin; }
+            if d.abs() < fpmin {
+                d = fpmin;
+            }
             let mut h = d;
             for m in 1..=200 {
                 let mf = m as f64;
                 let aa = mf * (b - mf) * x / ((qam + 2.0 * mf) * (a + 2.0 * mf));
-                d = 1.0 + aa * d; if d.abs() < fpmin { d = fpmin; }
-                c = 1.0 + aa / c; if c.abs() < fpmin { c = fpmin; }
-                d = d.recip(); h *= d * c;
+                d = 1.0 + aa * d;
+                if d.abs() < fpmin {
+                    d = fpmin;
+                }
+                c = 1.0 + aa / c;
+                if c.abs() < fpmin {
+                    c = fpmin;
+                }
+                d = d.recip();
+                h *= d * c;
                 let aa2 = -(a + mf) * (qab + mf) * x / ((a + 2.0 * mf) * (qap + 2.0 * mf));
-                d = 1.0 + aa2 * d; if d.abs() < fpmin { d = fpmin; }
-                c = 1.0 + aa2 / c; if c.abs() < fpmin { c = fpmin; }
-                d = d.recip(); let delta = d * c; h *= delta;
-                if (delta - 1.0).abs() < eps { break; }
+                d = 1.0 + aa2 * d;
+                if d.abs() < fpmin {
+                    d = fpmin;
+                }
+                c = 1.0 + aa2 / c;
+                if c.abs() < fpmin {
+                    c = fpmin;
+                }
+                d = d.recip();
+                let delta = d * c;
+                h *= delta;
+                if (delta - 1.0).abs() < eps {
+                    break;
+                }
             }
             h
         }
         fn rib_ji(a: f64, b: f64, x: f64) -> f64 {
-            if x <= 0.0 { return 0.0; }
-            if x >= 1.0 { return 1.0; }
+            if x <= 0.0 {
+                return 0.0;
+            }
+            if x >= 1.0 {
+                return 1.0;
+            }
             let bt = (ln_gamma_ji(a + b) - ln_gamma_ji(a) - ln_gamma_ji(b)
-                + a * x.ln() + b * (1.0 - x).ln()).exp();
+                + a * x.ln()
+                + b * (1.0 - x).ln())
+            .exp();
             if x < (a + 1.0) / (a + b + 2.0) {
                 bt * betacf_ji(a, b, x) / a
             } else {
@@ -5327,7 +5815,8 @@ fn e6_snapshot_point(
         .map(|f| landscape.evaluate_pitch_score(f))
         .sum::<f32>()
         / valid_freqs.len() as f32;
-    let consonant_occupation = e6_consonant_occupation(&valid_freqs, anchor_hz, E6_CONSONANT_WINDOW_ST);
+    let consonant_occupation =
+        e6_consonant_occupation(&valid_freqs, anchor_hz, E6_CONSONANT_WINDOW_ST);
 
     let semitones: Vec<f32> = valid_freqs
         .iter()
@@ -5519,10 +6008,7 @@ where
         .axis_desc_style(("sans-serif", 56).into_font())
         .draw()?;
 
-    for (label, series, color) in [
-        ("heredity", heredity, PAL_H),
-        ("random", random, PAL_R),
-    ] {
+    for (label, series, color) in [("heredity", heredity, PAL_H), ("random", random, PAL_R)] {
         if series.is_empty() {
             continue;
         }
@@ -5533,7 +6019,10 @@ where
         for (x, mean, ci) in series.iter().rev().copied() {
             band.push((x, (mean - ci).clamp(y_lo, y_hi)));
         }
-        chart.draw_series(std::iter::once(Polygon::new(band, color.mix(0.20).filled())))?;
+        chart.draw_series(std::iter::once(Polygon::new(
+            band,
+            color.mix(0.20).filled(),
+        )))?;
 
         chart
             .draw_series(LineSeries::new(
@@ -5545,20 +6034,21 @@ where
 
         // Dashed extension from last point to x_max
         if let Some(&(last_x, last_mean, _)) = series.last()
-            && last_x < x_max - 1.0 {
-                let dash_len = (x_max - last_x) / 80.0;
-                let mut segments: Vec<PathElement<(f32, f32)>> = Vec::new();
-                let mut cx = last_x;
-                while cx < x_max {
-                    let nx = (cx + dash_len).min(x_max);
-                    segments.push(PathElement::new(
-                        vec![(cx, last_mean), (nx, last_mean)],
-                        color.mix(0.5).stroke_width(1),
-                    ));
-                    cx = nx + dash_len; // gap
-                }
-                chart.draw_series(segments)?;
+            && last_x < x_max - 1.0
+        {
+            let dash_len = (x_max - last_x) / 80.0;
+            let mut segments: Vec<PathElement<(f32, f32)>> = Vec::new();
+            let mut cx = last_x;
+            while cx < x_max {
+                let nx = (cx + dash_len).min(x_max);
+                segments.push(PathElement::new(
+                    vec![(cx, last_mean), (nx, last_mean)],
+                    color.mix(0.5).stroke_width(1),
+                ));
+                cx = nx + dash_len; // gap
             }
+            chart.draw_series(segments)?;
+        }
     }
 
     chart
@@ -5600,7 +6090,11 @@ where
         .axis_desc_style(("sans-serif", 56).into_font())
         .draw()?;
 
-    let max_count = heat_counts.values().copied().fold(0.0f32, f32::max).max(1.0);
+    let max_count = heat_counts
+        .values()
+        .copied()
+        .fold(0.0f32, f32::max)
+        .max(1.0);
     for ((step, bin), count) in heat_counts {
         let x0 = *step as f32;
         let x1 = x0 + E6_SNAPSHOT_INTERVAL as f32;
@@ -5635,10 +6129,7 @@ where
 
 /// C2: Integration figure — 4 conditions: heredity/random × lw=0.0/0.5
 #[allow(clippy::type_complexity)]
-fn plot_e6_integration_figure(
-    out_dir: &Path,
-    anchor_hz: f32,
-) -> Result<(), Box<dyn Error>> {
+fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<dyn Error>> {
     struct IntegrationCondition {
         label: &'static str,
         condition: E6Condition,
@@ -5729,9 +6220,8 @@ fn plot_e6_integration_figure(
         // Parallel seed loop
         let seed_results: Vec<(u64, E6RunResult)> = {
             let int_next = AtomicUsize::new(0);
-            let int_slots: Mutex<Vec<Option<(u64, E6RunResult)>>> = Mutex::new(
-                (0..E6_SEEDS.len()).map(|_| None).collect(),
-            );
+            let int_slots: Mutex<Vec<Option<(u64, E6RunResult)>>> =
+                Mutex::new((0..E6_SEEDS.len()).map(|_| None).collect());
             let int_workers = std::thread::available_parallelism()
                 .map(|n| n.get())
                 .unwrap_or(1)
@@ -5765,7 +6255,12 @@ fn plot_e6_integration_figure(
                     });
                 }
             });
-            int_slots.into_inner().unwrap().into_iter().map(|o| o.unwrap()).collect()
+            int_slots
+                .into_inner()
+                .unwrap()
+                .into_iter()
+                .map(|o| o.unwrap())
+                .collect()
         };
 
         let mut by_seed: HashMap<u64, Vec<(usize, f32)>> = HashMap::new();
@@ -5832,7 +6327,9 @@ fn plot_e6_integration_figure(
         let mean_rh_s = mean_of(7);
 
         // Real-terrain interaction contrast: HH - H - RH + R
-        let contrasts: Vec<f32> = cond_seed_finals[0].iter().zip(&cond_seed_finals[1])
+        let contrasts: Vec<f32> = cond_seed_finals[0]
+            .iter()
+            .zip(&cond_seed_finals[1])
             .zip(cond_seed_finals[2].iter().zip(&cond_seed_finals[3]))
             .map(|((&h, &hh), (&r, &rh))| hh - h - rh + r)
             .collect();
@@ -5841,16 +6338,20 @@ fn plot_e6_integration_figure(
         let (p_val, method) = permutation_pvalue_one_sample(&contrasts, 100_000, 0xBEEF);
 
         // Full-shuffled interaction contrast: HH_s - H_s - RH_s + R_s
-        let contrasts_shuf: Vec<f32> = cond_seed_finals[4].iter().zip(&cond_seed_finals[5])
+        let contrasts_shuf: Vec<f32> = cond_seed_finals[4]
+            .iter()
+            .zip(&cond_seed_finals[5])
             .zip(cond_seed_finals[6].iter().zip(&cond_seed_finals[7]))
             .map(|((&h_s, &hh_s), (&r_s, &rh_s))| hh_s - h_s - rh_s + r_s)
             .collect();
         let mean_contrast_shuf = contrasts_shuf.iter().copied().sum::<f32>() / n_seeds as f32;
         let ci_shuf = ci95_half_width(&contrasts_shuf);
-        let (p_val_shuf, _method_shuf) = permutation_pvalue_one_sample(&contrasts_shuf, 100_000, 0xBEEF ^ 0x5E6F);
+        let (p_val_shuf, _method_shuf) =
+            permutation_pvalue_one_sample(&contrasts_shuf, 100_000, 0xBEEF ^ 0x5E6F);
 
         // H vs H_s and R vs R_s: empirical check that metabolism-only terrain effect is small
-        let (h_diff, r_diff): (Vec<f32>, Vec<f32>) = cond_seed_finals[0].iter()
+        let (h_diff, r_diff): (Vec<f32>, Vec<f32>) = cond_seed_finals[0]
+            .iter()
             .zip(&cond_seed_finals[4])
             .zip(cond_seed_finals[2].iter().zip(&cond_seed_finals[6]))
             .map(|((&h, &h_s), (&r, &r_s))| (h - h_s, r - r_s))
@@ -5876,16 +6377,19 @@ fn plot_e6_integration_figure(
              p = {:.6} ({})\n\
              n_seeds = {}\n",
             method,
-            mean_h, mean_hh, mean_r, mean_rh,
-            mean_contrast, mean_contrast - ci, mean_contrast + ci,
-            p_val, method,
+            mean_h,
+            mean_hh,
+            mean_r,
+            mean_rh,
+            mean_contrast,
+            mean_contrast - ci,
+            mean_contrast + ci,
+            p_val,
+            method,
             n_seeds,
         );
         eprintln!("{}", report);
-        write_with_log(
-            out_dir.join("paper_e6_interaction_test.txt"),
-            report,
-        )?;
+        write_with_log(out_dir.join("paper_e6_interaction_test.txt"), report)?;
 
         // Full factorial terrain control report
         let terrain_report = format!(
@@ -5909,18 +6413,38 @@ fn plot_e6_integration_figure(
              R − R_s:  {:.4} [{:.4}, {:.4}], p = {:.4}\n\
              \n\
              n_seeds = {}\n",
-            mean_h, ci_of(0),
-            mean_h_s, ci_of(4),
-            mean_hh, ci_of(1),
-            mean_hh_s, ci_of(5),
-            mean_r, ci_of(2),
-            mean_r_s, ci_of(6),
-            mean_rh, ci_of(3),
-            mean_rh_s, ci_of(7),
-            mean_contrast, mean_contrast - ci, mean_contrast + ci, p_val,
-            mean_contrast_shuf, mean_contrast_shuf - ci_shuf, mean_contrast_shuf + ci_shuf, p_val_shuf,
-            mean_h_diff, mean_h_diff - ci_h_diff, mean_h_diff + ci_h_diff, p_h_diff,
-            mean_r_diff, mean_r_diff - ci_r_diff, mean_r_diff + ci_r_diff, p_r_diff,
+            mean_h,
+            ci_of(0),
+            mean_h_s,
+            ci_of(4),
+            mean_hh,
+            ci_of(1),
+            mean_hh_s,
+            ci_of(5),
+            mean_r,
+            ci_of(2),
+            mean_r_s,
+            ci_of(6),
+            mean_rh,
+            ci_of(3),
+            mean_rh_s,
+            ci_of(7),
+            mean_contrast,
+            mean_contrast - ci,
+            mean_contrast + ci,
+            p_val,
+            mean_contrast_shuf,
+            mean_contrast_shuf - ci_shuf,
+            mean_contrast_shuf + ci_shuf,
+            p_val_shuf,
+            mean_h_diff,
+            mean_h_diff - ci_h_diff,
+            mean_h_diff + ci_h_diff,
+            p_h_diff,
+            mean_r_diff,
+            mean_r_diff - ci_r_diff,
+            mean_r_diff + ci_r_diff,
+            p_r_diff,
             n_seeds,
         );
         eprintln!("{}", terrain_report);
@@ -5941,18 +6465,24 @@ fn plot_e6_integration_figure(
         for (i, label) in cond_labels.iter().enumerate() {
             phase_report.push_str(&format!(
                 "{:<28} {:.4}    ± {:.4}\n",
-                label, phase_mean_of(i), phase_ci_of(i),
+                label,
+                phase_mean_of(i),
+                phase_ci_of(i),
             ));
         }
         // Phase coherence: HH vs R (does heredity+hill produce higher entrainment?)
-        let phase_hh_r: Vec<f32> = cond_seed_phase[1].iter().zip(&cond_seed_phase[3])
+        let phase_hh_r: Vec<f32> = cond_seed_phase[1]
+            .iter()
+            .zip(&cond_seed_phase[3])
             .map(|(&hh, &rh)| hh - rh)
             .collect();
         let phase_hh_r_mean = phase_hh_r.iter().sum::<f32>() / n_seeds as f32;
         let phase_hh_r_ci = ci95_half_width(&phase_hh_r);
         let (phase_hh_r_p, _) = permutation_pvalue_one_sample(&phase_hh_r, 100_000, 0xFA5E_A5A5);
         // Phase: H vs R (heredity-only effect on entrainment)
-        let phase_h_r: Vec<f32> = cond_seed_phase[0].iter().zip(&cond_seed_phase[2])
+        let phase_h_r: Vec<f32> = cond_seed_phase[0]
+            .iter()
+            .zip(&cond_seed_phase[2])
             .map(|(&h, &r)| h - r)
             .collect();
         let phase_h_r_mean = phase_h_r.iter().sum::<f32>() / n_seeds as f32;
@@ -5962,14 +6492,17 @@ fn plot_e6_integration_figure(
             "\nContrasts:\n\
              HH − RH: {:.4} [{:.4}, {:.4}], p = {:.4}\n\
              H − R:   {:.4} [{:.4}, {:.4}], p = {:.4}\n",
-            phase_hh_r_mean, phase_hh_r_mean - phase_hh_r_ci, phase_hh_r_mean + phase_hh_r_ci, phase_hh_r_p,
-            phase_h_r_mean, phase_h_r_mean - phase_h_r_ci, phase_h_r_mean + phase_h_r_ci, phase_h_r_p,
+            phase_hh_r_mean,
+            phase_hh_r_mean - phase_hh_r_ci,
+            phase_hh_r_mean + phase_hh_r_ci,
+            phase_hh_r_p,
+            phase_h_r_mean,
+            phase_h_r_mean - phase_h_r_ci,
+            phase_h_r_mean + phase_h_r_ci,
+            phase_h_r_p,
         ));
         eprintln!("{}", phase_report);
-        write_with_log(
-            out_dir.join("paper_e6_phase_coherence.txt"),
-            phase_report,
-        )?;
+        write_with_log(out_dir.join("paper_e6_phase_coherence.txt"), phase_report)?;
     }
 
     // ── Topology generalization sweep (varying env partials) ────────────
@@ -6015,7 +6548,9 @@ fn plot_e6_integration_figure(
                         env_partials: Some(*n_partials),
                     };
                     let result = run_e6(&cfg);
-                    let final_c = result.snapshots.last()
+                    let final_c = result
+                        .snapshots
+                        .last()
                         .map(|s| {
                             let pt = e6_snapshot_point(&s.freqs_hz, anchor_hz, &eval_landscape);
                             pt.mean_c_score
@@ -6027,7 +6562,9 @@ fn plot_e6_integration_figure(
             }
             let n = E6_SEEDS.len();
             let tm = |i: usize| tc_finals[i].iter().sum::<f32>() / n as f32;
-            let contrasts: Vec<f32> = tc_finals[0].iter().zip(&tc_finals[1])
+            let contrasts: Vec<f32> = tc_finals[0]
+                .iter()
+                .zip(&tc_finals[1])
                 .zip(tc_finals[2].iter().zip(&tc_finals[3]))
                 .map(|((&h, &hh), (&r, &rh))| hh - h - rh + r)
                 .collect();
@@ -6036,8 +6573,15 @@ fn plot_e6_integration_figure(
             let (tc_p, _) = permutation_pvalue_one_sample(&contrasts, 100_000, 0xBEEF ^ 0xCEA1);
             topo_report.push_str(&format!(
                 "{:<32} {:.3}   {:.3}   {:.3}   {:.3}   {:.3}     [{:.3}, {:.3}]  {:.4}\n",
-                tlabel, tm(0), tm(1), tm(2), tm(3),
-                tc_mean, tc_mean - tc_ci, tc_mean + tc_ci, tc_p,
+                tlabel,
+                tm(0),
+                tm(1),
+                tm(2),
+                tm(3),
+                tc_mean,
+                tc_mean - tc_ci,
+                tc_mean + tc_ci,
+                tc_p,
             ));
         }
         eprintln!("{}", topo_report);
@@ -6220,16 +6764,16 @@ where
 
     // Offset bars so they don't overlap: heredity left half, random right half
     let half = bin_width * 0.45;
-    for (hist, color, offset) in [
-        (&hist_h, PAL_H, -half / 2.0),
-        (&hist_r, PAL_R, half / 2.0),
-    ] {
-        chart.draw_series(hist.iter().enumerate().filter(|(_, h)| **h > 0.0).map(
-            |(i, h)| {
-                let x0 = lo + i as f32 * bin_width + offset;
-                Rectangle::new([(x0, 0.0), (x0 + half, *h)], color.mix(0.55).filled())
-            },
-        ))?;
+    for (hist, color, offset) in [(&hist_h, PAL_H, -half / 2.0), (&hist_r, PAL_R, half / 2.0)] {
+        chart.draw_series(
+            hist.iter()
+                .enumerate()
+                .filter(|(_, h)| **h > 0.0)
+                .map(|(i, h)| {
+                    let x0 = lo + i as f32 * bin_width + offset;
+                    Rectangle::new([(x0, 0.0), (x0 + half, *h)], color.mix(0.55).filled())
+                }),
+        )?;
     }
 
     // Legend
@@ -6350,7 +6894,10 @@ fn e5_stratified_pitches(
 
     // Normalise scores to [0,1]
     let s_min = candidates.iter().map(|c| c.1).fold(f32::INFINITY, f32::min);
-    let s_max = candidates.iter().map(|c| c.1).fold(f32::NEG_INFINITY, f32::max);
+    let s_max = candidates
+        .iter()
+        .map(|c| c.1)
+        .fold(f32::NEG_INFINITY, f32::max);
     let s_range = (s_max - s_min).max(1e-6);
     let normed: Vec<(f32, f32)> = candidates
         .iter()
@@ -6433,9 +6980,7 @@ fn simulate_e5_stratified(
         let k_effs: Vec<f32> = match condition {
             E5Condition::Vitality => vitalities
                 .iter()
-                .map(|&v| {
-                    E5_K_TIME * e5_coupling_multiplier(v, E5_LAMBDA_V, E5_V_FLOOR)
-                })
+                .map(|&v| E5_K_TIME * e5_coupling_multiplier(v, E5_LAMBDA_V, E5_V_FLOOR))
                 .collect(),
             E5Condition::Uniform => {
                 let cm = e5_coupling_multiplier(mean_v, E5_LAMBDA_V, E5_V_FLOOR);
@@ -6445,7 +6990,8 @@ fn simulate_e5_stratified(
         };
         // Phase update (couple each agent to external kick only)
         for i in 0..E5_N_AGENTS {
-            phases[i] = kuramoto_phase_step(phases[i], omegas[i], theta_kick, k_effs[i], 0.0, E5_DT);
+            phases[i] =
+                kuramoto_phase_step(phases[i], omegas[i], theta_kick, k_effs[i], 0.0, E5_DT);
         }
         theta_kick += E5_KICK_OMEGA * E5_DT;
         // PLV tracking
@@ -6561,8 +7107,7 @@ fn simulate_e5_vitality(
             .collect();
 
         // Compute per-agent coupling (matches articulation_core coupling_multiplier_from_mode)
-        let mean_vitality: f32 =
-            vitalities.iter().copied().sum::<f32>() / E5_N_AGENTS as f32;
+        let mean_vitality: f32 = vitalities.iter().copied().sum::<f32>() / E5_N_AGENTS as f32;
 
         // Advance kick phase
         theta_kick += E5_KICK_OMEGA * E5_DT;
@@ -6580,8 +7125,7 @@ fn simulate_e5_vitality(
                 }
                 E5Condition::Control => 0.0,
             };
-            phases[i] =
-                kuramoto_phase_step(phases[i], omegas[i], theta_kick, k_eff_i, 0.0, E5_DT);
+            phases[i] = kuramoto_phase_step(phases[i], omegas[i], theta_kick, k_eff_i, 0.0, E5_DT);
         }
 
         // Per-agent PLV to kick
@@ -6653,11 +7197,7 @@ fn pearson_r_e5(agents: &[E5AgentFinal]) -> f32 {
         var_y += dy * dy;
     }
     let denom = (var_x * var_y).sqrt();
-    if denom < 1e-12 {
-        0.0
-    } else {
-        cov / denom
-    }
+    if denom < 1e-12 { 0.0 } else { cov / denom }
 }
 
 fn build_e5_delta_series(
@@ -6677,12 +7217,20 @@ fn build_e5_delta_series(
         ) else {
             continue;
         };
-        let n = lhs_res.group_plv_series.len().min(rhs_res.group_plv_series.len());
+        let n = lhs_res
+            .group_plv_series
+            .len()
+            .min(rhs_res.group_plv_series.len());
         if n == 0 {
             continue;
         }
         first_len = Some(n);
-        t_axis = lhs_res.group_plv_series.iter().take(n).map(|(t, _)| *t).collect();
+        t_axis = lhs_res
+            .group_plv_series
+            .iter()
+            .take(n)
+            .map(|(t, _)| *t)
+            .collect();
         break;
     }
 
@@ -6920,7 +7468,9 @@ fn render_e1_plot(
         if x >= x_min && x <= x_max {
             chart_h.draw_series(std::iter::once(DashedPathElement::new(
                 vec![(x, 0.0), (x, y01_max)].into_iter(),
-                8, 6, ratio_guide_style,
+                8,
+                6,
+                ratio_guide_style,
             )))?;
         }
     }
@@ -6964,7 +7514,9 @@ fn render_e1_plot(
         if x >= x_min && x <= x_max {
             chart_r.draw_series(std::iter::once(DashedPathElement::new(
                 vec![(x, 0.0), (x, y01_max)].into_iter(),
-                8, 6, ratio_guide_style,
+                8,
+                6,
+                ratio_guide_style,
             )))?;
         }
     }
@@ -7008,7 +7560,9 @@ fn render_e1_plot(
         if x >= x_min && x <= x_max {
             chart_c.draw_series(std::iter::once(DashedPathElement::new(
                 vec![(x, c_y_min), (x, c_y_max)].into_iter(),
-                8, 6, ratio_guide_style,
+                8,
+                6,
+                ratio_guide_style,
             )))?;
         }
     }
@@ -7052,7 +7606,9 @@ fn render_e1_plot(
         if x >= x_min && x <= x_max {
             chart_d.draw_series(std::iter::once(DashedPathElement::new(
                 vec![(x, d_y_min), (x, d_y_max)].into_iter(),
-                8, 6, ratio_guide_style,
+                8,
+                6,
+                ratio_guide_style,
             )))?;
         }
     }
@@ -16861,10 +17417,7 @@ fn update_agent_indices_scored_stats_with_order(
     }
     let skip_penalty = crowding_weight <= 0.0;
     let prev_indices = indices.to_vec();
-    let prev_erb: Vec<f32> = prev_indices
-        .iter()
-        .map(|&idx| erb_scan[idx])
-        .collect();
+    let prev_erb: Vec<f32> = prev_indices.iter().map(|&idx| erb_scan[idx]).collect();
     let mut next_indices = prev_indices.clone();
     let mut score_sum = 0.0f32;
     let mut score_count = 0u32;
@@ -17026,8 +17579,7 @@ fn update_one_agent_scored_loo(
         }
     }
     let c_score_current = c_score_scan[agent_idx];
-    let current_score = score_sign * c_score_current
-        - crowding_weight * current_crowding;
+    let current_score = score_sign * c_score_current - crowding_weight * current_crowding;
 
     let backtrack_target = if block_backtrack {
         backtrack_targets.and_then(|prev| prev.get(agent_i).copied())
@@ -17059,8 +17611,7 @@ fn update_one_agent_scored_loo(
                 }
             }
             let c_score = c_score_scan[cand];
-            let score = score_sign * c_score
-                - crowding_weight * crowding;
+            let score = score_sign * c_score - crowding_weight * crowding;
             if let Some(prev_idx) = backtrack_target
                 && cand == prev_idx
                 && (score - current_score) <= E2_BACKTRACK_ALLOW_EPS
@@ -17165,10 +17716,7 @@ fn update_e2_sweep_scored_loo(
     } else {
         vec![0.0; indices.len()]
     };
-    let prev_erb: Vec<f32> = prev_indices
-        .iter()
-        .map(|&idx| erb_scan[idx])
-        .collect();
+    let prev_erb: Vec<f32> = prev_indices.iter().map(|&idx| erb_scan[idx]).collect();
     let mut env_loo = vec![0.0f32; env_total.len()];
     let mut density_loo = vec![0.0f32; density_total.len()];
     let mut c_score_current_sum = 0.0f32;
@@ -17338,10 +17886,7 @@ fn update_e2_sweep_prescored(
     } else {
         vec![0.0; indices.len()]
     };
-    let prev_erb: Vec<f32> = prev_indices
-        .iter()
-        .map(|&idx| erb_scan[idx])
-        .collect();
+    let prev_erb: Vec<f32> = prev_indices.iter().map(|&idx| erb_scan[idx]).collect();
     let mut c_score_current_sum = 0.0f32;
     let mut c_score_current_count = 0u32;
     let mut c_score_chosen_sum = 0.0f32;
@@ -17370,15 +17915,16 @@ fn update_e2_sweep_prescored(
         let mut current_crowding = 0.0f32;
         if !skip_penalty {
             for (j, &other_erb) in prev_erb.iter().enumerate() {
-                if j == agent_i { continue; }
+                if j == agent_i {
+                    continue;
+                }
                 let d_erb = current_erb - other_erb;
 
                 current_crowding += crowding_runtime_delta_erb(kernel_params, d_erb);
             }
         }
         let c_score_current = prescored_c_score_scan[agent_idx];
-        let current_score = score_sign * c_score_current
-            - crowding_weight * current_crowding;
+        let current_score = score_sign * c_score_current - crowding_weight * current_crowding;
 
         let backtrack_target = if block_backtrack {
             backtrack_targets.and_then(|prev| prev.get(agent_i).copied())
@@ -17386,7 +17932,8 @@ fn update_e2_sweep_prescored(
             None
         };
 
-        let (chosen_idx, chosen_score_val, chosen_crowding_val, accepted_worse) = if update_allowed {
+        let (chosen_idx, chosen_score_val, chosen_crowding_val, accepted_worse) = if update_allowed
+        {
             let start = (agent_idx as isize - k as isize).max(min_idx as isize) as usize;
             let end = (agent_idx as isize + k as isize).min(max_idx as isize) as usize;
             let mut best_idx = agent_idx;
@@ -17394,20 +17941,23 @@ fn update_e2_sweep_prescored(
             let mut best_crowding = 0.0f32;
             let mut found_candidate = false;
             for cand in start..=end {
-                if cand == agent_idx { continue; }
+                if cand == agent_idx {
+                    continue;
+                }
                 let cand_erb = erb_scan[cand];
                 let mut crowding = 0.0f32;
                 if !skip_penalty {
                     for (j, &other_erb) in prev_erb.iter().enumerate() {
-                        if j == agent_i { continue; }
+                        if j == agent_i {
+                            continue;
+                        }
                         let d_erb = cand_erb - other_erb;
 
                         crowding += crowding_runtime_delta_erb(kernel_params, d_erb);
                     }
                 }
                 let c_score = prescored_c_score_scan[cand];
-                let score = score_sign * c_score
-                    - crowding_weight * crowding;
+                let score = score_sign * c_score - crowding_weight * crowding;
                 if let Some(prev_idx) = backtrack_target
                     && cand == prev_idx
                     && (score - current_score) <= E2_BACKTRACK_ALLOW_EPS
@@ -17426,7 +17976,8 @@ fn update_e2_sweep_prescored(
                 if delta > E2_SCORE_IMPROVE_EPS {
                     (best_idx, best_score, best_crowding, false)
                 } else if delta < 0.0 {
-                    let (accept, acc_worse) = metropolis_accept(delta, temperature, u01_by_agent[agent_i]);
+                    let (accept, acc_worse) =
+                        metropolis_accept(delta, temperature, u01_by_agent[agent_i]);
                     if accept {
                         (best_idx, best_score, best_crowding, acc_worse)
                     } else {
@@ -17449,21 +18000,53 @@ fn update_e2_sweep_prescored(
         let abs_delta_moved = if moved { abs_delta } else { 0.0 };
         let c_score_chosen = prescored_c_score_scan[chosen_idx];
 
-        if moved { moved_count += 1; }
-        if accepted_worse { accepted_worse_count += 1; }
+        if moved {
+            moved_count += 1;
+        }
+        if accepted_worse {
+            accepted_worse_count += 1;
+        }
         abs_delta_sum += abs_delta;
         abs_delta_moved_sum += abs_delta_moved;
-        if c_score_current.is_finite() { c_score_current_sum += c_score_current; c_score_current_count += 1; }
-        if c_score_chosen.is_finite() { c_score_chosen_sum += c_score_chosen; c_score_chosen_count += 1; }
-        if chosen_score_val.is_finite() { score_sum += chosen_score_val; score_count += 1; }
-        if chosen_crowding_val.is_finite() { crowding_sum += chosen_crowding_val; crowding_count += 1; }
+        if c_score_current.is_finite() {
+            c_score_current_sum += c_score_current;
+            c_score_current_count += 1;
+        }
+        if c_score_chosen.is_finite() {
+            c_score_chosen_sum += c_score_chosen;
+            c_score_chosen_count += 1;
+        }
+        if chosen_score_val.is_finite() {
+            score_sum += chosen_score_val;
+            score_count += 1;
+        }
+        if chosen_crowding_val.is_finite() {
+            crowding_sum += chosen_crowding_val;
+            crowding_count += 1;
+        }
     }
 
     let n = indices.len() as f32;
-    let mean_c_score_current_loo = if c_score_current_count > 0 { c_score_current_sum / c_score_current_count as f32 } else { 0.0 };
-    let mean_c_score_chosen_loo = if c_score_chosen_count > 0 { c_score_chosen_sum / c_score_chosen_count as f32 } else { 0.0 };
-    let mean_score = if score_count > 0 { score_sum / score_count as f32 } else { 0.0 };
-    let mean_crowding = if crowding_count > 0 { crowding_sum / crowding_count as f32 } else { 0.0 };
+    let mean_c_score_current_loo = if c_score_current_count > 0 {
+        c_score_current_sum / c_score_current_count as f32
+    } else {
+        0.0
+    };
+    let mean_c_score_chosen_loo = if c_score_chosen_count > 0 {
+        c_score_chosen_sum / c_score_chosen_count as f32
+    } else {
+        0.0
+    };
+    let mean_score = if score_count > 0 {
+        score_sum / score_count as f32
+    } else {
+        0.0
+    };
+    let mean_crowding = if crowding_count > 0 {
+        crowding_sum / crowding_count as f32
+    } else {
+        0.0
+    };
     UpdateStats {
         mean_c_score_current_loo,
         mean_c_score_chosen_loo,
@@ -17472,9 +18055,17 @@ fn update_e2_sweep_prescored(
         moved_frac: moved_count as f32 / n,
         accepted_worse_frac: accepted_worse_count as f32 / n,
         attempted_update_frac: attempt_count as f32 / n,
-        moved_given_attempt_frac: if attempt_count > 0 { moved_count as f32 / attempt_count as f32 } else { 0.0 },
+        moved_given_attempt_frac: if attempt_count > 0 {
+            moved_count as f32 / attempt_count as f32
+        } else {
+            0.0
+        },
         mean_abs_delta_semitones: abs_delta_sum / n,
-        mean_abs_delta_semitones_moved: if moved_count > 0 { abs_delta_moved_sum / moved_count as f32 } else { 0.0 },
+        mean_abs_delta_semitones_moved: if moved_count > 0 {
+            abs_delta_moved_sum / moved_count as f32
+        } else {
+            0.0
+        },
     }
 }
 
@@ -17584,10 +18175,7 @@ fn update_agent_indices_scored_stats_with_order_loo(
     space.assert_scan_len_named(du_scan, "du_scan");
     let skip_penalty = crowding_weight <= 0.0;
     let prev_indices = indices.to_vec();
-    let prev_erb: Vec<f32> = prev_indices
-        .iter()
-        .map(|&idx| erb_scan[idx])
-        .collect();
+    let prev_erb: Vec<f32> = prev_indices.iter().map(|&idx| erb_scan[idx]).collect();
     let u01_by_agent: Vec<f32> = (0..prev_indices.len())
         .map(|_| rng.random::<f32>())
         .collect();
@@ -17647,8 +18235,7 @@ fn update_agent_indices_scored_stats_with_order_loo(
             c_score_current_sum += c_score_current;
             c_score_current_count += 1;
         }
-        let current_score = score_sign * c_score_current
-            - crowding_weight * current_crowding;
+        let current_score = score_sign * c_score_current - crowding_weight * current_crowding;
         let update_allowed = e2_should_attempt_update(agent_i, step, u_move_by_agent[agent_i]);
         if update_allowed {
             attempt_count += 1;
@@ -17682,8 +18269,7 @@ fn update_agent_indices_scored_stats_with_order_loo(
                     }
                 }
                 let c_score = c_score_scan[cand];
-                let score = score_sign * c_score
-                    - crowding_weight * crowding;
+                let score = score_sign * c_score - crowding_weight * crowding;
                 if let Some(prev_idx) = backtrack_target {
                     if cand == prev_idx && (score - current_score) <= E2_BACKTRACK_ALLOW_EPS {
                         continue;
@@ -17846,8 +18432,7 @@ fn score_stats_at_indices(
             let d_erb = cand_erb - other_erb;
             crowding += crowding_runtime_delta_erb(kernel_params, d_erb);
         }
-        let score = score_sign * c_score_scan[idx]
-            - crowding_weight * crowding;
+        let score = score_sign * c_score_scan[idx] - crowding_weight * crowding;
         if score.is_finite() {
             score_sum += score;
             score_count += 1;
@@ -17959,6 +18544,28 @@ fn mean_c_score_loo_pair_at_indices_with_prev_reused(
         chosen_sum / chosen_count as f32
     };
     (current_mean, chosen_mean)
+}
+
+fn e2_loo_c_score_scan_for_agent_reused(
+    space: &Log2Space,
+    workspace: &ConsonanceWorkspace,
+    env_total: &[f32],
+    density_total: &[f32],
+    du_scan: &[f32],
+    prev_idx: usize,
+    env_loo: &mut Vec<f32>,
+    density_loo: &mut Vec<f32>,
+) -> Vec<f32> {
+    env_loo.resize(env_total.len(), 0.0);
+    density_loo.resize(density_total.len(), 0.0);
+    env_loo.copy_from_slice(env_total);
+    density_loo.copy_from_slice(density_total);
+    env_loo[prev_idx] = (env_loo[prev_idx] - 1.0).max(0.0);
+    let denom = du_scan[prev_idx].max(1e-12);
+    density_loo[prev_idx] = (density_loo[prev_idx] - 1.0 / denom).max(0.0);
+    let (c_score_scan, _, _, _) =
+        compute_c_score_level_scans(space, workspace, env_loo, density_loo, du_scan);
+    c_score_scan
 }
 
 fn mean_std_series(series_list: Vec<&Vec<f32>>) -> (Vec<f32>, Vec<f32>) {
@@ -18839,8 +19446,11 @@ fn draw_hist_structure_panel(
 }
 
 fn diversity_metrics_for_run(run: &E2Run) -> DiversityMetrics {
-    let mut values: Vec<f32> = run
-        .final_semitones
+    diversity_metrics_for_semitones(&run.final_semitones)
+}
+
+fn diversity_metrics_for_semitones(semitones: &[f32]) -> DiversityMetrics {
+    let mut values: Vec<f32> = semitones
         .iter()
         .copied()
         .filter(|v| v.is_finite())
@@ -20603,10 +21213,19 @@ fn draw_trajectory_panel(
         }
         let base = traj_colors[i % n_colors];
         // Vary opacity to distinguish overlapping agents
-        let alpha = 0.4 + 0.4 * ((i / n_colors) as f32 / (trajectories.len() as f32 / n_colors as f32).max(1.0)).min(1.0);
+        let alpha = 0.4
+            + 0.4
+                * ((i / n_colors) as f32 / (trajectories.len() as f32 / n_colors as f32).max(1.0))
+                    .min(1.0);
         let color = base.mix(alpha as f64);
-        let line = trace.iter().enumerate().map(|(step, &v)| (step as f32, v * 100.0));
-        chart.draw_series(LineSeries::new(line, ShapeStyle::from(&color).stroke_width(2)))?;
+        let line = trace
+            .iter()
+            .enumerate()
+            .map(|(step, &v)| (step as f32, v * 100.0));
+        chart.draw_series(LineSeries::new(
+            line,
+            ShapeStyle::from(&color).stroke_width(2),
+        ))?;
     }
     Ok(())
 }
@@ -20734,8 +21353,7 @@ fn draw_consonant_mass_panel_impl(
 
     if !subtitle.is_empty() {
         let sub_color = BLACK.mix(0.55);
-        let sub_style = TextStyle::from(("sans-serif", label_size).into_font())
-            .color(&sub_color);
+        let sub_style = TextStyle::from(("sans-serif", label_size).into_font()).color(&sub_color);
         area.draw_text(subtitle, &sub_style, (60i32, (caption_size + 6) as i32))?;
     }
 
@@ -21176,10 +21794,7 @@ fn render_e2_figure2(
         for i in 0..len {
             let cx = pairwise_centers[i] * st2c;
             chart.draw_series(std::iter::once(Rectangle::new(
-                [
-                    (cx - half, 0.0),
-                    (cx + half, pairwise_baseline_mean[i]),
-                ],
+                [(cx - half, 0.0), (cx + half, pairwise_baseline_mean[i])],
                 PAL_H.mix(0.65).filled(),
             )))?;
             let y0 = (pairwise_baseline_mean[i] - pairwise_baseline_std[i]).max(0.0);
@@ -21243,13 +21858,17 @@ fn render_e2_figure2(
         &panel_c,
         "C. Interval entropy (95% CI)",
         hist_rows,
-        29, 18, 22,
+        29,
+        18,
+        22,
     )?;
     draw_polyphony_panel(
         &panel_d,
         "D. Emergent polyphony (95% CI)",
         diversity_rows,
-        29, 18, 22,
+        29,
+        18,
+        22,
     )?;
 
     root.present()?;
@@ -22546,16 +23165,8 @@ fn render_survival_compare(
     let x_max = left_data.x_max.max(right_data.x_max);
     let left_common = survival_with_x_max(left_data, x_max);
     let right_common = survival_with_x_max(right_data, x_max);
-    render_survival_on_area(
-        &areas[0],
-        &format!("A. {left_label}"),
-        &left_common,
-    )?;
-    render_survival_on_area(
-        &areas[1],
-        &format!("B. {right_label}"),
-        &right_common,
-    )?;
+    render_survival_on_area(&areas[0], &format!("A. {left_label}"), &left_common)?;
+    render_survival_on_area(&areas[1], &format!("B. {right_label}"), &right_common)?;
     root.present()?;
     Ok(())
 }
@@ -22696,10 +23307,7 @@ fn render_survival_by_c_level(
     let root = bitmap_root(out_path, (1200, 700)).into_drawing_area();
     root.fill(&WHITE)?;
     let mut chart = ChartBuilder::on(&root)
-        .caption(
-            "Survival by C_level01 (Median Split)",
-            ("sans-serif", 20),
-        )
+        .caption("Survival by C_level01 (Median Split)", ("sans-serif", 20))
         .margin(10)
         .x_label_area_size(40)
         .y_label_area_size(60)
@@ -22820,7 +23428,10 @@ where
             }
         }
         if band.len() >= 3 {
-            chart.draw_series(std::iter::once(Polygon::new(band, color.mix(0.18).filled())))?;
+            chart.draw_series(std::iter::once(Polygon::new(
+                band,
+                color.mix(0.18).filled(),
+            )))?;
         }
 
         // Mean line
@@ -22830,7 +23441,10 @@ where
             .map(|(x, m, _)| (*x, *m))
             .collect();
         chart
-            .draw_series(LineSeries::new(line_points, ShapeStyle::from(&color).stroke_width(3)))?
+            .draw_series(LineSeries::new(
+                line_points,
+                ShapeStyle::from(&color).stroke_width(3),
+            ))?
             .label(cond.label())
             .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
     }
@@ -22998,14 +23612,12 @@ where
     if rep_control.is_some() {
         chart
             .draw_series(control_points.iter().map(|&(x, y)| {
-                Cross::new(
-                    (x, y),
-                    8,
-                    ShapeStyle::from(&PAL_E5_CONTROL).stroke_width(3),
-                )
+                Cross::new((x, y), 8, ShapeStyle::from(&PAL_E5_CONTROL).stroke_width(3))
             }))?
             .label("control")
-            .legend(|(x, y)| Cross::new((x, y), 9, ShapeStyle::from(&PAL_E5_CONTROL).stroke_width(3)));
+            .legend(|(x, y)| {
+                Cross::new((x, y), 9, ShapeStyle::from(&PAL_E5_CONTROL).stroke_width(3))
+            });
     }
     if rep_vitality.is_some() {
         chart
@@ -23036,22 +23648,23 @@ where
 
     // Add fitted guides: vitality sigmoid, control mean baseline
     if !vitality_points.is_empty()
-        && let Some(fit) = fit_e5_sigmoid(&vitality_points) {
-            let curve: Vec<(f32, f32)> = (0..=200)
-                .map(|i| {
-                    let x = i as f32 / 200.0;
-                    let y = (fit.intercept + fit.slope * e5_sigmoid_value(x, fit.c50, fit.s))
-                        .clamp(0.0, 1.05);
-                    (x, y)
-                })
-                .collect();
-            chart.draw_series(std::iter::once(DashedPathElement::new(
-                curve,
-                10,
-                8,
-                ShapeStyle::from(&PAL_E5_VITALITY.mix(0.98)).stroke_width(5),
-            )))?;
-        }
+        && let Some(fit) = fit_e5_sigmoid(&vitality_points)
+    {
+        let curve: Vec<(f32, f32)> = (0..=200)
+            .map(|i| {
+                let x = i as f32 / 200.0;
+                let y = (fit.intercept + fit.slope * e5_sigmoid_value(x, fit.c50, fit.s))
+                    .clamp(0.0, 1.05);
+                (x, y)
+            })
+            .collect();
+        chart.draw_series(std::iter::once(DashedPathElement::new(
+            curve,
+            10,
+            8,
+            ShapeStyle::from(&PAL_E5_VITALITY.mix(0.98)).stroke_width(5),
+        )))?;
+    }
     if !control_points.is_empty() {
         let mean_control =
             control_points.iter().map(|(_, y)| *y).sum::<f32>() / control_points.len() as f32;
@@ -23313,7 +23926,6 @@ fn build_survival_series(lifetimes: &[u32], max_t: usize) -> Vec<(f32, f32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     fn test_e2_run(metric: f32, seed: u64) -> E2Run {
         E2Run {
@@ -24081,10 +24693,7 @@ mod tests {
             meta.anchor_hz * 2.0,
         ];
         let scan = compute_e4_landscape_scans(&space, meta.anchor_hz, 1.0, 0.0, &freqs, &du_scan);
-        let mut indices: Vec<usize> = freqs
-            .iter()
-            .map(|f| space.nearest_index(*f))
-            .collect();
+        let mut indices: Vec<usize> = freqs.iter().map(|f| space.nearest_index(*f)).collect();
         let kernel_params = KernelParams::default();
         let before =
             bind_eval_from_indices(meta.anchor_hz, &scan.log2_ratio, &indices).harmonic_tilt;
@@ -24391,9 +25000,16 @@ mod tests {
             &kernel_params,
             false,
         );
-        let agent_score =
-            e4_diag_candidate_score(0, &indices, indices[0], &c_scan, &erb_scan, 0.0, &kernel_params)
-                .unwrap_or(0.0);
+        let agent_score = e4_diag_candidate_score(
+            0,
+            &indices,
+            indices[0],
+            &c_scan,
+            &erb_scan,
+            0.0,
+            &kernel_params,
+        )
+        .unwrap_or(0.0);
         if oracle_reach_idx == indices[0] {
             assert!((oracle_reach_score - agent_score).abs() < 1e-6);
         }
@@ -25191,6 +25807,52 @@ mod tests {
     }
 
     #[test]
+    fn proposal_render_path_has_post_switch_motion_and_scene_gain() {
+        let space = Log2Space::new(20.0, 8000.0, SPACE_BINS_PER_OCT);
+        let run = run_e2_once_proposal_cfg(
+            &space,
+            E4_ANCHOR_HZ,
+            E2_SEEDS[0],
+            E2_STEP_SEMITONES,
+            E2PhaseMode::DissonanceThenConsonance,
+            5,
+            2.0,
+        );
+        let post_moved = run
+            .moved_frac_series
+            .iter()
+            .skip(E2_PHASE_SWITCH_STEP)
+            .any(|&v| v > 0.0);
+        assert!(post_moved, "expected post-switch proposal motion");
+
+        let ji_series = e2_scene_ji_series(&run, E4_ANCHOR_HZ);
+        let ji_mid = ji_series
+            .get(E2_PHASE_SWITCH_STEP)
+            .copied()
+            .unwrap_or_default();
+        let ji_end = ji_series.last().copied().unwrap_or_default();
+        assert!(
+            ji_end > ji_mid + 0.05,
+            "expected scene JI gain after switch (mid={ji_mid}, end={ji_end})"
+        );
+
+        let loo_mid = run
+            .mean_c_score_loo_series
+            .get(E2_PHASE_SWITCH_STEP)
+            .copied()
+            .unwrap_or_default();
+        let loo_end = run
+            .mean_c_score_loo_series
+            .last()
+            .copied()
+            .unwrap_or_default();
+        assert!(
+            loo_end > loo_mid + 0.2,
+            "expected LOO gain after switch (mid={loo_mid}, end={loo_end})"
+        );
+    }
+
+    #[test]
     fn norep_mean_c_score_loo_series_is_finite() {
         assert_mean_c_score_loo_series_finite(
             E2Condition::NoCrowding,
@@ -25304,9 +25966,18 @@ mod tests {
     fn e5_pearson_r_helper_known_values() {
         // Perfect positive correlation
         let agents = vec![
-            E5AgentFinal { consonance: 0.0, plv: 0.0 },
-            E5AgentFinal { consonance: 0.5, plv: 0.5 },
-            E5AgentFinal { consonance: 1.0, plv: 1.0 },
+            E5AgentFinal {
+                consonance: 0.0,
+                plv: 0.0,
+            },
+            E5AgentFinal {
+                consonance: 0.5,
+                plv: 0.5,
+            },
+            E5AgentFinal {
+                consonance: 1.0,
+                plv: 1.0,
+            },
         ];
         let r = pearson_r_e5(&agents);
         assert!((r - 1.0).abs() < 1e-5, "expected r≈1, got {r}");
@@ -25471,7 +26142,7 @@ mod tests {
 
 /// JI ratio table: (interval_semitones, weight = 1/(p*q) for ratio p:q)
 const JI_RATIOS: [(f32, f32); 8] = [
-    (0.0, 1.000),   // 1:1
+    (0.0, 1.000),    // 1:1
     (12.0, 0.500),   // 2:1
     (7.0196, 0.167), // 3:2
     (4.9804, 0.083), // 4:3
@@ -25523,11 +26194,81 @@ fn ji_population_score(freqs_hz: &[f32], anchor_hz: f32) -> f32 {
             count += 1;
         }
     }
-    if count > 0 {
-        total / count as f32
-    } else {
-        0.0
+    if count > 0 { total / count as f32 } else { 0.0 }
+}
+
+fn e2_freqs_at_step(run: &E2Run, anchor_hz: f32, step: usize) -> Vec<f32> {
+    run.trajectory_semitones
+        .iter()
+        .filter_map(|trace| {
+            trace.get(step).copied().and_then(|st| {
+                if st.is_finite() {
+                    Some(anchor_hz * 2.0_f32.powf(st / 12.0))
+                } else {
+                    None
+                }
+            })
+        })
+        .collect()
+}
+
+fn e2_scene_ji_series(run: &E2Run, anchor_hz: f32) -> Vec<f32> {
+    let n_steps = run
+        .trajectory_semitones
+        .iter()
+        .map(|trace| trace.len())
+        .min()
+        .unwrap_or(0);
+    let mut series = Vec::with_capacity(n_steps);
+    for step in 0..n_steps {
+        let freqs = e2_freqs_at_step(run, anchor_hz, step);
+        series.push(ji_population_score(&freqs, anchor_hz));
     }
+    series
+}
+
+fn e2_scene_metrics_csv(run: &E2Run, anchor_hz: f32) -> String {
+    let ji_series = e2_scene_ji_series(run, anchor_hz);
+    let n_steps = run
+        .mean_c_series
+        .len()
+        .min(run.mean_c_level_series.len())
+        .min(run.mean_c_score_loo_series.len())
+        .min(run.mean_c_score_chosen_loo_series.len())
+        .min(run.mean_score_series.len())
+        .min(run.mean_crowding_series.len())
+        .min(run.moved_frac_series.len())
+        .min(ji_series.len());
+    let mut out = String::from(
+        "step,mean_c_field,mean_c_level,mean_c_score_loo_current,mean_c_score_loo_chosen,mean_score,mean_crowding,moved_frac,ji_scene_score,pairwise_entropy,unique_bins_25ct\n",
+    );
+    for step in 0..n_steps {
+        let semitones: Vec<f32> = run
+            .trajectory_semitones
+            .iter()
+            .filter_map(|trace| trace.get(step).copied())
+            .filter(|v| v.is_finite())
+            .collect();
+        let pairwise = pairwise_interval_samples(&semitones);
+        let pairwise_probs =
+            histogram_probabilities_fixed(&pairwise, 0.0, 12.0, E2_PAIRWISE_BIN_ST);
+        let hist = hist_structure_metrics_from_probs(&pairwise_probs);
+        let diversity = diversity_metrics_for_semitones(&semitones);
+        out.push_str(&format!(
+            "{step},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{}\n",
+            run.mean_c_series[step],
+            run.mean_c_level_series[step],
+            run.mean_c_score_loo_series[step],
+            run.mean_c_score_chosen_loo_series[step],
+            run.mean_score_series[step],
+            run.mean_crowding_series[step],
+            run.moved_frac_series[step],
+            ji_series[step],
+            hist.entropy,
+            diversity.unique_bins
+        ));
+    }
+    out
 }
 
 // ── Audio supplement Rhai generation ─────────────────────────────────────────
@@ -25577,13 +26318,16 @@ fn rhai_e2_segment(
     for (i, &agent_i) in selected.iter().enumerate() {
         let st = trajectory_semitones[agent_i][0];
         let freq = anchor_hz * 2.0_f32.powf(st / 12.0);
-        s.push_str(&format!("    let a{i} = create(agent_spec, 1).freq({freq:.2});\n"));
+        s.push_str(&format!(
+            "    let a{i} = create(agent_spec, 1).freq({freq:.2});\n"
+        ));
     }
     s.push_str("    flush();\n");
 
     let n_steps = trajectory_semitones[selected[0]].len();
     // Track previous emitted semitone per agent to suppress no-change updates
-    let mut prev_emitted: Vec<f32> = selected.iter()
+    let mut prev_emitted: Vec<f32> = selected
+        .iter()
         .map(|&ai| trajectory_semitones[ai][0])
         .collect();
 
@@ -25627,11 +26371,14 @@ fn rhai_e6_segment(
 
     // Create agents at initial freq from first snapshot
     let first = &snapshots[0].freqs_hz;
-    let mut prev_emitted: Vec<f32> = selected.iter()
+    let mut prev_emitted: Vec<f32> = selected
+        .iter()
         .map(|&ai| if ai < first.len() { first[ai] } else { 220.0 })
         .collect();
     for (i, &freq) in prev_emitted.iter().enumerate() {
-        s.push_str(&format!("    let a{i} = create(agent_spec, 1).freq({freq:.2});\n"));
+        s.push_str(&format!(
+            "    let a{i} = create(agent_spec, 1).freq({freq:.2});\n"
+        ));
     }
     s.push_str("    flush();\n");
 
@@ -25640,7 +26387,11 @@ fn rhai_e6_segment(
         s.push_str(&format!("    wait({step_sec:.4});\n"));
         let mut any_changed = false;
         for (i, &agent_i) in selected.iter().enumerate() {
-            let f1 = if agent_i < freqs.len() { freqs[agent_i] } else { continue };
+            let f1 = if agent_i < freqs.len() {
+                freqs[agent_i]
+            } else {
+                continue;
+            };
             if (f1 - prev_emitted[i]).abs() > 0.01 {
                 s.push_str(&format!("    a{i}.freq({f1:.2});\n"));
                 prev_emitted[i] = f1;
@@ -25687,10 +26438,22 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
     ];
 
     eprintln!("  [audio-rhai] Running E2 simulations...");
-    let e2_runs: Vec<E2Run> = e2_segments.iter().map(|&(seed, cond, label)| {
-        eprintln!("    E2 {label}");
-        run_e2_once(&space, anchor_hz, seed, cond, E2_STEP_SEMITONES, phase_mode, None, 0)
-    }).collect();
+    let e2_runs: Vec<E2Run> = e2_segments
+        .iter()
+        .map(|&(seed, cond, label)| {
+            eprintln!("    E2 {label}");
+            run_e2_once(
+                &space,
+                anchor_hz,
+                seed,
+                cond,
+                E2_STEP_SEMITONES,
+                phase_mode,
+                None,
+                0,
+            )
+        })
+        .collect();
 
     // ── 10_exp1_polyphony.rhai ──
     {
@@ -25701,10 +26464,15 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
              // 6 segments: 3 conditions x 2 seeds\n\
              //   E2_SEEDS[0]  = 0x{:X} = {}\n\
              //   E2_SEEDS[10] = 0x{:X} = {}",
-            AUDIO_N_SELECT_E2, E2_N_AGENTS, E2_SWEEPS, E2_STEP_SEMITONES,
+            AUDIO_N_SELECT_E2,
+            E2_N_AGENTS,
+            E2_SWEEPS,
+            E2_STEP_SEMITONES,
             E2_PHASE_SWITCH_STEP,
-            E2_SEEDS[0], E2_SEEDS[0],
-            E2_SEEDS[10], E2_SEEDS[10],
+            E2_SEEDS[0],
+            E2_SEEDS[0],
+            E2_SEEDS[10],
+            E2_SEEDS[10],
         );
         let mut rhai = rhai_replay_header(
             "10_exp1_polyphony.rhai -- E2: Hill-climbing + crowding replay",
@@ -25733,10 +26501,26 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         landscape_weight: f32,
     }
     let e6_conditions = [
-        E6AudioSeg { label: "neither",   condition: E6Condition::Random,   landscape_weight: 0.0 },
-        E6AudioSeg { label: "honly",      condition: E6Condition::Heredity, landscape_weight: 0.0 },
-        E6AudioSeg { label: "hillonly",   condition: E6Condition::Random,   landscape_weight: 0.5 },
-        E6AudioSeg { label: "both",       condition: E6Condition::Heredity, landscape_weight: 0.5 },
+        E6AudioSeg {
+            label: "neither",
+            condition: E6Condition::Random,
+            landscape_weight: 0.0,
+        },
+        E6AudioSeg {
+            label: "honly",
+            condition: E6Condition::Heredity,
+            landscape_weight: 0.0,
+        },
+        E6AudioSeg {
+            label: "hillonly",
+            condition: E6Condition::Random,
+            landscape_weight: 0.5,
+        },
+        E6AudioSeg {
+            label: "both",
+            condition: E6Condition::Heredity,
+            landscape_weight: 0.5,
+        },
     ];
     let e6_seeds: [u64; 2] = [E6_SEEDS[0], E6_SEEDS[10]];
 
@@ -25744,7 +26528,11 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
     let mut e6_results: Vec<(String, E6RunResult)> = Vec::new();
     for cond in &e6_conditions {
         for &seed in &e6_seeds {
-            let label = format!("seed{}_{}", if seed == e6_seeds[0] { "0" } else { "10" }, cond.label);
+            let label = format!(
+                "seed{}_{}",
+                if seed == e6_seeds[0] { "0" } else { "10" },
+                cond.label
+            );
             eprintln!("    E6 {label}");
             let cfg = E6RunConfig {
                 seed,
@@ -25778,9 +26566,13 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
              //\n\
              //   E6_SEEDS[0]  = {}\n\
              //   E6_SEEDS[10] = {}",
-            AUDIO_N_SELECT_E6, E6_POP_SIZE, AUDIO_E6_TAIL_SNAPSHOTS,
-            E6_SNAPSHOT_INTERVAL, AUDIO_STEP_SEC,
-            E6_SEEDS[0], E6_SEEDS[10],
+            AUDIO_N_SELECT_E6,
+            E6_POP_SIZE,
+            AUDIO_E6_TAIL_SNAPSHOTS,
+            E6_SNAPSHOT_INTERVAL,
+            AUDIO_STEP_SEC,
+            E6_SEEDS[0],
+            E6_SEEDS[10],
         );
         let mut rhai = rhai_replay_header(
             "20_integration.rhai -- E6: Heredity x hill-climbing integration replay",
@@ -25807,8 +26599,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
     // ── 00_quicklisten.rhai ──
     // 4 segments: E2 baseline seed0, E6 both seed0, E2 nohill seed0, E6 neither seed0
     {
-        let detail =
-            "// 4 segments (curated highlights):\n\
+        let detail = "// 4 segments (curated highlights):\n\
              //   1. E2 baseline  (seed 0) -- hill-climbing + crowding\n\
              //   2. E6 both      (seed 0) -- heredity + hill-climbing\n\
              //   3. E2 no-hill   (seed 0) -- crowding only\n\
@@ -25833,7 +26624,12 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         let snaps = &e6_both_seed0.snapshots;
         let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
         let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
-        rhai.push_str(&rhai_e6_segment("ql2_e6_both", &tail, &e6_selected, AUDIO_STEP_SEC));
+        rhai.push_str(&rhai_e6_segment(
+            "ql2_e6_both",
+            &tail,
+            &e6_selected,
+            AUDIO_STEP_SEC,
+        ));
         rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
 
         // Segment 3: E2 nohill seed0 (index 1)
@@ -25851,7 +26647,12 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         let snaps = &e6_neither_seed0.snapshots;
         let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
         let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
-        rhai.push_str(&rhai_e6_segment("ql4_e6_neither", &tail, &e6_selected, AUDIO_STEP_SEC));
+        rhai.push_str(&rhai_e6_segment(
+            "ql4_e6_neither",
+            &tail,
+            &e6_selected,
+            AUDIO_STEP_SEC,
+        ));
 
         write_with_log(out_dir.join("00_quicklisten.rhai"), rhai)?;
     }
@@ -25884,12 +26685,12 @@ pub fn generate_e2_replay_wav(output_path: &Path) -> io::Result<()> {
     ];
 
     // Timing
-    let step_sec: f32 = 0.12;           // per sweep step
-    let attack_sec: f32 = 0.005;        // sharp attack
-    let sustain_sec: f32 = 0.06;        // sustain plateau
-    let _release_sec: f32 = 0.055;      // fade to silence before next step
-    let gap_sec: f32 = 1.0;             // silence between segments
-    let agent_amp: f32 = 0.12;          // per-agent amplitude
+    let step_sec: f32 = 0.12; // per sweep step
+    let attack_sec: f32 = 0.005; // sharp attack
+    let sustain_sec: f32 = 0.06; // sustain plateau
+    let _release_sec: f32 = 0.055; // fade to silence before next step
+    let gap_sec: f32 = 1.0; // silence between segments
+    let agent_amp: f32 = 0.12; // per-agent amplitude
 
     let step_samples = (step_sec * sr) as usize;
     let attack_samples = (attack_sec * sr) as usize;
@@ -25900,9 +26701,7 @@ pub fn generate_e2_replay_wav(output_path: &Path) -> io::Result<()> {
 
     // Select 8 agents evenly from 24
     let n_select = 8usize;
-    let selected: Vec<usize> = (0..n_select)
-        .map(|k| k * E2_N_AGENTS / n_select)
-        .collect();
+    let selected: Vec<usize> = (0..n_select).map(|k| k * E2_N_AGENTS / n_select).collect();
 
     // Collect all samples
     let mut all_samples: Vec<f32> = Vec::new();
@@ -25916,8 +26715,14 @@ pub fn generate_e2_replay_wav(output_path: &Path) -> io::Result<()> {
         );
 
         let run = run_e2_once(
-            &space, anchor_hz, seed, condition,
-            E2_STEP_SEMITONES, phase_mode, None, 0,
+            &space,
+            anchor_hz,
+            seed,
+            condition,
+            E2_STEP_SEMITONES,
+            phase_mode,
+            None,
+            0,
         );
 
         let n_steps = run.trajectory_semitones[0].len();
@@ -25926,10 +26731,13 @@ pub fn generate_e2_replay_wav(output_path: &Path) -> io::Result<()> {
 
         for step in 0..n_steps {
             // Frequencies for this step
-            let freqs: Vec<f32> = selected.iter().map(|&g| {
-                let st = run.trajectory_semitones[g][step];
-                anchor_hz * 2.0_f32.powf(st / 12.0)
-            }).collect();
+            let freqs: Vec<f32> = selected
+                .iter()
+                .map(|&g| {
+                    let st = run.trajectory_semitones[g][step];
+                    anchor_hz * 2.0_f32.powf(st / 12.0)
+                })
+                .collect();
 
             // Render step_samples of audio
             for s in 0..step_samples {
@@ -25947,7 +26755,9 @@ pub fn generate_e2_replay_wav(output_path: &Path) -> io::Result<()> {
                 let mut sample = 0.0f32;
                 for (i, &freq) in freqs.iter().enumerate() {
                     phases[i] += freq * TAU / sr;
-                    if phases[i] > TAU { phases[i] -= TAU; }
+                    if phases[i] > TAU {
+                        phases[i] -= TAU;
+                    }
                     sample += phases[i].sin() * agent_amp * env;
                 }
                 all_samples.push(sample);
@@ -25983,20 +26793,993 @@ pub fn generate_e2_replay_wav(output_path: &Path) -> io::Result<()> {
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     for &s in &all_samples {
         let i16_val = (s * 32767.0).clamp(-32768.0, 32767.0) as i16;
-        writer.write_sample(i16_val)
+        writer
+            .write_sample(i16_val)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     }
-    writer.finalize()
+    writer
+        .finalize()
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
     let duration_sec = all_samples.len() as f32 / sr;
     eprintln!(
         "Wrote {} ({:.1}s, {} samples, peak={:.3})",
-        output_path.display(), duration_sec, all_samples.len(), peak
+        output_path.display(),
+        duration_sec,
+        all_samples.len(),
+        peak
     );
     Ok(())
 }
 
+fn e2_range_oct_tag(range_oct: f32) -> String {
+    if (range_oct - range_oct.round()).abs() < 1e-6 {
+        format!("r{}oct", range_oct.round() as i32)
+    } else {
+        format!("r{:.1}oct", range_oct).replace('.', "p")
+    }
+}
+
+fn e2_baseline_summary_csv(
+    stem: &str,
+    mode: &str,
+    run: &E2Run,
+    anchor_hz: f32,
+    render_partials: u32,
+    range_oct: f32,
+) -> String {
+    let init_c = run.mean_c_series.first().copied().unwrap_or(0.0);
+    let mid_c = run
+        .mean_c_series
+        .get(E2_PHASE_SWITCH_STEP.min(run.mean_c_series.len().saturating_sub(1)))
+        .copied()
+        .unwrap_or(init_c);
+    let end_c = run.mean_c_series.last().copied().unwrap_or(init_c);
+    let init_level = run.mean_c_level_series.first().copied().unwrap_or(0.0);
+    let mid_level = run
+        .mean_c_level_series
+        .get(E2_PHASE_SWITCH_STEP.min(run.mean_c_level_series.len().saturating_sub(1)))
+        .copied()
+        .unwrap_or(init_level);
+    let end_level = run
+        .mean_c_level_series
+        .last()
+        .copied()
+        .unwrap_or(init_level);
+    let init_loo = run.mean_c_score_loo_series.first().copied().unwrap_or(0.0);
+    let mid_loo = run
+        .mean_c_score_loo_series
+        .get(E2_PHASE_SWITCH_STEP.min(run.mean_c_score_loo_series.len().saturating_sub(1)))
+        .copied()
+        .unwrap_or(init_loo);
+    let end_loo = run
+        .mean_c_score_loo_series
+        .last()
+        .copied()
+        .unwrap_or(init_loo);
+    let ji_series = e2_scene_ji_series(run, anchor_hz);
+    let init_ji = ji_series.first().copied().unwrap_or(0.0);
+    let mid_ji = ji_series
+        .get(E2_PHASE_SWITCH_STEP.min(ji_series.len().saturating_sub(1)))
+        .copied()
+        .unwrap_or(init_ji);
+    let end_ji = ji_series.last().copied().unwrap_or(init_ji);
+    let moved_pre = run
+        .moved_frac_series
+        .iter()
+        .take(E2_PHASE_SWITCH_STEP)
+        .copied()
+        .sum::<f32>()
+        / E2_PHASE_SWITCH_STEP.max(1) as f32;
+    let moved_post_len = run
+        .moved_frac_series
+        .len()
+        .saturating_sub(E2_PHASE_SWITCH_STEP);
+    let moved_post = if moved_post_len > 0 {
+        run.moved_frac_series
+            .iter()
+            .skip(E2_PHASE_SWITCH_STEP)
+            .copied()
+            .sum::<f32>()
+            / moved_post_len as f32
+    } else {
+        0.0
+    };
+    let mut out = String::from(
+        "file,mode,seed,condition,n_agents,render_partials,range_octaves,steps,mean_c_init,mean_c_mid,mean_c_end,delta_mean_c,mean_c_level_init,mean_c_level_mid,mean_c_level_end,delta_mean_c_level,mean_c_score_loo_init,mean_c_score_loo_mid,mean_c_score_loo_end,delta_mean_c_score_loo,ji_scene_init,ji_scene_mid,ji_scene_end,delta_ji_scene,moved_pre,moved_post\n",
+    );
+    out.push_str(&format!(
+        "{stem},{mode},{},baseline,{},{},{:.1},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
+        run.seed,
+        run.n_agents,
+        render_partials,
+        range_oct,
+        run.mean_c_series.len(),
+        init_c,
+        mid_c,
+        end_c,
+        end_c - init_c,
+        init_level,
+        mid_level,
+        end_level,
+        end_level - init_level,
+        init_loo,
+        mid_loo,
+        end_loo,
+        end_loo - init_loo,
+        init_ji,
+        mid_ji,
+        end_ji,
+        end_ji - init_ji,
+        moved_pre,
+        moved_post,
+    ));
+    out
+}
+
+fn e2_moves_csv(run: &E2Run) -> String {
+    let mut out = String::from("agent_id,step,semitone_before,semitone_after,delta_semitones\n");
+    for (agent_id, semis) in run.trajectory_semitones.iter().enumerate() {
+        for step in 1..semis.len() {
+            let before = semis[step - 1];
+            let after = semis[step];
+            let delta = after - before;
+            if delta.abs() > E2_SEMITONE_EPS {
+                out.push_str(&format!(
+                    "{agent_id},{step},{before:.6},{after:.6},{delta:.6}\n"
+                ));
+            }
+        }
+    }
+    out
+}
+
+fn render_e2_trajectory_wav(
+    output_path: &Path,
+    trajectory_semitones: &[Vec<f32>],
+    anchor_hz: f32,
+    render_partials: u32,
+    continuous: bool,
+) -> io::Result<()> {
+    use std::f32::consts::TAU;
+
+    if trajectory_semitones.is_empty() {
+        return Ok(());
+    }
+    let n_agents = trajectory_semitones.len();
+    let n_steps = trajectory_semitones[0].len();
+    if n_steps == 0 {
+        return Ok(());
+    }
+
+    let sample_rate: u32 = 48_000;
+    let sr = sample_rate as f32;
+    let step_sec: f32 = 0.12;
+    let step_samples = (step_sec * sr) as usize;
+    let attack_sec: f32 = 0.006;
+    let sustain_sec: f32 = 0.06;
+    let attack_samples = (attack_sec * sr) as usize;
+    let sustain_samples = (sustain_sec * sr) as usize;
+    let release_start = attack_samples + sustain_samples;
+    let release_samples = step_samples.saturating_sub(release_start).max(1);
+    let partials = render_partials.clamp(1, 16) as usize;
+    let harmonic_norm = (1..=partials)
+        .map(|k| 1.0 / k as f32)
+        .sum::<f32>()
+        .max(1e-6);
+    let agent_amp = 0.22f32;
+    let mut phases = vec![0.0f32; n_agents * partials];
+    let mut all_samples = Vec::with_capacity(n_steps * step_samples);
+
+    for step in 0..n_steps {
+        let current_freqs: Vec<f32> = trajectory_semitones
+            .iter()
+            .map(|semis| anchor_hz * 2.0_f32.powf(semis[step] / 12.0))
+            .collect();
+        let next_freqs: Vec<f32> = if continuous && step + 1 < n_steps {
+            trajectory_semitones
+                .iter()
+                .map(|semis| anchor_hz * 2.0_f32.powf(semis[step + 1] / 12.0))
+                .collect()
+        } else {
+            current_freqs.clone()
+        };
+
+        for s in 0..step_samples {
+            let env = if continuous {
+                1.0
+            } else if s < attack_samples {
+                s as f32 / attack_samples.max(1) as f32
+            } else if s < release_start {
+                1.0
+            } else {
+                let t = (s - release_start) as f32 / release_samples as f32;
+                (1.0 - t).max(0.0)
+            };
+            let t = s as f32 / step_samples.max(1) as f32;
+            let mut sample = 0.0f32;
+            for (agent_i, (&freq0, &freq1)) in
+                current_freqs.iter().zip(next_freqs.iter()).enumerate()
+            {
+                let base_freq = if continuous {
+                    freq0 + (freq1 - freq0) * t
+                } else {
+                    freq0
+                };
+                for partial_idx in 0..partials {
+                    let harmonic = (partial_idx + 1) as f32;
+                    let freq = base_freq * harmonic;
+                    let phase_slot = agent_i * partials + partial_idx;
+                    phases[phase_slot] += freq * TAU / sr;
+                    if phases[phase_slot] > TAU {
+                        phases[phase_slot] -= TAU;
+                    }
+                    let weight = (1.0 / harmonic) / harmonic_norm;
+                    sample += phases[phase_slot].sin() * agent_amp * weight * env;
+                }
+            }
+            all_samples.push(sample);
+        }
+    }
+
+    let peak = all_samples
+        .iter()
+        .map(|s| s.abs())
+        .fold(0.0f32, f32::max)
+        .max(1e-6);
+    let scale = if peak > 0.95 { 0.9 / peak } else { 1.0 };
+    for s in &mut all_samples {
+        *s *= scale;
+    }
+
+    if let Some(parent) = output_path.parent() {
+        create_dir_all(parent)?;
+    }
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(output_path, spec).map_err(io::Error::other)?;
+    for &s in &all_samples {
+        let i16_val = (s * 32767.0).clamp(-32768.0, 32767.0) as i16;
+        writer.write_sample(i16_val).map_err(io::Error::other)?;
+    }
+    writer.finalize().map_err(io::Error::other)?;
+    eprintln!("Wrote {}", output_path.display());
+    Ok(())
+}
+
+fn build_pitch_core_landscape(
+    space: &Log2Space,
+    workspace: &ConsonanceWorkspace,
+    env_scan: &[f32],
+    density_scan: &[f32],
+    du_scan: &[f32],
+) -> (Landscape, Vec<f32>, Vec<f32>, f32, RState01Stats) {
+    let (c_score_scan, c_level_scan, density_mass, r_state_stats) =
+        compute_c_score_level_scans(space, workspace, env_scan, density_scan, du_scan);
+    let mut landscape = Landscape::new(space.clone());
+    landscape.roughness_kernel_params = KernelParams::default();
+    landscape.consonance_field_score = c_score_scan.clone();
+    landscape.consonance_field_level = c_level_scan.clone();
+    landscape.subjective_intensity = env_scan.to_vec();
+    (
+        landscape,
+        c_score_scan,
+        c_level_scan,
+        density_mass,
+        r_state_stats,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn e2_objective_score_at_log2(
+    space: &Log2Space,
+    c_score_scan: &[f32],
+    erb_scan: &[f32],
+    prev_erb: &[f32],
+    self_agent_i: usize,
+    pitch_log2: f32,
+    min_idx: usize,
+    max_idx: usize,
+    score_sign: f32,
+    crowding_weight: f32,
+    kernel_params: &KernelParams,
+) -> (usize, f32, f32) {
+    let idx = space
+        .index_of_log2(pitch_log2)
+        .unwrap_or_else(|| space.nearest_index(2.0_f32.powf(pitch_log2)))
+        .clamp(min_idx, max_idx);
+    let cand_erb = erb_scan[idx];
+    let mut crowding = 0.0f32;
+    for (j, &other_erb) in prev_erb.iter().enumerate() {
+        if j == self_agent_i {
+            continue;
+        }
+        crowding += crowding_runtime_delta_erb(kernel_params, cand_erb - other_erb);
+    }
+    let score = score_sign * c_score_scan[idx] - crowding_weight * crowding;
+    (idx, score, crowding)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn update_e2_sweep_pitch_core_proposal(
+    schedule: E2UpdateSchedule,
+    indices: &mut [usize],
+    prev_indices: &[usize],
+    pitch_cores: &mut [PitchHillClimbPitchCore],
+    space: &Log2Space,
+    landscape: &Landscape,
+    workspace: &ConsonanceWorkspace,
+    env_total: &[f32],
+    density_total: &[f32],
+    du_scan: &[f32],
+    erb_scan: &[f32],
+    log2_ratio_scan: &[f32],
+    min_idx: usize,
+    max_idx: usize,
+    score_sign: f32,
+    crowding_weight: f32,
+    kernel_params: &KernelParams,
+    temperature: f32,
+    sweep: usize,
+    rng: &mut StdRng,
+) -> UpdateStats {
+    if indices.is_empty() {
+        return UpdateStats {
+            mean_c_score_current_loo: 0.0,
+            mean_c_score_chosen_loo: 0.0,
+            mean_score: 0.0,
+            mean_crowding: 0.0,
+            moved_frac: 0.0,
+            accepted_worse_frac: 0.0,
+            attempted_update_frac: 0.0,
+            moved_given_attempt_frac: 0.0,
+            mean_abs_delta_semitones: 0.0,
+            mean_abs_delta_semitones_moved: 0.0,
+        };
+    }
+
+    debug_assert_eq!(indices.len(), pitch_cores.len());
+    let mut order: Vec<usize> = (0..indices.len()).collect();
+    if matches!(schedule, E2UpdateSchedule::RandomSingle) {
+        order.shuffle(rng);
+    }
+    let u_move_by_agent: Vec<f32> = if matches!(schedule, E2UpdateSchedule::Lazy) {
+        (0..indices.len()).map(|_| rng.random::<f32>()).collect()
+    } else {
+        vec![0.0; indices.len()]
+    };
+    let u01_by_agent: Vec<f32> = (0..indices.len()).map(|_| rng.random::<f32>()).collect();
+    let prev_erb: Vec<f32> = prev_indices.iter().map(|&idx| erb_scan[idx]).collect();
+    let mut env_loo = Vec::new();
+    let mut density_loo = Vec::new();
+    let mut c_score_current_sum = 0.0f32;
+    let mut c_score_current_count = 0u32;
+    let mut c_score_chosen_sum = 0.0f32;
+    let mut c_score_chosen_count = 0u32;
+    let mut score_sum = 0.0f32;
+    let mut score_count = 0u32;
+    let mut crowding_sum = 0.0f32;
+    let mut crowding_count = 0u32;
+    let mut abs_delta_sum = 0.0f32;
+    let mut abs_delta_moved_sum = 0.0f32;
+    let mut attempt_count = 0usize;
+    let mut moved_count = 0usize;
+    let mut accepted_worse_count = 0usize;
+
+    for &agent_i in &order {
+        let base_update_allowed = match schedule {
+            E2UpdateSchedule::Checkerboard => (agent_i + sweep).is_multiple_of(2),
+            E2UpdateSchedule::Lazy => u_move_by_agent[agent_i] < E2_LAZY_MOVE_PROB.clamp(0.0, 1.0),
+            E2UpdateSchedule::RandomSingle => true,
+        };
+
+        let agent_idx = prev_indices[agent_i];
+        let loo_c_score_scan = e2_loo_c_score_scan_for_agent_reused(
+            space,
+            workspace,
+            env_total,
+            density_total,
+            du_scan,
+            agent_idx,
+            &mut env_loo,
+            &mut density_loo,
+        );
+        let current_pitch_log2 = space.centers_hz[agent_idx].log2();
+        let (_, current_score, current_crowding) = e2_objective_score_at_log2(
+            space,
+            &loo_c_score_scan,
+            erb_scan,
+            &prev_erb,
+            agent_i,
+            current_pitch_log2,
+            min_idx,
+            max_idx,
+            score_sign,
+            crowding_weight,
+            kernel_params,
+        );
+        let c_score_current = loo_c_score_scan[agent_idx];
+        let update_allowed = base_update_allowed;
+        if update_allowed {
+            attempt_count += 1;
+        }
+
+        let (chosen_idx, chosen_score_val, chosen_crowding_val, accepted_worse) = if update_allowed
+        {
+            let neighbor_pitch_log2: Vec<f32> = prev_indices
+                .iter()
+                .enumerate()
+                .filter_map(|(j, &idx)| {
+                    if j == agent_i {
+                        None
+                    } else {
+                        Some(space.centers_hz[idx].log2())
+                    }
+                })
+                .collect();
+            let proposal = pitch_cores[agent_i].propose_with_scorer(
+                current_pitch_log2,
+                current_pitch_log2,
+                landscape,
+                &neighbor_pitch_log2,
+                rng,
+                |pitch_log2| {
+                    e2_objective_score_at_log2(
+                        space,
+                        &loo_c_score_scan,
+                        erb_scan,
+                        &prev_erb,
+                        agent_i,
+                        pitch_log2,
+                        min_idx,
+                        max_idx,
+                        score_sign,
+                        crowding_weight,
+                        kernel_params,
+                    )
+                    .1
+                },
+            );
+            let (proposed_idx, cand_score, cand_crowding) = e2_objective_score_at_log2(
+                space,
+                &loo_c_score_scan,
+                erb_scan,
+                &prev_erb,
+                agent_i,
+                proposal.target_pitch_log2,
+                min_idx,
+                max_idx,
+                score_sign,
+                crowding_weight,
+                kernel_params,
+            );
+            let delta = cand_score - current_score;
+            if delta > E2_SCORE_IMPROVE_EPS {
+                (proposed_idx, cand_score, cand_crowding, false)
+            } else if delta < 0.0 {
+                let (accept, acc_worse) =
+                    metropolis_accept(delta, temperature, u01_by_agent[agent_i]);
+                if accept {
+                    (proposed_idx, cand_score, cand_crowding, acc_worse)
+                } else {
+                    (agent_idx, current_score, current_crowding, false)
+                }
+            } else {
+                (agent_idx, current_score, current_crowding, false)
+            }
+        } else {
+            (agent_idx, current_score, current_crowding, false)
+        };
+
+        indices[agent_i] = chosen_idx;
+        let moved = chosen_idx != agent_idx;
+        let delta_semitones = 12.0 * (log2_ratio_scan[chosen_idx] - log2_ratio_scan[agent_idx]);
+        let abs_delta = delta_semitones.abs();
+        let abs_delta_moved = if moved { abs_delta } else { 0.0 };
+        let c_score_chosen = loo_c_score_scan[chosen_idx];
+
+        if moved {
+            moved_count += 1;
+        }
+        if accepted_worse {
+            accepted_worse_count += 1;
+        }
+        abs_delta_sum += abs_delta;
+        abs_delta_moved_sum += abs_delta_moved;
+        if c_score_current.is_finite() {
+            c_score_current_sum += c_score_current;
+            c_score_current_count += 1;
+        }
+        if c_score_chosen.is_finite() {
+            c_score_chosen_sum += c_score_chosen;
+            c_score_chosen_count += 1;
+        }
+        if chosen_score_val.is_finite() {
+            score_sum += chosen_score_val;
+            score_count += 1;
+        }
+        if chosen_crowding_val.is_finite() {
+            crowding_sum += chosen_crowding_val;
+            crowding_count += 1;
+        }
+    }
+
+    let n = indices.len() as f32;
+    UpdateStats {
+        mean_c_score_current_loo: if c_score_current_count > 0 {
+            c_score_current_sum / c_score_current_count as f32
+        } else {
+            0.0
+        },
+        mean_c_score_chosen_loo: if c_score_chosen_count > 0 {
+            c_score_chosen_sum / c_score_chosen_count as f32
+        } else {
+            0.0
+        },
+        mean_score: if score_count > 0 {
+            score_sum / score_count as f32
+        } else {
+            0.0
+        },
+        mean_crowding: if crowding_count > 0 {
+            crowding_sum / crowding_count as f32
+        } else {
+            0.0
+        },
+        moved_frac: moved_count as f32 / n,
+        accepted_worse_frac: accepted_worse_count as f32 / n,
+        attempted_update_frac: attempt_count as f32 / n,
+        moved_given_attempt_frac: if attempt_count > 0 {
+            moved_count as f32 / attempt_count as f32
+        } else {
+            0.0
+        },
+        mean_abs_delta_semitones: abs_delta_sum / n,
+        mean_abs_delta_semitones_moved: if moved_count > 0 {
+            abs_delta_moved_sum / moved_count as f32
+        } else {
+            0.0
+        },
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_e2_once_proposal_cfg(
+    space: &Log2Space,
+    anchor_hz: f32,
+    seed: u64,
+    step_semitones: f32,
+    phase_mode: E2PhaseMode,
+    n_agents: usize,
+    range_oct: f32,
+) -> E2Run {
+    let mut rng = seeded_rng(seed);
+    let anchor_hz_current = anchor_hz;
+    let log2_ratio_scan = build_log2_ratio_scan(space, anchor_hz_current);
+    let half_range_oct = 0.5 * range_oct.max(0.01);
+    let (min_idx, max_idx) = log2_ratio_bounds(&log2_ratio_scan, -half_range_oct, half_range_oct);
+    let mut agent_indices = match E2_INIT_MODE {
+        E2InitMode::Uniform => init_e2_agent_indices_uniform(&mut rng, min_idx, max_idx, n_agents),
+        E2InitMode::RejectConsonant => init_e2_agent_indices_reject_consonant(
+            &mut rng,
+            min_idx,
+            max_idx,
+            &log2_ratio_scan,
+            n_agents,
+        ),
+    };
+
+    let (erb_scan, du_scan) = erb_grid(space);
+    let kernel_params = KernelParams::default();
+    let workspace = build_consonance_workspace(space);
+    let k_bins = k_from_semitones(step_semitones);
+    let mut pitch_cores = Vec::with_capacity(n_agents);
+    for &idx in &agent_indices {
+        let mut core = PitchHillClimbPitchCore::new(
+            step_semitones * 100.0,
+            space.centers_hz[idx].log2(),
+            0.1,
+            0.0,
+            0.0,
+            0.0,
+        );
+        core.set_global_peaks(E2_PROPOSAL_GLOBAL_PEAKS, E2_PROPOSAL_GLOBAL_MIN_SEP_CENTS);
+        core.set_ratio_candidates(false, 0);
+        core.set_move_cost_coeff(0.0);
+        core.set_improvement_threshold(0.0);
+        core.set_leave_self_out(true);
+        core.set_crowding(0.0, 60.0, true);
+        pitch_cores.push(core);
+    }
+
+    let mut mean_c_series = Vec::with_capacity(E2_SWEEPS);
+    let mut mean_c_level_series = Vec::with_capacity(E2_SWEEPS);
+    let mut mean_c_score_loo_series = Vec::with_capacity(E2_SWEEPS);
+    let mut mean_c_score_chosen_loo_series = Vec::with_capacity(E2_SWEEPS);
+    let mut mean_score_series = Vec::with_capacity(E2_SWEEPS);
+    let mut mean_crowding_series = Vec::with_capacity(E2_SWEEPS);
+    let mut moved_frac_series = Vec::with_capacity(E2_SWEEPS);
+    let mut accepted_worse_frac_series = Vec::with_capacity(E2_SWEEPS);
+    let mut attempted_update_frac_series = Vec::with_capacity(E2_SWEEPS);
+    let mut moved_given_attempt_frac_series = Vec::with_capacity(E2_SWEEPS);
+    let mut mean_abs_delta_semitones_series = Vec::with_capacity(E2_SWEEPS);
+    let mut mean_abs_delta_semitones_moved_series = Vec::with_capacity(E2_SWEEPS);
+    let mut semitone_samples_pre = Vec::new();
+    let mut semitone_samples_post = Vec::new();
+    let mut density_mass_sum = 0.0f32;
+    let mut density_mass_min = f32::INFINITY;
+    let mut density_mass_max = 0.0f32;
+    let mut density_mass_count = 0u32;
+    let mut r_state01_min = f32::INFINITY;
+    let mut r_state01_max = f32::NEG_INFINITY;
+    let mut r_state01_mean_sum = 0.0f32;
+    let mut r_state01_mean_count = 0u32;
+    let mut trajectory_semitones = (0..n_agents)
+        .map(|_| Vec::with_capacity(E2_SWEEPS))
+        .collect::<Vec<_>>();
+    let mut trajectory_c_level = (0..n_agents)
+        .map(|_| Vec::with_capacity(E2_SWEEPS))
+        .collect::<Vec<_>>();
+    let mut backtrack_targets = agent_indices.clone();
+    let phase_switch_step = phase_mode.switch_step();
+
+    let anchor_idx = space.nearest_index(anchor_hz_current);
+    for sweep in 0..E2_SWEEPS {
+        if let Some(switch_step) = phase_switch_step
+            && sweep == switch_step
+        {
+            backtrack_targets.clone_from_slice(&agent_indices);
+        }
+        let score_sign = phase_mode.score_sign(sweep);
+        let (env_scan, density_scan) = build_env_scans(space, anchor_idx, &agent_indices, &du_scan);
+        let (landscape, c_score_scan, c_level_scan, density_mass, r_state_stats) =
+            build_pitch_core_landscape(space, &workspace, &env_scan, &density_scan, &du_scan);
+
+        if density_mass.is_finite() {
+            density_mass_sum += density_mass;
+            density_mass_min = density_mass_min.min(density_mass);
+            density_mass_max = density_mass_max.max(density_mass);
+            density_mass_count += 1;
+        }
+        if r_state_stats.mean.is_finite() {
+            r_state01_min = r_state01_min.min(r_state_stats.min);
+            r_state01_max = r_state01_max.max(r_state_stats.max);
+            r_state01_mean_sum += r_state_stats.mean;
+            r_state01_mean_count += 1;
+        }
+
+        let mean_c = mean_at_indices(&c_score_scan, &agent_indices);
+        let mean_c_level = mean_at_indices(&c_level_scan, &agent_indices);
+        mean_c_series.push(mean_c);
+        mean_c_level_series.push(mean_c_level);
+
+        for (agent_id, &idx) in agent_indices.iter().enumerate() {
+            let semitone = 12.0 * log2_ratio_scan[idx];
+            trajectory_semitones[agent_id].push(semitone);
+            trajectory_c_level[agent_id].push(c_level_scan[idx]);
+        }
+        if sweep >= E2_BURN_IN {
+            let target = if sweep < E2_PHASE_SWITCH_STEP {
+                &mut semitone_samples_pre
+            } else {
+                &mut semitone_samples_post
+            };
+            target.extend(agent_indices.iter().map(|&idx| 12.0 * log2_ratio_scan[idx]));
+        }
+
+        let temperature = e2_accept_temperature(sweep, phase_mode);
+        let block_backtrack = e2_should_block_backtrack(phase_mode, sweep);
+        let positions_before_update = agent_indices.clone();
+        let stats = if score_sign < 0.0 {
+            update_e2_sweep_scored_loo(
+                E2_UPDATE_SCHEDULE,
+                &mut agent_indices,
+                &positions_before_update,
+                space,
+                &workspace,
+                &env_scan,
+                &density_scan,
+                &du_scan,
+                &erb_scan,
+                &log2_ratio_scan,
+                min_idx,
+                max_idx,
+                k_bins,
+                score_sign,
+                E2_CROWDING_WEIGHT,
+                &kernel_params,
+                temperature,
+                sweep,
+                block_backtrack,
+                if block_backtrack {
+                    Some(backtrack_targets.as_slice())
+                } else {
+                    None
+                },
+                &mut rng,
+            )
+        } else {
+            update_e2_sweep_pitch_core_proposal(
+                E2_UPDATE_SCHEDULE,
+                &mut agent_indices,
+                &positions_before_update,
+                &mut pitch_cores,
+                space,
+                &landscape,
+                &workspace,
+                &env_scan,
+                &density_scan,
+                &du_scan,
+                &erb_scan,
+                &log2_ratio_scan,
+                min_idx,
+                max_idx,
+                score_sign,
+                E2_CROWDING_WEIGHT,
+                &kernel_params,
+                temperature,
+                sweep,
+                &mut rng,
+            )
+        };
+        if block_backtrack {
+            e2_update_backtrack_targets(
+                &mut backtrack_targets,
+                &positions_before_update,
+                &agent_indices,
+            );
+        }
+        mean_c_score_loo_series.push(stats.mean_c_score_current_loo);
+        mean_c_score_chosen_loo_series.push(stats.mean_c_score_chosen_loo);
+        mean_score_series.push(stats.mean_score);
+        mean_crowding_series.push(stats.mean_crowding);
+        moved_frac_series.push(stats.moved_frac);
+        accepted_worse_frac_series.push(stats.accepted_worse_frac);
+        attempted_update_frac_series.push(stats.attempted_update_frac);
+        moved_given_attempt_frac_series.push(stats.moved_given_attempt_frac);
+        mean_abs_delta_semitones_series.push(stats.mean_abs_delta_semitones);
+        mean_abs_delta_semitones_moved_series.push(stats.mean_abs_delta_semitones_moved);
+    }
+
+    let final_semitones: Vec<f32> = agent_indices
+        .iter()
+        .map(|&idx| 12.0 * log2_ratio_scan[idx])
+        .collect();
+    let final_freqs_hz: Vec<f32> = final_semitones
+        .iter()
+        .map(|&st| anchor_hz_current * 2.0_f32.powf(st / 12.0))
+        .collect();
+    let final_log2_ratios: Vec<f32> = final_semitones.iter().map(|&st| st / 12.0).collect();
+
+    E2Run {
+        seed,
+        mean_c_series,
+        mean_c_level_series,
+        mean_c_score_loo_series,
+        mean_c_score_chosen_loo_series,
+        mean_score_series,
+        mean_crowding_series,
+        moved_frac_series,
+        accepted_worse_frac_series,
+        attempted_update_frac_series,
+        moved_given_attempt_frac_series,
+        mean_abs_delta_semitones_series,
+        mean_abs_delta_semitones_moved_series,
+        semitone_samples_pre,
+        semitone_samples_post,
+        final_semitones,
+        final_freqs_hz,
+        final_log2_ratios,
+        trajectory_semitones,
+        trajectory_c_level,
+        anchor_shift: E2AnchorShiftStats {
+            step: E2_ANCHOR_SHIFT_STEP,
+            anchor_hz_before: anchor_hz_current,
+            anchor_hz_after: anchor_hz_current * E2_ANCHOR_SHIFT_RATIO,
+            count_min: 0,
+            count_max: 0,
+            respawned: 0,
+        },
+        density_mass_mean: if density_mass_count > 0 {
+            density_mass_sum / density_mass_count as f32
+        } else {
+            0.0
+        },
+        density_mass_min: if density_mass_count > 0 {
+            density_mass_min
+        } else {
+            0.0
+        },
+        density_mass_max: if density_mass_count > 0 {
+            density_mass_max
+        } else {
+            0.0
+        },
+        r_state01_min: if r_state01_mean_count > 0 {
+            r_state01_min
+        } else {
+            0.0
+        },
+        r_state01_mean: if r_state01_mean_count > 0 {
+            r_state01_mean_sum / r_state01_mean_count as f32
+        } else {
+            0.0
+        },
+        r_state01_max: if r_state01_mean_count > 0 {
+            r_state01_max
+        } else {
+            0.0
+        },
+        r_ref_peak: workspace.r_ref_peak,
+        roughness_k: workspace.params.roughness_k,
+        roughness_ref_eps: workspace.params.roughness_ref_eps,
+        n_agents,
+        k_bins: k_from_semitones(step_semitones),
+    }
+}
+
+pub fn generate_e2_baseline_render(
+    n_agents: usize,
+    render_partials: u32,
+    range_oct: f32,
+) -> io::Result<()> {
+    let space = Log2Space::new(20.0, 8000.0, SPACE_BINS_PER_OCT);
+    let anchor_hz = E4_ANCHOR_HZ;
+    let seed = E2_SEEDS[0];
+    let run = run_e2_once_cfg(
+        &space,
+        anchor_hz,
+        seed,
+        E2Condition::Baseline,
+        E2_STEP_SEMITONES,
+        E2PhaseMode::DissonanceThenConsonance,
+        None,
+        0,
+        n_agents,
+        range_oct,
+    );
+
+    let out_dir = Path::new("supplementary_audio/audio");
+    create_dir_all(out_dir)?;
+    let stem = format!(
+        "15_exp1_replay_seed0_baseline_n{}_p{}_{}",
+        n_agents,
+        render_partials,
+        e2_range_oct_tag(range_oct)
+    );
+    let impulse_path = out_dir.join(format!("{stem}.wav"));
+    let continuous_path = out_dir.join(format!("{stem}_continuous.wav"));
+    let csv_path = out_dir.join(format!("{stem}.csv"));
+    let moves_path = out_dir.join(format!("{stem}_moves.csv"));
+    let scene_metrics_path = out_dir.join(format!("{stem}_scene_metrics.csv"));
+
+    render_e2_trajectory_wav(
+        &impulse_path,
+        &run.trajectory_semitones,
+        anchor_hz,
+        render_partials,
+        false,
+    )?;
+    render_e2_trajectory_wav(
+        &continuous_path,
+        &run.trajectory_semitones,
+        anchor_hz,
+        render_partials,
+        true,
+    )?;
+    write_with_log(
+        &csv_path,
+        format!(
+            "{}{}",
+            e2_baseline_summary_csv(
+                &format!("{stem}.wav"),
+                "impulse",
+                &run,
+                anchor_hz,
+                render_partials,
+                range_oct
+            ),
+            e2_baseline_summary_csv(
+                &format!("{stem}_continuous.wav"),
+                "continuous",
+                &run,
+                anchor_hz,
+                render_partials,
+                range_oct,
+            )
+            .lines()
+            .skip(1)
+            .collect::<Vec<_>>()
+            .join("\n")
+                + "\n",
+        ),
+    )?;
+    write_with_log(&moves_path, e2_moves_csv(&run))?;
+    write_with_log(&scene_metrics_path, e2_scene_metrics_csv(&run, anchor_hz))?;
+    Ok(())
+}
+
+pub fn generate_e2_proposal_render(
+    n_agents: usize,
+    render_partials: u32,
+    range_oct: f32,
+) -> io::Result<()> {
+    let space = Log2Space::new(20.0, 8000.0, SPACE_BINS_PER_OCT);
+    let anchor_hz = E4_ANCHOR_HZ;
+    let seed = E2_SEEDS[0];
+    let run = run_e2_once_proposal_cfg(
+        &space,
+        anchor_hz,
+        seed,
+        E2_STEP_SEMITONES,
+        E2PhaseMode::DissonanceThenConsonance,
+        n_agents,
+        range_oct,
+    );
+
+    let out_dir = Path::new("supplementary_audio/audio");
+    create_dir_all(out_dir)?;
+    let stem = format!(
+        "15_exp1_replay_seed0_proposal_n{}_p{}_{}",
+        n_agents,
+        render_partials,
+        e2_range_oct_tag(range_oct)
+    );
+    let impulse_path = out_dir.join(format!("{stem}.wav"));
+    let continuous_path = out_dir.join(format!("{stem}_continuous.wav"));
+    let csv_path = out_dir.join(format!("{stem}.csv"));
+    let moves_path = out_dir.join(format!("{stem}_moves.csv"));
+    let scene_metrics_path = out_dir.join(format!("{stem}_scene_metrics.csv"));
+
+    render_e2_trajectory_wav(
+        &impulse_path,
+        &run.trajectory_semitones,
+        anchor_hz,
+        render_partials,
+        false,
+    )?;
+    render_e2_trajectory_wav(
+        &continuous_path,
+        &run.trajectory_semitones,
+        anchor_hz,
+        render_partials,
+        true,
+    )?;
+    write_with_log(
+        &csv_path,
+        format!(
+            "{}{}",
+            e2_baseline_summary_csv(
+                &format!("{stem}.wav"),
+                "impulse",
+                &run,
+                anchor_hz,
+                render_partials,
+                range_oct
+            ),
+            e2_baseline_summary_csv(
+                &format!("{stem}_continuous.wav"),
+                "continuous",
+                &run,
+                anchor_hz,
+                render_partials,
+                range_oct,
+            )
+            .lines()
+            .skip(1)
+            .collect::<Vec<_>>()
+            .join("\n")
+                + "\n",
+        ),
+    )?;
+    write_with_log(&moves_path, e2_moves_csv(&run))?;
+    write_with_log(&scene_metrics_path, e2_scene_metrics_csv(&run, anchor_hz))?;
+    Ok(())
+}
 
 #[cfg(test)]
 mod ji_tests {
@@ -26011,20 +27794,32 @@ mod ji_tests {
     #[test]
     fn ji_perfect_fifth_moderate() {
         let score = ji_interval_consonance(7.02); // ~3:2
-        assert!(score > 0.1, "perfect fifth score should be > 0.1, got {}", score);
+        assert!(
+            score > 0.1,
+            "perfect fifth score should be > 0.1, got {}",
+            score
+        );
     }
 
     #[test]
     fn ji_tritone_is_low() {
         let score = ji_interval_consonance(6.0); // tritone
-        assert!(score < 0.01, "tritone score should be < 0.01, got {}", score);
+        assert!(
+            score < 0.01,
+            "tritone score should be < 0.01, got {}",
+            score
+        );
     }
 
     #[test]
     fn ji_population_all_unisons() {
         let freqs = vec![220.0, 220.0, 220.0, 220.0];
         let score = ji_population_score(&freqs, 220.0);
-        assert!(score > 0.9, "all-unison population should score > 0.9, got {}", score);
+        assert!(
+            score > 0.9,
+            "all-unison population should score > 0.9, got {}",
+            score
+        );
     }
 }
 
