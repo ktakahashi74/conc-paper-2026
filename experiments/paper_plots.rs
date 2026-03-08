@@ -107,6 +107,8 @@ const E2_CANDIDATE_SEARCH_3OCT_N: [usize; 9] = [6, 7, 8, 9, 10, 12, 14, 16, 18];
 const E2_CANDIDATE_SEARCH_4OCT_N: [usize; 9] = [8, 9, 10, 12, 14, 16, 18, 20, 24];
 const E2_CANDIDATE_SEARCH_RENDER_PARTIALS: u32 = 4;
 const E2_CANDIDATE_SEARCH_TOP_PER_RANGE: usize = 2;
+const E2_SCENE_G_ENV_PARTIALS: u32 = 4;
+const E2_SCENE_G_ENV_DECAY: f32 = 1.0;
 
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
@@ -1788,6 +1790,11 @@ fn plot_e2_emergent_harmony(
         .position(|run| run.seed == E2_SEEDS[E2_PAPER_REP_SEED_INDEX])
         .unwrap_or_else(|| pick_representative_run_index(&baseline_runs));
     let baseline_run = &baseline_runs[rep_index];
+    let rep_seed = baseline_run.seed;
+    let nohill_rep = &nohill_runs[nohill_runs
+        .iter()
+        .position(|run| run.seed == rep_seed)
+        .unwrap_or_else(|| pick_representative_run_index(&nohill_runs))];
     let marker_steps = e2_marker_steps(phase_mode);
     let caption_suffix = e2_caption_suffix(phase_mode);
     let post_label = e2_post_label();
@@ -1904,6 +1911,20 @@ fn plot_e2_emergent_harmony(
     write_with_log(
         out_dir.join("paper_e2_final_agents.csv"),
         final_agents_csv(baseline_run),
+    )?;
+
+    let baseline_g_scene = e2_scene_g_series(baseline_run, space);
+    let nohill_g_scene = e2_scene_g_series(nohill_rep, space);
+    write_with_log(
+        out_dir.join("paper_e2_scene_g_seed0.csv"),
+        e2_scene_g_pair_csv(&baseline_g_scene, &nohill_g_scene),
+    )?;
+    let g_scene_plot_path = out_dir.join("paper_e2_scene_g_seed0.svg");
+    render_e2_scene_g_pair_plot(
+        &g_scene_plot_path,
+        &baseline_g_scene,
+        &nohill_g_scene,
+        phase_mode,
     )?;
 
     let mean_plot_path = out_dir.join("paper_e2_mean_c_level_over_time.svg");
@@ -2376,10 +2397,6 @@ fn plot_e2_emergent_harmony(
     render_hist_structure_summary_plot(&hist_plot_path, &hist_rows)?;
 
     let rep_seed = E2_SEEDS[E2_PAPER_REP_SEED_INDEX];
-    let nohill_rep = &nohill_runs[nohill_runs
-        .iter()
-        .position(|run| run.seed == rep_seed)
-        .unwrap_or_else(|| pick_representative_run_index(&nohill_runs))];
     let norep_rep = &norep_runs[norep_runs
         .iter()
         .position(|run| run.seed == rep_seed)
@@ -8174,6 +8191,7 @@ fn plot_e4_mirror_sweep(
 struct ConsonanceWorkspace {
     params: LandscapeParams,
     r_ref_peak: f32,
+    r_ref_total: f32,
     r_shift_bins: i32,
 }
 
@@ -8228,6 +8246,15 @@ struct E2Run {
     fixed_drone_hz: f32,
     n_agents: usize,
     k_bins: i32,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct E2SceneGPoint {
+    h_scene: f32,
+    r_scene: f32,
+    phi_scene: f32,
+    phi_single_mean: f32,
+    g_scene: f32,
 }
 
 struct E2SweepStats {
@@ -17579,6 +17606,7 @@ fn build_consonance_workspace(space: &Log2Space) -> ConsonanceWorkspace {
     ConsonanceWorkspace {
         params,
         r_ref_peak: r_ref.peak,
+        r_ref_total: r_ref.total,
         r_shift_bins: 0,
     }
 }
@@ -17673,6 +17701,102 @@ fn compute_c_score_level_scans(
         c_level_scan[i] = c_level.clamp(0.0, 1.0);
     }
     (c_score_scan, c_level_scan, density_mass, r_state_stats)
+}
+
+fn e2_scene_spectrum_features_for_freqs(
+    space: &Log2Space,
+    workspace: &ConsonanceWorkspace,
+    du_scan: &[f32],
+    freqs_hz: &[f32],
+) -> (f32, f32) {
+    let clean_freqs: Vec<f32> = freqs_hz
+        .iter()
+        .copied()
+        .filter(|f| f.is_finite() && *f > 0.0)
+        .collect();
+    if clean_freqs.is_empty() {
+        return (0.0, 0.0);
+    }
+    let (env_scan, density_scan) = build_env_density_from_freqs(
+        space,
+        &clean_freqs,
+        du_scan,
+        E2_SCENE_G_ENV_PARTIALS,
+        E2_SCENE_G_ENV_DECAY,
+    );
+    let (density_norm, _) =
+        psycho_state::normalize_density(&density_scan, du_scan, workspace.params.roughness_ref_eps);
+    let h_dual = workspace
+        .params
+        .harmonicity_kernel
+        .potential_h_dual_from_log2_spectrum(&env_scan, space);
+    let (_r_pot_scan, r_total) = workspace
+        .params
+        .roughness_kernel
+        .potential_r_from_log2_spectrum_density(&density_norm, space);
+    let h_scene = h_dual.metrics.binding_strength.max(0.0);
+    let r_scene = if workspace.r_ref_total > 0.0 {
+        (r_total / workspace.r_ref_total).max(0.0)
+    } else {
+        0.0
+    };
+    (h_scene, r_scene)
+}
+
+fn e2_scene_g_phi(workspace: &ConsonanceWorkspace, h_scene: f32, r_scene: f32) -> f32 {
+    let kernel = workspace.params.consonance_kernel;
+    let h = if h_scene.is_finite() {
+        h_scene.max(0.0)
+    } else {
+        0.0
+    };
+    let r = if r_scene.is_finite() {
+        r_scene.max(0.0)
+    } else {
+        0.0
+    };
+    kernel.a * h + kernel.b * r + kernel.c * h * r + kernel.d
+}
+
+fn e2_scene_g_point_for_freqs(
+    space: &Log2Space,
+    workspace: &ConsonanceWorkspace,
+    du_scan: &[f32],
+    freqs_hz: &[f32],
+) -> E2SceneGPoint {
+    let clean_freqs: Vec<f32> = freqs_hz
+        .iter()
+        .copied()
+        .filter(|f| f.is_finite() && *f > 0.0)
+        .collect();
+    if clean_freqs.is_empty() {
+        return E2SceneGPoint::default();
+    }
+    let (h_scene, r_scene) =
+        e2_scene_spectrum_features_for_freqs(space, workspace, du_scan, &clean_freqs);
+    let phi_scene = e2_scene_g_phi(workspace, h_scene, r_scene);
+
+    let mut singleton_cache: HashMap<i32, f32> = HashMap::new();
+    let mut phi_single_sum = 0.0f32;
+    for &freq in &clean_freqs {
+        let key = (freq * 1000.0).round() as i32;
+        let phi_single = *singleton_cache.entry(key).or_insert_with(|| {
+            let singleton = [freq];
+            let (h_single, r_single) =
+                e2_scene_spectrum_features_for_freqs(space, workspace, du_scan, &singleton);
+            e2_scene_g_phi(workspace, h_single, r_single)
+        });
+        phi_single_sum += phi_single;
+    }
+    let phi_single_mean = phi_single_sum / clean_freqs.len() as f32;
+
+    E2SceneGPoint {
+        h_scene,
+        r_scene,
+        phi_scene,
+        phi_single_mean,
+        g_scene: phi_scene - phi_single_mean,
+    }
 }
 
 struct UpdateStats {
@@ -25751,6 +25875,42 @@ mod tests {
     }
 
     #[test]
+    fn g_scene_is_finite_and_uses_audible_fixed_drone() {
+        let space = Log2Space::new(20.0, 8000.0, SPACE_BINS_PER_OCT);
+        let workspace = build_consonance_workspace(&space);
+        let (_erb_scan, du_scan) = erb_grid(&space);
+        let freqs = [E4_ANCHOR_HZ, E4_ANCHOR_HZ * 1.5];
+        let point = e2_scene_g_point_for_freqs(&space, &workspace, &du_scan, &freqs);
+        assert!(point.h_scene.is_finite() && point.h_scene >= 0.0);
+        assert!(point.r_scene.is_finite() && point.r_scene >= 0.0);
+        assert!(point.phi_scene.is_finite());
+        assert!(point.phi_single_mean.is_finite());
+        assert!(point.g_scene.is_finite());
+        assert!(
+            point.phi_scene > point.phi_single_mean - 1.0,
+            "unexpectedly pathological G(F) components: {:?}",
+            point
+        );
+    }
+
+    #[test]
+    fn g_scene_rewards_social_binding_over_singletons() {
+        let space = Log2Space::new(20.0, 8000.0, SPACE_BINS_PER_OCT);
+        let workspace = build_consonance_workspace(&space);
+        let (_erb_scan, du_scan) = erb_grid(&space);
+        let singleton = [E4_ANCHOR_HZ];
+        let dyad = [E4_ANCHOR_HZ, E4_ANCHOR_HZ * 1.5];
+        let p_single = e2_scene_g_point_for_freqs(&space, &workspace, &du_scan, &singleton);
+        let p_dyad = e2_scene_g_point_for_freqs(&space, &workspace, &du_scan, &dyad);
+        assert!(
+            p_dyad.g_scene > p_single.g_scene + 1e-4,
+            "expected social scene to exceed singleton baseline: single={:?} dyad={:?}",
+            p_single,
+            p_dyad
+        );
+    }
+
+    #[test]
     fn interval_distance_mod_12_maps_octave_equivalence() {
         let d = interval_distance_mod_12(12.0, 0.0);
         assert!(
@@ -27955,6 +28115,137 @@ fn e2_scene_ji_series(run: &E2Run) -> Vec<f32> {
         series.push(ji_population_score(&freqs, run.fixed_drone_hz));
     }
     series
+}
+
+fn e2_scene_g_series(run: &E2Run, space: &Log2Space) -> Vec<E2SceneGPoint> {
+    let workspace = build_consonance_workspace(space);
+    let (_erb_scan, du_scan) = erb_grid(space);
+    let n_steps = run
+        .trajectory_semitones
+        .iter()
+        .map(|trace| trace.len())
+        .min()
+        .unwrap_or(0);
+    let mut series = Vec::with_capacity(n_steps);
+    for step in 0..n_steps {
+        let freqs = e2_trajectory_freqs_at_step(
+            &run.trajectory_semitones,
+            run.fixed_drone_hz,
+            step,
+            None,
+            Some(run.fixed_drone_hz),
+        );
+        series.push(e2_scene_g_point_for_freqs(
+            space, &workspace, &du_scan, &freqs,
+        ));
+    }
+    series
+}
+
+fn e2_scene_g_pair_csv(baseline: &[E2SceneGPoint], nohill: &[E2SceneGPoint]) -> String {
+    let len = baseline.len().min(nohill.len());
+    let mut out = String::from(
+        "# G(F)=Phi(scene)-mean_i Phi(singleton_i); scene includes adaptive voices plus fixed drone; Phi(H,R)=aH+bR+cHR using scene-spectrum binding and roughness features\n\
+step,baseline_g_scene,baseline_phi_scene,baseline_phi_single_mean,baseline_h_scene,baseline_r_scene,nohill_g_scene,nohill_phi_scene,nohill_phi_single_mean,nohill_h_scene,nohill_r_scene\n",
+    );
+    for step in 0..len {
+        let b = baseline[step];
+        let n = nohill[step];
+        out.push_str(&format!(
+            "{step},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
+            b.g_scene,
+            b.phi_scene,
+            b.phi_single_mean,
+            b.h_scene,
+            b.r_scene,
+            n.g_scene,
+            n.phi_scene,
+            n.phi_single_mean,
+            n.h_scene,
+            n.r_scene,
+        ));
+    }
+    out
+}
+
+fn render_e2_scene_g_pair_plot(
+    out_path: &Path,
+    baseline: &[E2SceneGPoint],
+    nohill: &[E2SceneGPoint],
+    phase_mode: E2PhaseMode,
+) -> Result<(), Box<dyn Error>> {
+    if baseline.is_empty() || nohill.is_empty() {
+        return Ok(());
+    }
+    let len = baseline.len().min(nohill.len());
+    let x_max = len.saturating_sub(1);
+    let mut y_min = f32::INFINITY;
+    let mut y_max = f32::NEG_INFINITY;
+    for point in baseline.iter().take(len).chain(nohill.iter().take(len)) {
+        y_min = y_min.min(point.g_scene);
+        y_max = y_max.max(point.g_scene);
+    }
+    if !y_min.is_finite() || !y_max.is_finite() {
+        y_min = -1.0;
+        y_max = 1.0;
+    }
+    let pad = ((y_max - y_min).abs() * 0.1).max(1e-3);
+    y_min -= pad;
+    y_max += pad;
+
+    let root = bitmap_root(out_path, (1200, 700)).into_drawing_area();
+    root.fill(&WHITE)?;
+    let mut chart = ChartBuilder::on(&root)
+        .caption("Scene Consonance G(F) Over Time", ("sans-serif", 32))
+        .margin(10)
+        .x_label_area_size(60)
+        .y_label_area_size(75)
+        .build_cartesian_2d(0f32..x_max.max(1) as f32, y_min..y_max)?;
+    chart
+        .configure_mesh()
+        .x_desc("step")
+        .y_desc("G(F)")
+        .label_style(("sans-serif", 28).into_font())
+        .axis_desc_style(("sans-serif", 28).into_font())
+        .draw()?;
+
+    if E2_BURN_IN > 0 {
+        let burn_x1 = E2_BURN_IN.min(x_max) as f32;
+        if burn_x1 > 0.0 {
+            chart.draw_series(std::iter::once(Rectangle::new(
+                [(0.0, y_min), (burn_x1, y_max)],
+                RGBColor(180, 180, 180).mix(0.15).filled(),
+            )))?;
+        }
+    }
+    if let Some(step) = phase_mode.switch_step()
+        && step <= x_max
+    {
+        chart.draw_series(std::iter::once(PathElement::new(
+            vec![(step as f32, y_min), (step as f32, y_max)],
+            ShapeStyle::from(&BLACK.mix(0.55)).stroke_width(2),
+        )))?;
+    }
+
+    for (label, series, color) in [
+        ("baseline", baseline, e2_condition_color("baseline")),
+        ("no hill-climb", nohill, e2_condition_color("nohill")),
+    ] {
+        let line = (0..len).map(|i| (i as f32, series[i].g_scene));
+        chart
+            .draw_series(LineSeries::new(line, color))?
+            .label(label)
+            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 18, y)], color));
+    }
+    chart
+        .configure_series_labels()
+        .background_style(WHITE.mix(0.8))
+        .border_style(BLACK)
+        .label_font(("sans-serif", 28).into_font())
+        .draw()?;
+
+    root.present()?;
+    Ok(())
 }
 
 fn e2_scene_metrics_csv(run: &E2Run, _anchor_hz: f32) -> String {
