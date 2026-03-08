@@ -148,6 +148,17 @@ const E2_CONSONANT_TARGETS_EXTENDED: [f32; 6] = [
     8.136_863, // 8:5 minor sixth
     8.843_587, // 5:3 major sixth
 ];
+// Display-only guides for Fig. 3: omit 6:5, which is not a salient peak in the paper setting.
+const E2_INTERVAL_GUIDE_STEPS: [f32; 7] = [
+    0.0,       // 1:1 unison
+    3.8631372, // 5:4 major third
+    4.9804499, // 4:3 perfect fourth
+    7.0195501, // 3:2 perfect fifth
+    8.136_863, // 8:5 minor sixth
+    8.843_587, // 5:3 major sixth
+    12.0,      // 2:1 octave
+];
+const E2_INTERVAL_GUIDE_TARGETS_CORE: [f32; 3] = [3.8631372, 4.9804499, 7.0195501];
 const E2_CONSONANT_WINDOW_ST: f32 = 0.25;
 const E2_PERM_MAX_EXACT_COMBOS: u64 = 500_000;
 const E2_PERM_MC_ITERS: usize = 50_000;
@@ -22097,7 +22108,7 @@ fn draw_e2_interval_guides_with_windows<DB: DrawingBackend>(
 where
     DB::ErrorType: 'static,
 {
-    for &target in &E2_CONSONANT_TARGETS_CORE {
+    for &target in &E2_INTERVAL_GUIDE_TARGETS_CORE {
         chart.draw_series(std::iter::once(Rectangle::new(
             [
                 (target - E2_CONSONANT_WINDOW_ST, 0.0),
@@ -22106,8 +22117,8 @@ where
             RGBColor(240, 170, 60).mix(0.12).filled(),
         )))?;
     }
-    for &x in &E2_CONSONANT_STEPS {
-        let is_core = E2_CONSONANT_TARGETS_CORE
+    for &x in &E2_INTERVAL_GUIDE_STEPS {
+        let is_core = E2_INTERVAL_GUIDE_TARGETS_CORE
             .iter()
             .any(|&core| (core - x).abs() < 1e-6);
         let style = if is_core {
@@ -22131,7 +22142,7 @@ where
     DB::ErrorType: 'static,
 {
     let st2c = 100.0f32;
-    for &target in &E2_CONSONANT_TARGETS_CORE {
+    for &target in &E2_INTERVAL_GUIDE_TARGETS_CORE {
         let tc = target * st2c;
         let wc = E2_CONSONANT_WINDOW_ST * st2c;
         chart.draw_series(std::iter::once(Rectangle::new(
@@ -22139,9 +22150,9 @@ where
             RGBColor(240, 170, 60).mix(0.12).filled(),
         )))?;
     }
-    for &x in &E2_CONSONANT_STEPS {
+    for &x in &E2_INTERVAL_GUIDE_STEPS {
         let xc = x * st2c;
-        let is_core = E2_CONSONANT_TARGETS_CORE
+        let is_core = E2_INTERVAL_GUIDE_TARGETS_CORE
             .iter()
             .any(|&core| (core - x).abs() < 1e-6);
         let style = if is_core {
@@ -22733,17 +22744,17 @@ fn draw_e2_timeseries_pair_panel(
     y_max += pad;
 
     let mut chart = ChartBuilder::on(area)
-        .caption(caption, ("sans-serif", 24))
+        .caption(caption, ("sans-serif", 32))
         .margin(10)
-        .x_label_area_size(52)
-        .y_label_area_size(62)
+        .x_label_area_size(55)
+        .y_label_area_size(70)
         .build_cartesian_2d(x_min as f32..x_hi as f32, y_min..y_max)?;
     chart
         .configure_mesh()
         .x_desc("step")
         .y_desc(y_desc)
         .label_style(("sans-serif", 20).into_font())
-        .axis_desc_style(("sans-serif", 20).into_font())
+        .axis_desc_style(("sans-serif", 24).into_font())
         .draw()?;
 
     if burn_in > x_min {
@@ -22767,7 +22778,7 @@ fn draw_e2_timeseries_pair_panel(
         chart.draw_series(std::iter::once(Text::new(
             "phase switch".to_string(),
             (step as f32, y_text),
-            ("sans-serif", 16).into_font().color(&BLACK),
+            ("sans-serif", 22).into_font().color(&BLACK),
         )))?;
     }
 
@@ -22810,9 +22821,10 @@ fn draw_e2_timeseries_pair_panel(
     if draw_legend {
         chart
             .configure_series_labels()
+            .position(SeriesLabelPosition::UpperLeft)
             .background_style(WHITE.mix(0.8))
             .border_style(BLACK)
-            .label_font(("sans-serif", 18).into_font())
+            .label_font(("sans-serif", 22).into_font())
             .draw()?;
     }
     Ok(())
@@ -22835,10 +22847,10 @@ fn draw_trajectory_panel(
     let y_min = -2500.0f32;
     let y_max = 2500.0f32;
     let mut chart = ChartBuilder::on(area)
-        .caption(caption, ("sans-serif", 24))
+        .caption(caption, ("sans-serif", 32))
         .margin(10)
-        .x_label_area_size(48)
-        .y_label_area_size(58)
+        .x_label_area_size(55)
+        .y_label_area_size(70)
         .build_cartesian_2d(
             0.0f32..(steps.saturating_sub(1) as f32).max(1.0),
             y_min..y_max,
@@ -22850,7 +22862,7 @@ fn draw_trajectory_panel(
         .y_labels(5)
         .y_label_formatter(&|v| format!("{}", *v as i32))
         .label_style(("sans-serif", 20).into_font())
-        .axis_desc_style(("sans-serif", 20).into_font())
+        .axis_desc_style(("sans-serif", 24).into_font())
         .draw()?;
     if burn_in > 0 {
         let burn_x1 = burn_in.min(steps.saturating_sub(1)) as f32;
@@ -23432,12 +23444,12 @@ fn render_e2_figure1(
     draw_diversity_metric_panel_impl_for_conditions(
         &panel_d,
         "D. Final unique bins",
-        "unique bins (25 ct)",
+        "bins",
         diversity_rows,
         |metrics| metrics.unique_bins as f32,
-        24,
+        29,
         18,
-        20,
+        22,
         &["baseline", "nohill"],
     )?;
     root.present()?;
@@ -23467,12 +23479,10 @@ fn render_e2_figure2(
     if len == 0 {
         return Ok(());
     }
-    let root = bitmap_root(out_path, (1600, 680)).into_drawing_area();
+    let root = bitmap_root(out_path, (1600, 400)).into_drawing_area();
     root.fill(&WHITE)?;
-    // 2-column layout: A/B stacked (left, wide) | C entropy / D polyphony (right, narrow)
-    let (panel_left, panel_right) = root.split_horizontally(1200);
-    let (panel_a, panel_b) = panel_left.split_vertically(340);
-    let (panel_c, panel_d) = panel_right.split_vertically(340);
+    let (panel_a, panel_bc) = root.split_horizontally(1254);
+    let (panel_b, panel_c) = panel_bc.split_horizontally(173);
 
     // Convert semitone data to cents for display (×100)
     let st2c = 100.0f32;
@@ -23536,63 +23546,23 @@ fn render_e2_figure2(
             .draw()?;
     }
 
-    {
-        let x_min = pairwise_centers[0] * st2c - 0.5 * bin_c;
-        let x_max = pairwise_centers[len - 1] * st2c + 0.5 * bin_c;
-        let y_max = y_max_from_mean_err(
-            &pairwise_baseline_mean[..len],
-            &pairwise_baseline_std[..len],
-        );
-        let mut chart = ChartBuilder::on(&panel_b)
-            .caption(
-                "B. Baseline interval histogram (95% CI)",
-                ("sans-serif", 32),
-            )
-            .margin(10)
-            .x_label_area_size(55)
-            .y_label_area_size(70)
-            .build_cartesian_2d(x_min..x_max, 0.0f32..y_max)?;
-        chart
-            .configure_mesh()
-            .x_desc("cents")
-            .y_desc("mean fraction")
-            .label_style(("sans-serif", 20).into_font())
-            .axis_desc_style(("sans-serif", 24).into_font())
-            .draw()?;
-        draw_e2_interval_guides_cents(&mut chart, y_max)?;
-        let half = bin_c * 0.45;
-        for i in 0..len {
-            let cx = pairwise_centers[i] * st2c;
-            chart.draw_series(std::iter::once(Rectangle::new(
-                [(cx - half, 0.0), (cx + half, pairwise_baseline_mean[i])],
-                PAL_H.mix(0.65).filled(),
-            )))?;
-            let y0 = (pairwise_baseline_mean[i] - pairwise_baseline_std[i]).max(0.0);
-            let y1 = (pairwise_baseline_mean[i] + pairwise_baseline_std[i]).min(y_max);
-            chart.draw_series(std::iter::once(PathElement::new(
-                vec![(cx, y0), (cx, y1)],
-                BLACK.mix(0.6),
-            )))?;
-        }
-    }
-
     draw_entropy_panel_for_conditions(
-        &panel_c,
-        "C. Interval entropy (95% CI)",
+        &panel_b,
+        "B. Entropy",
         hist_rows,
         &["baseline", "nohill"],
-        29,
-        18,
-        22,
+        32,
+        20,
+        24,
     )?;
     draw_polyphony_panel_for_conditions(
-        &panel_d,
-        "D. Emergent polyphony (95% CI)",
+        &panel_c,
+        "C. Polyphony",
         diversity_rows,
         &["baseline", "nohill"],
-        29,
-        18,
-        22,
+        32,
+        20,
+        24,
     )?;
 
     root.present()?;

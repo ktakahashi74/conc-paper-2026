@@ -505,13 +505,12 @@ semitones
 12.0
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="1189,650 1189,655 "/>
-<rect x="341" y="36" width="46" height="613" opacity="0.12" fill="#F0AA3C" stroke="none"/>
 <rect x="406" y="36" width="47" height="613" opacity="0.12" fill="#F0AA3C" stroke="none"/>
+<rect x="511" y="36" width="46" height="613" opacity="0.12" fill="#F0AA3C" stroke="none"/>
 <rect x="701" y="36" width="46" height="613" opacity="0.12" fill="#F0AA3C" stroke="none"/>
 <polyline fill="none" opacity="0.3" stroke="#000000" stroke-width="1" points="70,649 70,36 "/>
-<polyline fill="none" opacity="0.6" stroke="#000000" stroke-width="2" points="364,649 364,36 "/>
 <polyline fill="none" opacity="0.6" stroke="#000000" stroke-width="2" points="430,649 430,36 "/>
-<polyline fill="none" opacity="0.3" stroke="#000000" stroke-width="1" points="534,649 534,36 "/>
+<polyline fill="none" opacity="0.6" stroke="#000000" stroke-width="2" points="534,649 534,36 "/>
 <polyline fill="none" opacity="0.6" stroke="#000000" stroke-width="2" points="724,649 724,36 "/>
 <polyline fill="none" opacity="0.3" stroke="#000000" stroke-width="1" points="828,649 828,36 "/>
 <polyline fill="none" opacity="0.3" stroke="#000000" stroke-width="1" points="894,649 894,36 "/>
