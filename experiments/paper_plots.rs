@@ -50,6 +50,7 @@ const E2_ANCHOR_SHIFT_RATIO: f32 = 0.5;
 const E2_STEP_SEMITONES: f32 = 0.25;
 const E2_ANCHOR_BIN_ST: f32 = 0.5;
 const E2_PAIRWISE_BIN_ST: f32 = 0.05;
+const E2_PAIRWISE_DISPLAY_BIN_ST: f32 = 0.25;
 const E2_N_AGENTS: usize = 24;
 const E2_CROWDING_WEIGHT: f32 = 0.15;
 const E2_INIT_CONSONANT_EXCLUSION_ST: f32 = 0.35;
@@ -22014,6 +22015,59 @@ fn fold_hist_abs_semitones(
     (out_centers, out_mean, out_std)
 }
 
+fn rebin_histogram_series(
+    centers: &[f32],
+    mean_frac: &[f32],
+    std_frac: &[f32],
+    from_bin_width: f32,
+    to_bin_width: f32,
+) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+    let len = centers.len().min(mean_frac.len()).min(std_frac.len());
+    if len == 0 || to_bin_width <= from_bin_width + 1e-6 {
+        return (
+            centers[..len].to_vec(),
+            mean_frac[..len].to_vec(),
+            std_frac[..len].to_vec(),
+        );
+    }
+    let group = (to_bin_width / from_bin_width).round().max(1.0) as usize;
+    if group <= 1 {
+        return (
+            centers[..len].to_vec(),
+            mean_frac[..len].to_vec(),
+            std_frac[..len].to_vec(),
+        );
+    }
+
+    let mut out_centers = Vec::new();
+    let mut out_mean = Vec::new();
+    let mut out_std = Vec::new();
+    let half_from = 0.5 * from_bin_width;
+    let half_to = 0.5 * to_bin_width;
+    for start in (0..len).step_by(group) {
+        let end = (start + group).min(len);
+        if end - start < group {
+            break;
+        }
+        let bin_start = centers[start] - half_from;
+        let center = bin_start + half_to;
+        let mean_sum: f32 = mean_frac[start..end].iter().sum();
+        let std_sum_sq: f32 = std_frac[start..end].iter().map(|v| v * v).sum();
+        out_centers.push(center);
+        out_mean.push(mean_sum);
+        out_std.push(std_sum_sq.sqrt());
+    }
+    (out_centers, out_mean, out_std)
+}
+
+fn snap_to_hist_bin_center(value: f32, bin_width: f32) -> f32 {
+    if !value.is_finite() || !bin_width.is_finite() || bin_width <= 0.0 {
+        return value;
+    }
+    let idx = (value / bin_width - 0.5).round();
+    (idx + 0.5) * bin_width
+}
+
 fn folded_hist_csv(centers: &[f32], mean: &[f32], std: &[f32], n_seeds: usize) -> String {
     let mut out = String::from("abs_semitones,mean_frac,std_frac,n_seeds\n");
     let len = centers.len().min(mean.len()).min(std.len());
@@ -22085,9 +22139,9 @@ fn render_hist_mean_std(
 
 fn e2_condition_display(condition: &str) -> &'static str {
     match condition {
-        "baseline" => "base",
-        "nohill" => "no-hill",
-        "nocrowd" => "no-crowd",
+        "baseline" => "local-search",
+        "nohill" => "random-walk",
+        "nocrowd" => "no-crowding",
         _ => "unknown",
     }
 }
@@ -22137,13 +22191,17 @@ where
 fn draw_e2_interval_guides_cents<DB: DrawingBackend>(
     chart: &mut ChartContext<DB, Cartesian2d<RangedCoordf32, RangedCoordf32>>,
     y_max: f32,
+    snap_bin_cents: Option<f32>,
 ) -> Result<(), Box<dyn Error>>
 where
     DB::ErrorType: 'static,
 {
     let st2c = 100.0f32;
     for &target in &E2_INTERVAL_GUIDE_TARGETS_CORE {
-        let tc = target * st2c;
+        let tc_raw = target * st2c;
+        let tc = snap_bin_cents
+            .map(|bw| snap_to_hist_bin_center(tc_raw, bw))
+            .unwrap_or(tc_raw);
         let wc = E2_CONSONANT_WINDOW_ST * st2c;
         chart.draw_series(std::iter::once(Rectangle::new(
             [(tc - wc, 0.0), (tc + wc, y_max)],
@@ -22151,7 +22209,10 @@ where
         )))?;
     }
     for &x in &E2_INTERVAL_GUIDE_STEPS {
-        let xc = x * st2c;
+        let xc_raw = x * st2c;
+        let xc = snap_bin_cents
+            .map(|bw| snap_to_hist_bin_center(xc_raw, bw))
+            .unwrap_or(xc_raw);
         let is_core = E2_INTERVAL_GUIDE_TARGETS_CORE
             .iter()
             .any(|&core| (core - x).abs() < 1e-6);
@@ -22175,6 +22236,24 @@ fn y_max_from_mean_err(mean: &[f32], err: &[f32]) -> f32 {
         y_peak = y_peak.max(mean[i] + err[i].max(0.0));
     }
     (1.15 * y_peak.max(1e-4)).max(1e-4)
+}
+
+fn e2_burn_band_x(
+    burn_in: usize,
+    phase_switch_step: Option<usize>,
+    x_min: usize,
+    x_hi: usize,
+) -> Option<(f32, f32)> {
+    if burn_in == 0 {
+        return None;
+    }
+    let start = phase_switch_step.unwrap_or(x_min).max(x_min);
+    let end = start.saturating_add(burn_in).min(x_hi);
+    if end > start {
+        Some((start as f32, end as f32))
+    } else {
+        None
+    }
 }
 
 fn render_pairwise_histogram_paper(
@@ -22283,10 +22362,10 @@ fn render_pairwise_histogram_controls_overlay(
 
     draw_e2_interval_guides_with_windows(&mut chart, y_max)?;
 
-    for (label, values, color) in [
+    for (condition, values, color) in [
         ("baseline", baseline, PAL_H),
-        ("no hill-climb", nohill, PAL_R),
-        ("no crowding", norep, PAL_CD),
+        ("nohill", nohill, PAL_R),
+        ("nocrowd", norep, PAL_CD),
     ] {
         let line = centers
             .iter()
@@ -22295,7 +22374,7 @@ fn render_pairwise_histogram_controls_overlay(
             .zip(values.iter().take(len).copied());
         chart
             .draw_series(LineSeries::new(line, color))?
-            .label(label)
+            .label(e2_condition_display(condition))
             .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
     }
     chart
@@ -22628,14 +22707,11 @@ fn draw_e2_timeseries_controls_panel(
         .axis_desc_style(("sans-serif", 28).into_font())
         .draw()?;
 
-    if burn_in > x_min {
-        let burn_x1 = burn_in.min(x_hi) as f32;
-        if burn_x1 > x_min as f32 {
-            chart.draw_series(std::iter::once(Rectangle::new(
-                [(x_min as f32, y_min), (burn_x1, y_max)],
-                RGBColor(180, 180, 180).mix(0.15).filled(),
-            )))?;
-        }
+    if let Some((burn_x0, burn_x1)) = e2_burn_band_x(burn_in, phase_switch_step, x_min, x_hi) {
+        chart.draw_series(std::iter::once(Rectangle::new(
+            [(burn_x0, y_min), (burn_x1, y_max)],
+            RGBColor(180, 180, 180).mix(0.15).filled(),
+        )))?;
     }
     if let Some(step) = phase_switch_step
         && step >= x_min
@@ -22653,7 +22729,7 @@ fn draw_e2_timeseries_controls_panel(
         )))?;
     }
 
-    for (label, mean, std, color) in [
+    for (condition, mean, std, color) in [
         (
             "baseline",
             baseline_mean,
@@ -22661,13 +22737,13 @@ fn draw_e2_timeseries_controls_panel(
             e2_condition_color("baseline"),
         ),
         (
-            "no hill-climb",
+            "nohill",
             nohill_mean,
             nohill_std,
             e2_condition_color("nohill"),
         ),
         (
-            "no crowding",
+            "nocrowd",
             norep_mean,
             norep_std,
             e2_condition_color("nocrowd"),
@@ -22692,7 +22768,7 @@ fn draw_e2_timeseries_controls_panel(
         let line = (x_min..end).map(|i| (i as f32, mean[i]));
         chart
             .draw_series(LineSeries::new(line, color))?
-            .label(label)
+            .label(e2_condition_display(condition))
             .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 18, y)], color));
     }
     if draw_legend {
@@ -22720,6 +22796,7 @@ fn draw_e2_timeseries_pair_panel(
     x_min: usize,
     x_max: usize,
     draw_legend: bool,
+    y_override: Option<(f32, f32)>,
 ) -> Result<(), Box<dyn Error>> {
     let x_hi = x_max.max(x_min + 1);
     let mut y_min = f32::INFINITY;
@@ -22739,9 +22816,14 @@ fn draw_e2_timeseries_pair_panel(
         y_min = 0.0;
         y_max = 1.0;
     }
-    let pad = ((y_max - y_min).abs() * 0.1).max(1e-3);
-    y_min -= pad;
-    y_max += pad;
+    if let Some((fixed_lo, fixed_hi)) = y_override {
+        y_min = fixed_lo;
+        y_max = fixed_hi;
+    } else {
+        let pad = ((y_max - y_min).abs() * 0.1).max(1e-3);
+        y_min -= pad;
+        y_max += pad;
+    }
 
     let mut chart = ChartBuilder::on(area)
         .caption(caption, ("sans-serif", 32))
@@ -22757,14 +22839,11 @@ fn draw_e2_timeseries_pair_panel(
         .axis_desc_style(("sans-serif", 24).into_font())
         .draw()?;
 
-    if burn_in > x_min {
-        let burn_x1 = burn_in.min(x_hi) as f32;
-        if burn_x1 > x_min as f32 {
-            chart.draw_series(std::iter::once(Rectangle::new(
-                [(x_min as f32, y_min), (burn_x1, y_max)],
-                RGBColor(180, 180, 180).mix(0.15).filled(),
-            )))?;
-        }
+    if let Some((burn_x0, burn_x1)) = e2_burn_band_x(burn_in, phase_switch_step, x_min, x_hi) {
+        chart.draw_series(std::iter::once(Rectangle::new(
+            [(burn_x0, y_min), (burn_x1, y_max)],
+            RGBColor(180, 180, 180).mix(0.15).filled(),
+        )))?;
     }
     if let Some(step) = phase_switch_step
         && step >= x_min
@@ -22782,7 +22861,7 @@ fn draw_e2_timeseries_pair_panel(
         )))?;
     }
 
-    for (label, mean, std, color) in [
+    for (condition, mean, std, color) in [
         (
             "baseline",
             baseline_mean,
@@ -22790,7 +22869,7 @@ fn draw_e2_timeseries_pair_panel(
             e2_condition_color("baseline"),
         ),
         (
-            "no hill-climb",
+            "nohill",
             nohill_mean,
             nohill_std,
             e2_condition_color("nohill"),
@@ -22815,7 +22894,7 @@ fn draw_e2_timeseries_pair_panel(
         let line = (x_min..end).map(|i| (i as f32, mean[i]));
         chart
             .draw_series(LineSeries::new(line, color))?
-            .label(label)
+            .label(e2_condition_display(condition))
             .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 18, y)], color));
     }
     if draw_legend {
@@ -22864,14 +22943,13 @@ fn draw_trajectory_panel(
         .label_style(("sans-serif", 20).into_font())
         .axis_desc_style(("sans-serif", 24).into_font())
         .draw()?;
-    if burn_in > 0 {
-        let burn_x1 = burn_in.min(steps.saturating_sub(1)) as f32;
-        if burn_x1 > 0.0 {
-            chart.draw_series(std::iter::once(Rectangle::new(
-                [(0.0, y_min), (burn_x1, y_max)],
-                RGBColor(180, 180, 180).mix(0.15).filled(),
-            )))?;
-        }
+    if let Some((burn_x0, burn_x1)) =
+        e2_burn_band_x(burn_in, phase_switch_step, 0, steps.saturating_sub(1))
+    {
+        chart.draw_series(std::iter::once(Rectangle::new(
+            [(burn_x0, y_min), (burn_x1, y_max)],
+            RGBColor(180, 180, 180).mix(0.15).filled(),
+        )))?;
     }
     if let Some(step) = phase_switch_step
         && step <= steps.saturating_sub(1)
@@ -23413,6 +23491,7 @@ fn render_e2_figure1(
         0,
         len.saturating_sub(1),
         true,
+        Some((0.0, 1.0)),
     )?;
     let g_len = baseline_stats
         .mean_g_scene
@@ -23433,10 +23512,11 @@ fn render_e2_figure1(
         0,
         g_len.saturating_sub(1),
         true,
+        None,
     )?;
     draw_trajectory_panel(
         &panels[2],
-        "C. Baseline trajectories",
+        "C. Local-search trajectories",
         trajectories,
         E2_BURN_IN,
         phase_mode.switch_step(),
@@ -23471,11 +23551,27 @@ fn render_e2_figure2(
     if pairwise_centers.is_empty() {
         return Ok(());
     }
-    let len = pairwise_centers
+    let zeros = vec![0.0; pairwise_nohill_mean.len()];
+    let (display_centers, display_baseline_mean, display_baseline_std) = rebin_histogram_series(
+        pairwise_centers,
+        pairwise_baseline_mean,
+        pairwise_baseline_std,
+        E2_PAIRWISE_BIN_ST,
+        E2_PAIRWISE_DISPLAY_BIN_ST,
+    );
+    let (display_nohill_centers, display_nohill_mean, _) = rebin_histogram_series(
+        pairwise_centers,
+        pairwise_nohill_mean,
+        &zeros,
+        E2_PAIRWISE_BIN_ST,
+        E2_PAIRWISE_DISPLAY_BIN_ST,
+    );
+    let len = display_centers
         .len()
-        .min(pairwise_baseline_mean.len())
-        .min(pairwise_baseline_std.len())
-        .min(pairwise_nohill_mean.len());
+        .min(display_baseline_mean.len())
+        .min(display_baseline_std.len())
+        .min(display_nohill_centers.len())
+        .min(display_nohill_mean.len());
     if len == 0 {
         return Ok(());
     }
@@ -23486,21 +23582,21 @@ fn render_e2_figure2(
 
     // Convert semitone data to cents for display (×100)
     let st2c = 100.0f32;
-    let bin_c = E2_PAIRWISE_BIN_ST * st2c;
+    let bin_c = E2_PAIRWISE_DISPLAY_BIN_ST * st2c;
 
     {
-        let x_min = pairwise_centers[0] * st2c - 0.5 * bin_c;
-        let x_max = pairwise_centers[len - 1] * st2c + 0.5 * bin_c;
+        let x_min = display_centers[0] * st2c - 0.5 * bin_c;
+        let x_max = display_centers[len - 1] * st2c + 0.5 * bin_c;
         let mut y_peak = 0.0f32;
         for i in 0..len {
             y_peak = y_peak
-                .max(pairwise_baseline_mean[i] + pairwise_baseline_std[i])
-                .max(pairwise_nohill_mean[i]);
+                .max(display_baseline_mean[i] + display_baseline_std[i])
+                .max(display_nohill_mean[i]);
         }
         let y_max = (1.15 * y_peak.max(1e-4)).max(1e-4);
         let mut chart = ChartBuilder::on(&panel_a)
             .caption(
-                "A. Interval histogram: baseline vs no-hill",
+                "A. Interval histogram: local-search vs random-walk",
                 ("sans-serif", 32),
             )
             .margin(10)
@@ -23514,29 +23610,38 @@ fn render_e2_figure2(
             .label_style(("sans-serif", 20).into_font())
             .axis_desc_style(("sans-serif", 24).into_font())
             .draw()?;
-        draw_e2_interval_guides_cents(&mut chart, y_max)?;
+        draw_e2_interval_guides_cents(&mut chart, y_max, Some(bin_c))?;
         let half = bin_c * 0.45;
-        for i in 0..len {
-            let cx = pairwise_centers[i] * st2c;
-            chart.draw_series(std::iter::once(Rectangle::new(
-                [(cx - half, 0.0), (cx + half, pairwise_baseline_mean[i])],
+        let baseline_bars = (0..len).map(|i| {
+            let cx = display_centers[i] * st2c;
+            Rectangle::new(
+                [(cx - half, 0.0), (cx + half, display_baseline_mean[i])],
                 PAL_H.mix(0.65).filled(),
-            )))?;
-            let y0 = (pairwise_baseline_mean[i] - pairwise_baseline_std[i]).max(0.0);
-            let y1 = (pairwise_baseline_mean[i] + pairwise_baseline_std[i]).min(y_max);
+            )
+        });
+        chart
+            .draw_series(baseline_bars)?
+            .label("local-search")
+            .legend(|(x, y)| {
+                Rectangle::new([(x, y - 5), (x + 18, y + 5)], PAL_H.mix(0.65).filled())
+            });
+        for i in 0..len {
+            let cx = display_centers[i] * st2c;
+            let y0 = (display_baseline_mean[i] - display_baseline_std[i]).max(0.0);
+            let y1 = (display_baseline_mean[i] + display_baseline_std[i]).min(y_max);
             chart.draw_series(std::iter::once(PathElement::new(
                 vec![(cx, y0), (cx, y1)],
                 BLACK.mix(0.6),
             )))?;
         }
-        let nohill_line = pairwise_centers
+        let nohill_line = display_nohill_centers
             .iter()
             .take(len)
             .map(|&x| x * st2c)
-            .zip(pairwise_nohill_mean.iter().take(len).copied());
+            .zip(display_nohill_mean.iter().take(len).copied());
         chart
             .draw_series(LineSeries::new(nohill_line, PAL_R.stroke_width(3)))?
-            .label("no hill-climb")
+            .label("random-walk")
             .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 18, y)], PAL_R.stroke_width(3)));
         chart
             .configure_series_labels()
@@ -24251,21 +24356,21 @@ fn render_e2_control_histograms(
             vec![(min, y_max * 1.05), (min + 0.3, y_max * 1.05)],
             PAL_H,
         )))?
-        .label("baseline")
+        .label("local-search")
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_H));
     chart
         .draw_series(std::iter::once(PathElement::new(
             vec![(min, y_max * 1.02), (min + 0.3, y_max * 1.02)],
             PAL_R,
         )))?
-        .label("no hill-climb")
+        .label("random-walk")
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_R));
     chart
         .draw_series(std::iter::once(PathElement::new(
             vec![(min, y_max * 0.99), (min + 0.3, y_max * 0.99)],
             PAL_CD,
         )))?
-        .label("no crowding")
+        .label("no-crowding")
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], PAL_CD));
 
     chart
@@ -26000,6 +26105,38 @@ mod tests {
             p_close,
             p_consonant
         );
+    }
+
+    #[test]
+    fn rebin_histogram_series_merges_contiguous_bins() {
+        let centers = vec![0.025, 0.075, 0.125, 0.175, 0.225];
+        let mean = vec![0.1, 0.2, 0.3, 0.4, 0.5];
+        let std = vec![0.01, 0.02, 0.03, 0.04, 0.05];
+        let (centers_out, mean_out, std_out) =
+            rebin_histogram_series(&centers, &mean, &std, 0.05, 0.25);
+        assert_eq!(centers_out.len(), 1);
+        assert!((centers_out[0] - 0.125).abs() < 1e-6);
+        assert!((mean_out[0] - 1.5).abs() < 1e-6);
+        let std_expected = (0.01f32.powi(2)
+            + 0.02f32.powi(2)
+            + 0.03f32.powi(2)
+            + 0.04f32.powi(2)
+            + 0.05f32.powi(2))
+        .sqrt();
+        assert!((std_out[0] - std_expected).abs() < 1e-6);
+    }
+
+    #[test]
+    fn snap_to_hist_bin_center_targets_display_centers() {
+        assert!((snap_to_hist_bin_center(386.314, 25.0) - 387.5).abs() < 1e-3);
+        assert!((snap_to_hist_bin_center(498.045, 25.0) - 487.5).abs() < 1e-3);
+        assert!((snap_to_hist_bin_center(701.955, 25.0) - 712.5).abs() < 1e-3);
+    }
+
+    #[test]
+    fn e2_burn_band_x_uses_post_switch_window() {
+        let band = e2_burn_band_x(10, Some(25), 0, 49);
+        assert_eq!(band, Some((25.0, 35.0)));
     }
 
     #[test]
@@ -28305,14 +28442,12 @@ fn render_e2_scene_g_pair_plot(
         .axis_desc_style(("sans-serif", 28).into_font())
         .draw()?;
 
-    if E2_BURN_IN > 0 {
-        let burn_x1 = E2_BURN_IN.min(x_max) as f32;
-        if burn_x1 > 0.0 {
-            chart.draw_series(std::iter::once(Rectangle::new(
-                [(0.0, y_min), (burn_x1, y_max)],
-                RGBColor(180, 180, 180).mix(0.15).filled(),
-            )))?;
-        }
+    if let Some((burn_x0, burn_x1)) = e2_burn_band_x(E2_BURN_IN, phase_mode.switch_step(), 0, x_max)
+    {
+        chart.draw_series(std::iter::once(Rectangle::new(
+            [(burn_x0, y_min), (burn_x1, y_max)],
+            RGBColor(180, 180, 180).mix(0.15).filled(),
+        )))?;
     }
     if let Some(step) = phase_mode.switch_step()
         && step <= x_max
@@ -28323,14 +28458,14 @@ fn render_e2_scene_g_pair_plot(
         )))?;
     }
 
-    for (label, series, color) in [
+    for (condition, series, color) in [
         ("baseline", baseline, e2_condition_color("baseline")),
-        ("no hill-climb", nohill, e2_condition_color("nohill")),
+        ("nohill", nohill, e2_condition_color("nohill")),
     ] {
         let line = (0..len).map(|i| (i as f32, series[i].g_scene));
         chart
             .draw_series(LineSeries::new(line, color))?
-            .label(label)
+            .label(e2_condition_display(condition))
             .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 18, y)], color));
     }
     chart
