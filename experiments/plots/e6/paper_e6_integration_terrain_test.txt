@@ -1,20 +1,20 @@
 Integration Terrain Control — Full 2×2×2 Factorial
 ===================================================
 Condition                   Mean C_score (final)  95% CI half
-H  (real terrain)           0.1849                ± 0.0761
-H  (shuffled)               0.0510                ± 0.0064
-HH (real terrain)           0.5304                ± 0.0683
-HH (shuffled)               0.0816                ± 0.0492
-R  (real terrain)           0.0610                ± 0.0078
-R  (shuffled)               0.0585                ± 0.0077
-RH (real terrain)           0.1070                ± 0.0129
-RH (shuffled)               0.0558                ± 0.0056
+H  (real terrain)           0.1759                ± 0.0410
+H  (shuffled)               0.1719                ± 0.0452
+HH (real terrain)           0.2678                ± 0.0649
+HH (shuffled)               0.1468                ± 0.0454
+R  (real terrain)           0.0466                ± 0.0171
+R  (shuffled)               0.0538                ± 0.0199
+RH (real terrain)           0.1223                ± 0.0532
+RH (shuffled)               0.0689                ± 0.0189
 
-Interaction contrast (real):     0.2995 [0.2046, 0.3943], p = 0.000053
-Interaction contrast (shuffled): 0.0334 [-0.0173, 0.0840], p = 0.190727
+Interaction contrast (real):     0.0161 [-0.0488, 0.0811], p = 0.640558
+Interaction contrast (shuffled): -0.0402 [-0.0964, 0.0161], p = 0.188971
 
 Metabolism-only terrain effect (no hill-climbing):
-H − H_s:  0.1339 [0.0593, 0.2086], p = 0.0002
-R − R_s:  0.0025 [-0.0099, 0.0150], p = 0.7011
+H − H_s:  0.0040 [-0.0572, 0.0653], p = 0.9003
+R − R_s:  -0.0073 [-0.0341, 0.0196], p = 0.6531
 
 n_seeds = 20

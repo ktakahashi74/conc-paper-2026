@@ -1,4 +1,5 @@
 use conchordal::core::consonance_kernel::{ConsonanceKernel, ConsonanceRepresentationParams};
+use conchordal::core::erb::hz_to_erb;
 use conchordal::core::harmonicity_kernel::{HarmonicityKernel, HarmonicityParams};
 use conchordal::core::landscape::{
     Landscape, LandscapeParams, LandscapeUpdate, RoughnessScalarMode,
@@ -42,6 +43,8 @@ const E3_FMAX: f32 = 2000.0;
 const E3_RANGE_OCT: f32 = 2.0; // +/- 1 octave around anchor
 const E3_THETA_FREQ_HZ: f32 = 1.0;
 const E3_METABOLISM_RATE: f32 = 0.5;
+const E2_MATCH_CROWDING_WEIGHT: f32 = 0.15;
+const E4_MATCH_SIGMA_CENTS: f32 = 15.0;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct E4RuntimeOverrides {
@@ -587,11 +590,6 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
     let first_k = cfg.first_k as u32;
     let snapshot_interval = cfg.snapshot_interval.max(1);
     let mut rng = SmallRng::seed_from_u64(cfg.seed ^ 0xE600_5EED_u64);
-    let sigma = if cfg.mutation_sigma.is_finite() {
-        cfg.mutation_sigma.max(0.0)
-    } else {
-        0.0
-    };
     let half = 0.5 * E3_RANGE_OCT;
     let min_spawn = (anchor_hz * 2.0f32.powf(-half))
         .clamp(space.fmin, space.fmax)
@@ -740,21 +738,33 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                     } else {
                         let parent_idx = rng.random_range(0..alive_parents.len());
                         let parent_freq = alive_parents[parent_idx];
-                        let offset = sample_normal_zero_mean(&mut rng, sigma);
-                        let mut offspring_freq = parent_freq * 2.0f32.powf(offset);
-                        if !offspring_freq.is_finite() || offspring_freq <= 0.0 {
-                            offspring_freq = parent_freq;
-                        }
-                        offspring_freq = offspring_freq.clamp(min_spawn, max_spawn);
-                        let eps = 0.001f32;
-                        let min_freq =
-                            (offspring_freq * 2.0f32.powf(-eps)).clamp(space.fmin, space.fmax);
-                        let max_freq =
-                            (offspring_freq * 2.0f32.powf(eps)).clamp(space.fmin, space.fmax);
-                        SpawnStrategy::RandomLog {
-                            min_freq: min_freq.min(max_freq),
-                            max_freq: max_freq.max(min_freq),
-                        }
+                        let parent_landscape = build_e6_parent_conditioned_landscape(
+                            &space,
+                            &params,
+                            anchor_hz,
+                            parent_freq,
+                            partials,
+                            E4_ENV_PARTIAL_DECAY_DEFAULT,
+                        );
+                        let min_dist_erb = crowding_sigma_erb_from_hz(
+                            parent_freq,
+                            spec.control.pitch.crowding_sigma_cents,
+                        );
+                        pop.apply_action(
+                            Action::Spawn {
+                                group_id: E3_GROUP_AGENTS,
+                                ids: vec![id],
+                                spec: spec.clone(),
+                                strategy: Some(SpawnStrategy::ConsonanceDensity {
+                                    min_freq: min_spawn,
+                                    max_freq: max_spawn,
+                                    min_dist_erb,
+                                }),
+                            },
+                            &parent_landscape,
+                            None,
+                        );
+                        continue;
                     }
                 }
             };
@@ -1604,6 +1614,73 @@ fn build_anchor_landscape(
     landscape
 }
 
+fn build_density_landscape_from_freqs(
+    space: &Log2Space,
+    params: &LandscapeParams,
+    freqs_hz: &[f32],
+    env_partials: u32,
+    env_partial_decay: f32,
+) -> Landscape {
+    let mut landscape = Landscape::new(space.clone());
+    let mut env_scan = vec![0.0f32; space.n_bins()];
+    for &freq_hz in freqs_hz {
+        if !freq_hz.is_finite() || freq_hz <= 0.0 {
+            continue;
+        }
+        add_harmonic_partials_to_env(
+            space,
+            &mut env_scan,
+            freq_hz,
+            1.0,
+            env_partials,
+            env_partial_decay,
+        );
+    }
+    space.assert_scan_len_named(&env_scan, "combined_env_scan");
+
+    let h_dual = params
+        .harmonicity_kernel
+        .potential_h_dual_from_log2_spectrum(&env_scan, space);
+    landscape.subjective_intensity = env_scan.clone();
+    landscape.nsgt_power = env_scan;
+    landscape.harmonicity = h_dual.blended;
+    landscape.harmonicity_path_a = h_dual.path_a;
+    landscape.harmonicity_path_b = h_dual.path_b;
+    landscape.root_affinity = h_dual.metrics.root_affinity;
+    landscape.overtone_affinity = h_dual.metrics.overtone_affinity;
+    landscape.binding_strength = h_dual.metrics.binding_strength;
+    landscape.harmonic_tilt = h_dual.metrics.harmonic_tilt;
+    landscape.harmonicity_mirror_weight = params.harmonicity_kernel.params.mirror_weight;
+    landscape.roughness.fill(0.0);
+    landscape.roughness01.fill(0.0);
+    landscape.recompute_consonance(params);
+    landscape
+}
+
+fn build_e6_parent_conditioned_landscape(
+    space: &Log2Space,
+    params: &LandscapeParams,
+    anchor_hz: f32,
+    parent_freq_hz: f32,
+    env_partials: u32,
+    env_partial_decay: f32,
+) -> Landscape {
+    build_density_landscape_from_freqs(
+        space,
+        params,
+        &[anchor_hz, parent_freq_hz],
+        env_partials,
+        env_partial_decay,
+    )
+}
+
+fn crowding_sigma_erb_from_hz(freq_hz: f32, sigma_cents: f32) -> f32 {
+    let sigma_log2 = (sigma_cents.max(1e-3)) / 1200.0;
+    let base_hz = freq_hz.max(1e-6);
+    let plus_hz = base_hz * 2.0f32.powf(sigma_log2);
+    (hz_to_erb(plus_hz) - hz_to_erb(base_hz)).abs().max(1e-6)
+}
+
 fn init_e4_rhythms(cfg: &E4SimConfig) -> NeuralRhythms {
     let mut rhythms = NeuralRhythms::default();
     rhythms.theta.freq_hz = cfg.theta_freq_hz.max(0.1);
@@ -1766,6 +1843,10 @@ fn e6_spawn_spec(anchor_hz: f32, landscape_weight: f32) -> SpawnSpec {
     control.pitch.gravity = 0.0; // no tessitura pull
     control.pitch.exploration = 0.5;
     control.pitch.persistence = 0.5;
+    control.pitch.crowding_strength = E2_MATCH_CROWDING_WEIGHT;
+    control.pitch.crowding_sigma_cents = E4_MATCH_SIGMA_CENTS;
+    control.pitch.crowding_sigma_from_roughness = false;
+    control.pitch.sigma_cents = Some(E4_MATCH_SIGMA_CENTS);
     // perceptual repulsion: enabled=true (default), novelty_bias=1.0 (default)
     control.phonation.spec = PhonationSpec::default();
 
@@ -1868,6 +1949,17 @@ fn voice_control(cfg: &E4SimConfig) -> AgentControl {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn e6_spawn_spec_uses_e2_crowding_and_e4_sigma() {
+        let spec = e6_spawn_spec(E4_ANCHOR_HZ, 0.5);
+        let pitch = spec.control.pitch;
+        assert_eq!(pitch.core_kind, PitchCoreKind::PeakSampler);
+        assert!((pitch.crowding_strength - E2_MATCH_CROWDING_WEIGHT).abs() <= 1e-6);
+        assert!((pitch.crowding_sigma_cents - E4_MATCH_SIGMA_CENTS).abs() <= 1e-6);
+        assert!(!pitch.crowding_sigma_from_roughness);
+        assert_eq!(pitch.sigma_cents, Some(E4_MATCH_SIGMA_CENTS));
+    }
 
     #[test]
     fn e4_mirror_weight_changes_consonance_landscape() {

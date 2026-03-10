@@ -317,11 +317,14 @@ const PAL_E5_UNIFORM: RGBColor = PAL_R; // dark rose for uniform condition
 const PAL_E5_CONTROL: RGBColor = PAL_C; // purple grey for control
 
 const E6_FIRST_K: usize = 20;
-const E6_POP_SIZE: usize = 32;
+// Listening-aligned sparse regime: 2 octaves with roughly 5 voices.
+const E6_POP_SIZE: usize = 5;
 const E6_MIN_DEATHS: usize = 4000;
-const E6_STEPS_CAP: usize = 200_000;
-const E6_MUTATION_SIGMA: f32 = 0.003;
-const E6_SNAPSHOT_INTERVAL: usize = 100;
+const E6_STEPS_CAP: usize = 5_000;
+const E6_MUTATION_SIGMA: f32 = E4_BIND_SIGMA_CENTS / 1200.0;
+const E6_HILL_LANDSCAPE_WEIGHT: f32 = 1.0;
+const E6_SNAPSHOT_INTERVAL: usize = 25;
+const E6_FIG_X_MAX: f32 = 5_000.0;
 const E6_CONSONANT_WINDOW_ST: f32 = 0.25;
 const E6_INTERVAL_BIN_ST: f32 = 0.25;
 const E6_SEEDS: [u64; 20] = [
@@ -5796,13 +5799,14 @@ fn plot_e6_hereditary_adaptation(
 
     let mut mean_c_by_cond_seed: HashMap<&'static str, HashMap<u64, Vec<(usize, f32)>>> =
         HashMap::new();
-    let mut occ_by_cond_seed: HashMap<&'static str, HashMap<u64, Vec<(usize, f32)>>> =
-        HashMap::new();
     let mut deaths_by_cond: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut heat_counts: HashMap<(usize, i32), f32> = HashMap::new();
-    // Track per-seed last snapshot bins for heatmap carry-forward
     let mut hered_seed_last_step: HashMap<u64, usize> = HashMap::new();
     let mut hered_seed_last_bins: HashMap<u64, Vec<i32>> = HashMap::new();
+    let mut final_occ_heredity: Vec<f32> = Vec::new();
+    let mut final_occ_random: Vec<f32> = Vec::new();
+    let mut final_target_dist_heredity: Vec<f32> = Vec::new();
+    let mut final_target_dist_random: Vec<f32> = Vec::new();
 
     for (condition, seed, result) in &all_results {
         let cond_label = condition.label();
@@ -5840,12 +5844,6 @@ fn plot_e6_hereditary_adaptation(
                 .entry(*seed)
                 .or_default()
                 .push((snap.step, point.mean_c_score));
-            occ_by_cond_seed
-                .entry(cond_label)
-                .or_default()
-                .entry(*seed)
-                .or_default()
-                .push((snap.step, point.consonant_occupation));
 
             for (agent_idx, &freq) in snap.freqs_hz.iter().enumerate() {
                 if !freq.is_finite() || freq <= 0.0 {
@@ -5865,13 +5863,10 @@ fn plot_e6_hereditary_adaptation(
                     c_level,
                     if is_consonant { 1 } else { 0 }
                 ));
-
                 if *condition == E6Condition::Heredity {
                     let clamped = semitone.clamp(-12.0, 12.0 - f32::EPSILON);
                     let bin = ((clamped + 12.0) / E6_INTERVAL_BIN_ST).floor() as i32;
                     *heat_counts.entry((snap.step, bin)).or_insert(0.0) += 1.0;
-                    // Track bins per seed per snapshot step; overwrite each step
-                    // so only the latest snapshot's bins are retained
                     let entry = hered_seed_last_bins.entry(*seed).or_default();
                     if hered_seed_last_step.get(seed).copied() != Some(snap.step) {
                         entry.clear();
@@ -5879,6 +5874,7 @@ fn plot_e6_hereditary_adaptation(
                     }
                     entry.push(bin);
                 }
+
             }
         }
 
@@ -5889,11 +5885,26 @@ fn plot_e6_hereditary_adaptation(
             n_alive: 0,
         });
         let end = run_points.last().copied().unwrap_or(start);
+        let final_target_distance_ct = result
+            .snapshots
+            .last()
+            .map(|snap| e6_mean_target_distance_ct(&snap.freqs_hz, anchor_hz))
+            .unwrap_or(0.0);
         let mean_n_alive = if run_points.is_empty() {
             0.0
         } else {
             run_points.iter().map(|p| p.n_alive as f32).sum::<f32>() / run_points.len() as f32
         };
+        match condition {
+            E6Condition::Heredity => {
+                final_occ_heredity.push(end.consonant_occupation);
+                final_target_dist_heredity.push(final_target_distance_ct);
+            }
+            E6Condition::Random => {
+                final_occ_random.push(end.consonant_occupation);
+                final_target_dist_random.push(final_target_distance_ct);
+            }
+        }
         summary_csv.push_str(&format!(
             "{},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.3}\n",
             cond_label,
@@ -5917,7 +5928,6 @@ fn plot_e6_hereditary_adaptation(
     write_with_log(out_dir.join("paper_e6_snapshots.csv"), snapshots_csv)?;
     write_with_log(out_dir.join("paper_e6_summary.csv"), summary_csv)?;
 
-    // Carry-forward for heatmap: extend each heredity seed's last bins to global_max_step
     {
         let global_max_step = heat_counts.keys().map(|(s, _)| *s).max().unwrap_or(0);
         for (seed, bins) in &hered_seed_last_bins {
@@ -5940,40 +5950,15 @@ fn plot_e6_hereditary_adaptation(
         mean_c_by_cond_seed.get(E6Condition::Random.label()),
         E6_SNAPSHOT_INTERVAL,
     );
-    let occ_heredity = e6_series_stats(
-        occ_by_cond_seed.get(E6Condition::Heredity.label()),
-        E6_SNAPSHOT_INTERVAL,
-    );
-    let occ_random = e6_series_stats(
-        occ_by_cond_seed.get(E6Condition::Random.label()),
-        E6_SNAPSHOT_INTERVAL,
-    );
-    // Collect final-snapshot pitches (semitones from anchor) for Panel D histogram
-    let mut final_st_heredity: Vec<f32> = Vec::new();
-    let mut final_st_random: Vec<f32> = Vec::new();
-    for (condition, _seed, result) in &all_results {
-        if let Some(last_snap) = result.snapshots.last() {
-            let dst = match condition {
-                E6Condition::Heredity => &mut final_st_heredity,
-                E6Condition::Random => &mut final_st_random,
-            };
-            for &freq in &last_snap.freqs_hz {
-                if freq.is_finite() && freq > 0.0 {
-                    dst.push(12.0 * (freq / anchor_hz).log2());
-                }
-            }
-        }
-    }
-
     render_e6_figure(
         &out_dir.join("paper_e6_figure.svg"),
         &c_heredity,
         &c_random,
-        &occ_heredity,
-        &occ_random,
         &heat_counts,
-        &final_st_heredity,
-        &final_st_random,
+        &final_occ_heredity,
+        &final_occ_random,
+        &final_target_dist_heredity,
+        &final_target_dist_random,
     )?;
 
     // ── C1: Independent consonance evaluation (JI ratio-complexity metric) ──
@@ -6159,7 +6144,7 @@ fn plot_e6_hereditary_adaptation(
         write_with_log(out_dir.join("paper_e6_independent_eval.txt"), eval_text)?;
     }
 
-    // ── C2: Integration figure (heredity/random × lw=0.0/0.5) ──
+    // ── C2: Integration figure (heredity/random × lw=0.0/1.0) ──
     plot_e6_integration_figure(out_dir, anchor_hz)?;
 
     Ok(())
@@ -6226,6 +6211,32 @@ fn e6_consonant_occupation(freqs: &[f32], anchor_hz: f32, window_st: f32) -> f32
         0.0
     } else {
         n_hit as f32 / n_total as f32
+    }
+}
+
+fn e6_mean_target_distance_ct(freqs_hz: &[f32], anchor_hz: f32) -> f32 {
+    let mut dists_ct: Vec<f32> = Vec::new();
+    for &freq in freqs_hz {
+        if !freq.is_finite() || freq <= 0.0 {
+            continue;
+        }
+        let st_mod = (12.0 * (freq / anchor_hz).log2()).rem_euclid(12.0);
+        let d_st = E2_CONSONANT_STEPS
+            .iter()
+            .map(|target| {
+                let t_mod = target.rem_euclid(12.0);
+                let d = (st_mod - t_mod).abs();
+                d.min(12.0 - d)
+            })
+            .fold(f32::INFINITY, f32::min);
+        if d_st.is_finite() {
+            dists_ct.push(d_st * 100.0);
+        }
+    }
+    if dists_ct.is_empty() {
+        0.0
+    } else {
+        dists_ct.iter().sum::<f32>() / dists_ct.len() as f32
     }
 }
 
@@ -6323,18 +6334,20 @@ fn render_e6_figure(
     out_path: &Path,
     c_heredity: &[(f32, f32, f32)],
     c_random: &[(f32, f32, f32)],
-    _occ_heredity: &[(f32, f32, f32)],
-    _occ_random: &[(f32, f32, f32)],
     heat_counts: &HashMap<(usize, i32), f32>,
-    final_st_heredity: &[f32],
-    final_st_random: &[f32],
+    final_occ_heredity: &[f32],
+    final_occ_random: &[f32],
+    final_target_dist_heredity: &[f32],
+    final_target_dist_random: &[f32],
 ) -> Result<(), Box<dyn Error>> {
-    let root = bitmap_root(out_path, (3600, 935)).into_drawing_area();
+    let root = bitmap_root(out_path, (3720, 935)).into_drawing_area();
     root.fill(&WHITE)?;
-    let panels = root.split_evenly((1, 3));
+    let (left, right) = root.split_horizontally(2400);
+    let left_panels = left.split_evenly((1, 2));
+    let right_panels = right.split_evenly((1, 2));
 
     draw_e6_series_panel(
-        &panels[0],
+        &left_panels[0],
         "A. Mean consonance",
         "C_score",
         c_heredity,
@@ -6342,8 +6355,33 @@ fn render_e6_figure(
         0.0,
         0.5,
     )?;
-    draw_e6_heatmap_panel(&panels[1], heat_counts)?;
-    draw_e6_pitch_histogram_panel(&panels[2], final_st_heredity, final_st_random)?;
+    draw_e6_heatmap_panel(&left_panels[1], heat_counts)?;
+    draw_e6_final_metric_panel(
+        &right_panels[0],
+        "C. Consonant occupancy",
+        "occupancy",
+        final_occ_heredity,
+        final_occ_random,
+        0.0,
+        Some(1.0),
+        64,
+        48,
+        50,
+        126,
+    )?;
+    draw_e6_final_metric_panel(
+        &right_panels[1],
+        "D. Target dist.",
+        "ct",
+        final_target_dist_heredity,
+        final_target_dist_random,
+        0.0,
+        None,
+        64,
+        48,
+        50,
+        126,
+    )?;
 
     root.present()?;
     Ok(())
@@ -6366,9 +6404,10 @@ where
         .chain(random.iter())
         .map(|(x, _, _)| *x)
         .fold(0.0f32, f32::max)
+        .min(E6_FIG_X_MAX)
         .max(1.0);
     let mut chart = ChartBuilder::on(area)
-        .caption(caption, ("sans-serif", 72))
+        .caption(caption, ("sans-serif", 64))
         .margin(20)
         .x_label_area_size(90)
         .y_label_area_size(120)
@@ -6378,9 +6417,10 @@ where
         .configure_mesh()
         .x_desc("step")
         .y_desc(y_desc)
+        .x_labels(11)
         .x_label_formatter(&|v| format!("{}", *v as i64))
-        .label_style(("sans-serif", 52).into_font())
-        .axis_desc_style(("sans-serif", 56).into_font())
+        .label_style(("sans-serif", 48).into_font())
+        .axis_desc_style(("sans-serif", 50).into_font())
         .draw()?;
 
     for (label, series, color) in [("heredity", heredity, PAL_H), ("random", random, PAL_R)] {
@@ -6437,6 +6477,82 @@ where
     Ok(())
 }
 
+fn draw_e6_final_metric_panel<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    caption: &str,
+    y_desc: &str,
+    heredity: &[f32],
+    random: &[f32],
+    y_lo: f32,
+    y_hi_override: Option<f32>,
+    caption_size: u32,
+    label_size: u32,
+    axis_desc_size: u32,
+    y_label_area_size: u32,
+) -> Result<(), Box<dyn Error>>
+where
+    <DB as DrawingBackend>::ErrorType: 'static,
+{
+    let mean_ci = |values: &[f32]| -> (f32, f32) {
+        if values.is_empty() {
+            (0.0, 0.0)
+        } else {
+            (mean_std_scalar(values).0, ci95_half_width(values))
+        }
+    };
+    let (h_mean, h_ci) = mean_ci(heredity);
+    let (r_mean, r_ci) = mean_ci(random);
+    let y_hi = y_hi_override.unwrap_or_else(|| {
+        let max_v = (h_mean + h_ci).max(r_mean + r_ci).max(y_lo + 1e-6);
+        (1.15 * max_v).max(y_lo + 1e-6)
+    });
+
+    let mut chart = ChartBuilder::on(area)
+        .caption(caption, ("sans-serif", caption_size))
+        .margin(22)
+        .x_label_area_size(80)
+        .y_label_area_size(y_label_area_size)
+        .build_cartesian_2d(-0.5f32..1.5f32, y_lo..y_hi)?;
+
+    chart
+        .configure_mesh()
+        .disable_mesh()
+        .y_desc(y_desc)
+        .x_labels(2)
+        .x_label_formatter(&|v| {
+            let idx = v.round() as i32;
+            match idx {
+                0 => "heredity".to_string(),
+                1 => "random".to_string(),
+                _ => String::new(),
+            }
+        })
+        .label_style(("sans-serif", label_size).into_font())
+        .axis_desc_style(("sans-serif", axis_desc_size).into_font())
+        .draw()?;
+
+    for (i, (mean, ci, color)) in [(h_mean, h_ci, PAL_H), (r_mean, r_ci, PAL_R)]
+        .into_iter()
+        .enumerate()
+    {
+        let center = i as f32;
+        let x0 = center - 0.3;
+        let x1 = center + 0.3;
+        chart.draw_series(std::iter::once(Rectangle::new(
+            [(x0, y_lo), (x1, mean)],
+            color.mix(0.7).filled(),
+        )))?;
+        let err_lo = (mean - ci).max(y_lo);
+        let err_hi = (mean + ci).min(y_hi);
+        chart.draw_series(std::iter::once(PathElement::new(
+            vec![(center, err_lo), (center, err_hi)],
+            BLACK.mix(0.7),
+        )))?;
+    }
+
+    Ok(())
+}
+
 fn draw_e6_heatmap_panel<DB: DrawingBackend>(
     area: &DrawingArea<DB, Shift>,
     heat_counts: &HashMap<(usize, i32), f32>,
@@ -6448,6 +6564,7 @@ where
         .keys()
         .map(|(step, _)| *step as f32)
         .fold(0.0f32, f32::max)
+        .min(E6_FIG_X_MAX - E6_SNAPSHOT_INTERVAL as f32)
         + E6_SNAPSHOT_INTERVAL as f32;
     let mut chart = ChartBuilder::on(area)
         .caption("B. Heredity pitch heatmap", ("sans-serif", 72))
@@ -6460,6 +6577,7 @@ where
         .configure_mesh()
         .x_desc("step")
         .y_desc("cents")
+        .x_labels(11)
         .x_label_formatter(&|v| format!("{}", *v as i64))
         .label_style(("sans-serif", 52).into_font())
         .axis_desc_style(("sans-serif", 56).into_font())
@@ -6502,7 +6620,89 @@ where
     Ok(())
 }
 
-/// C2: Integration figure — 4 conditions: heredity/random × lw=0.0/0.5
+fn draw_e6_integration_endpoint_panel<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    h_vals: &[f32],
+    hh_vals: &[f32],
+    r_vals: &[f32],
+    rh_vals: &[f32],
+) -> Result<(), Box<dyn Error>>
+where
+    <DB as DrawingBackend>::ErrorType: 'static,
+{
+    let mean_ci = |values: &[f32]| -> (f32, f32) {
+        if values.is_empty() {
+            (0.0, 0.0)
+        } else {
+            (mean_std_scalar(values).0, ci95_half_width(values))
+        }
+    };
+    let (h_mean, h_ci) = mean_ci(h_vals);
+    let (hh_mean, hh_ci) = mean_ci(hh_vals);
+    let (r_mean, r_ci) = mean_ci(r_vals);
+    let (rh_mean, rh_ci) = mean_ci(rh_vals);
+    let y_hi = [
+        h_mean + h_ci,
+        hh_mean + hh_ci,
+        r_mean + r_ci,
+        rh_mean + rh_ci,
+    ]
+    .into_iter()
+    .fold(0.0f32, f32::max)
+    .max(1e-6)
+        * 1.15;
+
+    let mut chart = ChartBuilder::on(area)
+        .caption("B. Final C_score", ("sans-serif", 60))
+        .margin(18)
+        .x_label_area_size(85)
+        .y_label_area_size(105)
+        .build_cartesian_2d(-0.5f32..1.5f32, 0.0f32..y_hi)?;
+
+    chart
+        .configure_mesh()
+        .disable_mesh()
+        .x_labels(2)
+        .x_label_formatter(&|v| match v.round() as i32 {
+            0 => "heredity".to_string(),
+            1 => "random".to_string(),
+            _ => String::new(),
+        })
+        .y_desc("C_score")
+        .label_style(("sans-serif", 40).into_font())
+        .axis_desc_style(("sans-serif", 42).into_font())
+        .draw()?;
+
+    let bar_specs = [
+        (0.0f32 - 0.16, h_mean, h_ci, PAL_H.mix(0.55)),
+        (0.0f32 + 0.16, hh_mean, hh_ci, PAL_H.to_rgba()),
+        (1.0f32 - 0.16, r_mean, r_ci, PAL_R.mix(0.55)),
+        (1.0f32 + 0.16, rh_mean, rh_ci, PAL_R.to_rgba()),
+    ];
+
+    for (center, mean, ci, color) in bar_specs {
+        let x0 = center - 0.12;
+        let x1 = center + 0.12;
+        chart.draw_series(std::iter::once(Rectangle::new(
+            [(x0, 0.0), (x1, mean)],
+            color.filled(),
+        )))?;
+        chart.draw_series(std::iter::once(PathElement::new(
+            vec![(center, (mean - ci).max(0.0)), (center, (mean + ci).min(y_hi))],
+            BLACK.stroke_width(2),
+        )))?;
+    }
+
+    chart.draw_series(std::iter::once(Text::new(
+        "light = no hill, dark = hill",
+        (-0.35f32, y_hi * 0.95),
+        ("sans-serif", 28).into_font(),
+    )))?;
+
+    Ok(())
+}
+
+/// C2: Integration figure — 4 conditions: heredity/random × lw=0.0/1.0
 #[allow(clippy::type_complexity)]
 fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<dyn Error>> {
     struct IntegrationCondition {
@@ -6526,7 +6726,7 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
         IntegrationCondition {
             label: "heredity+hill",
             condition: E6Condition::Heredity,
-            landscape_weight: 0.5,
+            landscape_weight: E6_HILL_LANDSCAPE_WEIGHT,
             shuffle_landscape: false,
             color: RGBColor(76, 153, 76), // green
             dashed: false,
@@ -6542,7 +6742,7 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
         IntegrationCondition {
             label: "random+hill",
             condition: E6Condition::Random,
-            landscape_weight: 0.5,
+            landscape_weight: E6_HILL_LANDSCAPE_WEIGHT,
             shuffle_landscape: false,
             color: RGBColor(139, 34, 82), // PAL_R: dark rose
             dashed: false,
@@ -6558,7 +6758,7 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
         IntegrationCondition {
             label: "heredity+hill (shuffled)",
             condition: E6Condition::Heredity,
-            landscape_weight: 0.5,
+            landscape_weight: E6_HILL_LANDSCAPE_WEIGHT,
             shuffle_landscape: true,
             color: RGBColor(76, 153, 76), // green (same as HH)
             dashed: true,
@@ -6574,7 +6774,7 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
         IntegrationCondition {
             label: "random+hill (shuffled)",
             condition: E6Condition::Random,
-            landscape_weight: 0.5,
+            landscape_weight: E6_HILL_LANDSCAPE_WEIGHT,
             shuffle_landscape: true,
             color: RGBColor(139, 34, 82), // PAL_R: dark rose (same as RH)
             dashed: true,
@@ -6901,9 +7101,9 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
             let eval_landscape = e3_reference_landscape_with_partials(anchor_hz, *n_partials);
             let topo_conds = [
                 (E6Condition::Heredity, 0.0f32),
-                (E6Condition::Heredity, 0.5f32),
+                (E6Condition::Heredity, E6_HILL_LANDSCAPE_WEIGHT),
                 (E6Condition::Random, 0.0f32),
-                (E6Condition::Random, 0.5f32),
+                (E6Condition::Random, E6_HILL_LANDSCAPE_WEIGHT),
             ];
             let mut tc_finals: Vec<Vec<f32>> = Vec::new();
             for &(condition, lw) in &topo_conds {
@@ -6971,21 +7171,56 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
         csv_data,
     )?;
 
-    // Render 4-line plot — single-column, wide landscape aspect ratio
+    // Render main figure: real-terrain dynamics + endpoint summary
     let fig_path = out_dir.join("paper_e6_integration_figure.svg");
-    let root = bitmap_root(&fig_path, (1400, 630)).into_drawing_area();
+    let root = bitmap_root(&fig_path, (1600, 630)).into_drawing_area();
     root.fill(&WHITE)?;
+    let (left, right) = root.split_horizontally(1080);
+    let (left_header, left_plot) = left.split_vertically(120);
 
-    let x_max = all_series
+    let real_series: Vec<_> = all_series
+        .iter()
+        .filter(|(_, _, _, dashed)| !*dashed)
+        .collect();
+    let x_max = real_series
         .iter()
         .flat_map(|(_, s, _, _)| s.iter().map(|(x, _, _)| *x))
         .fold(0.0f32, f32::max)
+        .min(E6_FIG_X_MAX)
         .max(1.0);
     let y_lo = 0.0f32;
-    let y_hi = 0.65f32;
+    let y_hi = real_series
+        .iter()
+        .flat_map(|(_, s, _, _)| s.iter().map(|(_, mean, ci)| mean + ci))
+        .fold(0.0f32, f32::max)
+        .max(0.25)
+        * 1.08;
 
-    let mut chart = ChartBuilder::on(&root)
-        .margin(10)
+    left_header.draw(&Text::new(
+        "A. Mean consonance",
+        (360, 12),
+        ("sans-serif", 60).into_font(),
+    ))?;
+    let legend_items = [
+        ("heredity+hill", RGBColor(76, 153, 76), (60, 82)),
+        ("heredity", RGBColor(58, 106, 120), (560, 82)),
+        ("random+hill", RGBColor(139, 34, 82), (60, 110)),
+        ("random", RGBColor(204, 121, 50), (560, 110)),
+    ];
+    for (label, color, (x, y)) in legend_items {
+        left_header.draw(&PathElement::new(
+            vec![(x, y), (x + 42, y)],
+            color.stroke_width(4),
+        ))?;
+        left_header.draw(&Text::new(
+            label,
+            (x + 52, y - 12),
+            ("sans-serif", 30).into_font(),
+        ))?;
+    }
+
+    let mut chart = ChartBuilder::on(&left_plot)
+        .margin(14)
         .margin_bottom(5)
         .x_label_area_size(65)
         .y_label_area_size(80)
@@ -6995,186 +7230,48 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
         .configure_mesh()
         .x_desc("step")
         .y_desc("C_score")
-        .x_label_formatter(&|v| {
-            let k = (*v / 1000.0).round() as i64;
-            format!("{}k", k)
-        })
+        .x_labels(11)
+        .x_label_formatter(&|v| format!("{}", *v as i64))
         .label_style(("sans-serif", 36).into_font())
         .axis_desc_style(("sans-serif", 38).into_font())
         .draw()?;
 
-    // Draw in top-to-bottom order so legend matches visual stacking
-    // Solid lines first, then dashed shuffled lines
-    let draw_order: Vec<usize> = vec![1, 0, 3, 2, 4, 5];
+    // Draw only the 4 real conditions
+    let draw_order: Vec<usize> = vec![1, 0, 3, 2];
     for &idx in &draw_order {
-        let (label, series, color, dashed) = &all_series[idx];
-        if series.is_empty() {
+        let (_label, series, color, dashed) = &all_series[idx];
+        if series.is_empty() || *dashed {
             continue;
         }
-        // CI95 band (only for solid lines)
-        if !dashed {
-            let mut band: Vec<(f32, f32)> = Vec::with_capacity(series.len() * 2);
-            for (x, mean, ci) in series.iter().copied() {
-                band.push((x, (mean + ci).clamp(y_lo, y_hi)));
-            }
-            for (x, mean, ci) in series.iter().rev().copied() {
-                band.push((x, (mean - ci).clamp(y_lo, y_hi)));
-            }
-            chart.draw_series(std::iter::once(Polygon::new(
-                band,
-                color.mix(0.15).filled(),
-            )))?;
+        let mut band: Vec<(f32, f32)> = Vec::with_capacity(series.len() * 2);
+        for (x, mean, ci) in series.iter().copied() {
+            band.push((x, (mean + ci).clamp(y_lo, y_hi)));
         }
+        for (x, mean, ci) in series.iter().rev().copied() {
+            band.push((x, (mean - ci).clamp(y_lo, y_hi)));
+        }
+        chart.draw_series(std::iter::once(Polygon::new(
+            band,
+            color.mix(0.15).filled(),
+        )))?;
 
-        // Mean line
-        if *dashed {
-            let style = ShapeStyle {
-                color: color.mix(0.7),
-                filled: false,
-                stroke_width: 2,
-            };
-            chart
-                .draw_series(DashedLineSeries::new(
-                    series.iter().map(|(x, mean, _)| (*x, *mean)),
-                    8,
-                    4,
-                    style,
-                ))?
-                .label(*label)
-                .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color.mix(0.7)));
-        } else {
-            chart
-                .draw_series(LineSeries::new(
-                    series.iter().map(|(x, mean, _)| (*x, *mean)),
-                    color.stroke_width(2),
-                ))?
-                .label(*label)
-                .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], *color));
-        }
+        chart
+            .draw_series(LineSeries::new(
+                series.iter().map(|(x, mean, _)| (*x, *mean)),
+                color.stroke_width(2),
+            ))?;
     }
 
-    chart
-        .configure_series_labels()
-        .position(SeriesLabelPosition::LowerRight)
-        .background_style(WHITE.mix(0.85))
-        .border_style(BLACK)
-        .label_font(("sans-serif", 32).into_font())
-        .draw()?;
+    draw_e6_integration_endpoint_panel(
+        &right,
+        &cond_seed_finals[0],
+        &cond_seed_finals[1],
+        &cond_seed_finals[2],
+        &cond_seed_finals[3],
+    )?;
 
     root.present()?;
     log_output_path(&fig_path);
-    Ok(())
-}
-
-fn draw_e6_pitch_histogram_panel<DB: DrawingBackend>(
-    area: &DrawingArea<DB, Shift>,
-    st_heredity: &[f32],
-    st_random: &[f32],
-) -> Result<(), Box<dyn Error>>
-where
-    <DB as DrawingBackend>::ErrorType: 'static,
-{
-    let bin_width = 50.0f32; // cents per bin
-    let lo = -1300.0f32;
-    let hi = 1300.0f32;
-    let n_bins = ((hi - lo) / bin_width).ceil() as usize;
-
-    let histogram = |data: &[f32]| -> Vec<f32> {
-        let mut counts = vec![0.0f32; n_bins];
-        let total = data.len().max(1) as f32;
-        for &v in data {
-            let idx = ((v - lo) / bin_width).floor() as isize;
-            if idx >= 0 && (idx as usize) < n_bins {
-                counts[idx as usize] += 1.0 / total;
-            }
-        }
-        counts
-    };
-
-    let ct_heredity: Vec<f32> = st_heredity.iter().map(|&v| v * 100.0).collect();
-    let ct_random: Vec<f32> = st_random.iter().map(|&v| v * 100.0).collect();
-    let hist_h = histogram(&ct_heredity);
-    let hist_r = histogram(&ct_random);
-    let y_max = hist_h
-        .iter()
-        .chain(hist_r.iter())
-        .copied()
-        .fold(0.0f32, f32::max)
-        * 1.15;
-
-    let mut chart = ChartBuilder::on(area)
-        .caption("C. Final pitch distribution", ("sans-serif", 72))
-        .margin(20)
-        .x_label_area_size(90)
-        .y_label_area_size(120)
-        .build_cartesian_2d(lo..hi, 0.0f32..y_max.max(0.01))?;
-
-    chart
-        .configure_mesh()
-        .x_desc("cents")
-        .y_desc("density")
-        .y_label_formatter(&|v| {
-            let r = (*v * 10.0).round() as i32;
-            if ((*v - r as f32 / 10.0).abs() < 1e-4) && (*v * 100.0).round() as i32 % 10 == 0 {
-                format!("{:.1}", v)
-            } else {
-                String::new()
-            }
-        })
-        .label_style(("sans-serif", 52).into_font())
-        .axis_desc_style(("sans-serif", 56).into_font())
-        .draw()?;
-
-    // Draw consonant ratio reference lines
-    for &target in &E2_CONSONANT_STEPS {
-        for ct in [target * 100.0, (target - 12.0) * 100.0] {
-            if ct > lo && ct < hi {
-                chart.draw_series(std::iter::once(PathElement::new(
-                    vec![(ct, 0.0), (ct, y_max)],
-                    BLACK.mix(0.12),
-                )))?;
-            }
-        }
-    }
-
-    // Offset bars so they don't overlap: heredity left half, random right half
-    let half = bin_width * 0.45;
-    for (hist, color, offset) in [(&hist_h, PAL_H, -half / 2.0), (&hist_r, PAL_R, half / 2.0)] {
-        chart.draw_series(
-            hist.iter()
-                .enumerate()
-                .filter(|(_, h)| **h > 0.0)
-                .map(|(i, h)| {
-                    let x0 = lo + i as f32 * bin_width + offset;
-                    Rectangle::new([(x0, 0.0), (x0 + half, *h)], color.mix(0.55).filled())
-                }),
-        )?;
-    }
-
-    // Legend
-    chart
-        .draw_series(std::iter::once(Rectangle::new(
-            [(lo, 0.0), (lo, 0.0)],
-            PAL_H.filled(),
-        )))?
-        .label("heredity")
-        .legend(move |(x, y)| Rectangle::new([(x, y - 5), (x + 20, y + 5)], PAL_H.filled()));
-    chart
-        .draw_series(std::iter::once(Rectangle::new(
-            [(lo, 0.0), (lo, 0.0)],
-            PAL_R.filled(),
-        )))?
-        .label("random")
-        .legend(move |(x, y)| Rectangle::new([(x, y - 5), (x + 20, y + 5)], PAL_R.filled()));
-
-    chart
-        .configure_series_labels()
-        .position(SeriesLabelPosition::Coordinate(130, 70))
-        .background_style(WHITE.mix(0.85))
-        .border_style(BLACK)
-        .label_font(("sans-serif", 48).into_font())
-        .draw()?;
-
     Ok(())
 }
 
@@ -20169,7 +20266,6 @@ fn draw_hist_structure_panel(
     chart
         .configure_mesh()
         .disable_mesh()
-        .x_desc("condition")
         .y_desc(y_desc)
         .x_labels(3)
         .x_label_formatter(&|x| {
@@ -21196,7 +21292,6 @@ fn draw_diversity_panel(
     chart
         .configure_mesh()
         .disable_mesh()
-        .x_desc("condition")
         .y_desc(y_desc)
         .x_labels(3)
         .x_label_formatter(&|x| {
@@ -22146,6 +22241,15 @@ fn e2_condition_display(condition: &str) -> &'static str {
     }
 }
 
+fn e2_condition_display_short(condition: &str) -> &'static str {
+    match condition {
+        "baseline" => "search",
+        "nohill" => "random",
+        "nocrowd" => "no-crowd",
+        _ => "unknown",
+    }
+}
+
 fn e2_condition_color(condition: &str) -> RGBColor {
     match condition {
         "baseline" => PAL_H,
@@ -22617,13 +22721,12 @@ fn draw_diversity_metric_panel_impl_for_conditions(
     chart
         .configure_mesh()
         .disable_mesh()
-        .x_desc("condition")
         .y_desc(y_desc)
         .x_labels(conditions.len())
         .x_label_formatter(&|x| {
             let idx = x.round() as isize;
             if idx >= 0 && (idx as usize) < conditions.len() {
-                e2_condition_display(conditions[idx as usize]).to_string()
+                e2_condition_display_short(conditions[idx as usize]).to_string()
             } else {
                 String::new()
             }
@@ -23091,13 +23194,12 @@ fn draw_consonant_mass_panel_impl(
     chart
         .configure_mesh()
         .disable_mesh()
-        .x_desc("condition")
         .y_desc("consonant mass")
         .x_labels(3)
         .x_label_formatter(&|x| {
             let idx = x.round() as isize;
             if (0..=2).contains(&idx) {
-                e2_condition_display(conditions[idx as usize]).to_string()
+                e2_condition_display_short(conditions[idx as usize]).to_string()
             } else {
                 String::new()
             }
@@ -23161,6 +23263,7 @@ fn draw_condition_bar_panel(
     caption_size: u32,
     label_size: u32,
     axis_desc_size: u32,
+    y_label_area_size: u32,
 ) -> Result<(), Box<dyn Error>> {
     if conditions.is_empty() {
         return Ok(());
@@ -23176,18 +23279,17 @@ fn draw_condition_bar_panel(
         .caption(caption, ("sans-serif", caption_size))
         .margin(8)
         .x_label_area_size(40)
-        .y_label_area_size(55)
+        .y_label_area_size(y_label_area_size)
         .build_cartesian_2d(-0.5f32..x_hi, 0.0f32..y_max)?;
     chart
         .configure_mesh()
         .disable_mesh()
-        .x_desc("condition")
         .y_desc(y_desc)
         .x_labels(conditions.len())
         .x_label_formatter(&|x| {
             let idx = x.round() as isize;
             if idx >= 0 && (idx as usize) < conditions.len() {
-                e2_condition_display(conditions[idx as usize]).to_string()
+                e2_condition_display_short(conditions[idx as usize]).to_string()
             } else {
                 String::new()
             }
@@ -23245,6 +23347,7 @@ fn draw_entropy_panel_for_conditions(
         caption_size,
         label_size,
         axis_desc_size,
+        55,
     )
 }
 
@@ -23298,6 +23401,7 @@ fn draw_polyphony_panel_for_conditions(
         caption_size,
         label_size,
         axis_desc_size,
+        66,
     )
 }
 
@@ -23575,10 +23679,10 @@ fn render_e2_figure2(
     if len == 0 {
         return Ok(());
     }
-    let root = bitmap_root(out_path, (1600, 400)).into_drawing_area();
+    let root = bitmap_root(out_path, (1704, 400)).into_drawing_area();
     root.fill(&WHITE)?;
     let (panel_a, panel_bc) = root.split_horizontally(1254);
-    let (panel_b, panel_c) = panel_bc.split_horizontally(173);
+    let (panel_b, panel_c) = panel_bc.split_horizontally(225);
 
     // Convert semitone data to cents for display (×100)
     let st2c = 100.0f32;
@@ -25604,7 +25708,6 @@ where
     chart
         .configure_mesh()
         .disable_mesh()
-        .x_desc("condition")
         .y_desc("Pearson r")
         .x_labels(pearson_by_cond.len())
         .x_label_formatter(&|x| {
@@ -26131,6 +26234,17 @@ mod tests {
         assert!((snap_to_hist_bin_center(386.314, 25.0) - 387.5).abs() < 1e-3);
         assert!((snap_to_hist_bin_center(498.045, 25.0) - 487.5).abs() < 1e-3);
         assert!((snap_to_hist_bin_center(701.955, 25.0) - 712.5).abs() < 1e-3);
+    }
+
+    #[test]
+    fn e6_audio_chord_notes_prefers_dense_bins() {
+        let freqs = vec![220.0, 220.2, 219.8, 330.0, 330.4, 440.0];
+        let notes = e6_audio_chord_notes(&freqs, 2);
+        assert_eq!(notes.len(), 2);
+        assert!(notes[0].freq_hz < notes[1].freq_hz);
+        assert!((notes[0].freq_hz - 220.0).abs() < 2.0);
+        assert!((notes[1].freq_hz - 330.2).abs() < 2.0);
+        assert!(notes[0].amp >= notes[1].amp);
     }
 
     #[test]
@@ -28529,11 +28643,14 @@ fn e2_scene_metrics_csv(run: &E2Run, _anchor_hz: f32) -> String {
 const AUDIO_STEP_SEC: f32 = 0.12;
 const AUDIO_GAP_SEC: f32 = 1.0;
 const AUDIO_N_SELECT_E2: usize = 8;
-const AUDIO_N_SELECT_E6: usize = 8;
+const AUDIO_E6_POP_SIZE: usize = E6_POP_SIZE;
+/// Maximum number of occupied pitch bins rendered per E6 snapshot.
+const AUDIO_N_SELECT_E6: usize = AUDIO_E6_POP_SIZE;
 /// How many E6 snapshots to replay per segment (last N of run)
 const AUDIO_E6_TAIL_SNAPSHOTS: usize = 90;
-/// Subdivisions between simulation steps for smooth interpolation.
-/// Higher = smoother pitch glides, less beating from grid quantisation.
+const AUDIO_E6_BIN_CENTS: f32 = 50.0;
+const AUDIO_E6_FIXED_DRONE_HZ: f32 = E4_ANCHOR_HZ;
+const AUDIO_E6_FIXED_DRONE_AMP: f32 = 0.035;
 
 /// Header for generated Rhai replay scripts.
 fn rhai_replay_header(title: &str, detail: &str) -> String {
@@ -28653,12 +28770,68 @@ fn rhai_e2_segment(
     s
 }
 
-/// Emit Rhai scene for an E6 segment: create agents, step through snapshots, release.
-/// Engine-side pitch_smooth handles smooth transitions between steps.
+#[derive(Clone, Copy, Debug)]
+struct E6AudioChordNote {
+    freq_hz: f32,
+    amp: f32,
+}
+
+fn e6_audio_chord_notes(freqs_hz: &[f32], max_notes: usize) -> Vec<E6AudioChordNote> {
+    let max_notes = max_notes.max(1);
+    let mut bins: std::collections::BTreeMap<i32, Vec<f32>> = std::collections::BTreeMap::new();
+    for &freq in freqs_hz {
+        if !freq.is_finite() || freq <= 20.0 {
+            continue;
+        }
+        let cents = 1200.0 * freq.log2();
+        let bin = (cents / AUDIO_E6_BIN_CENTS).round() as i32;
+        bins.entry(bin).or_default().push(freq);
+    }
+    if bins.is_empty() {
+        return Vec::new();
+    }
+
+    let max_count = bins.values().map(|bucket| bucket.len()).max().unwrap_or(1) as f32;
+    let mut notes: Vec<(usize, E6AudioChordNote)> = bins
+        .into_values()
+        .map(|bucket| {
+            let count = bucket.len();
+            let mean_log2 = bucket.iter().map(|f| f.log2()).sum::<f32>() / count as f32;
+            let rel = (count as f32 / max_count).sqrt();
+            let amp = 0.035 + 0.045 * rel;
+            (
+                count,
+                E6AudioChordNote {
+                    freq_hz: 2.0_f32.powf(mean_log2),
+                    amp,
+                },
+            )
+        })
+        .collect();
+    notes.sort_by(|(count_a, note_a), (count_b, note_b)| {
+        count_b.cmp(count_a).then_with(|| {
+            note_a
+                .freq_hz
+                .partial_cmp(&note_b.freq_hz)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+    });
+    notes.truncate(max_notes);
+    let mut selected: Vec<E6AudioChordNote> = notes.into_iter().map(|(_, note)| note).collect();
+    selected.sort_by(|a, b| {
+        a.freq_hz
+            .partial_cmp(&b.freq_hz)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    selected
+}
+
+/// Emit Rhai scene for an E6 segment as a continuously morphing chord.
+/// The dominant occupied pitch bins are tracked over time without an added pulse.
 fn rhai_e6_segment(
     scene_name: &str,
     snapshots: &[&E6PitchSnapshot],
-    selected: &[usize],
+    max_notes: usize,
     step_sec: f32,
 ) -> String {
     let mut s = format!("scene(\"{scene_name}\", || {{\n");
@@ -28667,42 +28840,58 @@ fn rhai_e6_segment(
         s.push_str("    wait(1.0);\n});\n");
         return s;
     }
+    let max_notes = max_notes.max(1);
+    let initial_notes = e6_audio_chord_notes(&snapshots[0].freqs_hz, max_notes);
+    s.push_str(
+        &format!(
+            "    let e6_anchor = derive(sine)\n        .brain(\"drone\")\n        .pitch_mode(\"lock\")\n        .amp({:.3})\n        .sustain_drive(0.02)\n        .pitch_smooth(0.01);\n",
+            AUDIO_E6_FIXED_DRONE_AMP
+        ),
+    );
+    s.push_str(&format!(
+        "    let anchor = create(e6_anchor, 1).freq({:.2}).amp({:.3});\n",
+        AUDIO_E6_FIXED_DRONE_HZ, AUDIO_E6_FIXED_DRONE_AMP
+    ));
+    s.push_str(
+        "    let e6_note = derive(harmonic)\n        .brain(\"drone\")\n        .pitch_mode(\"lock\")\n        .amp(0.07)\n        .sustain_drive(0.02)\n        .pitch_smooth(0.03);\n",
+    );
 
-    // Create agents at initial freq from first snapshot
-    let first = &snapshots[0].freqs_hz;
-    let mut prev_emitted: Vec<f32> = selected
-        .iter()
-        .map(|&ai| if ai < first.len() { first[ai] } else { 220.0 })
-        .collect();
-    for (i, &freq) in prev_emitted.iter().enumerate() {
+    let mut prev_freqs: Vec<f32> = Vec::with_capacity(max_notes);
+    for note_idx in 0..max_notes {
+        let (freq_hz, amp) = initial_notes
+            .get(note_idx)
+            .map(|note| (note.freq_hz, note.amp))
+            .unwrap_or((220.0, 0.0));
+        prev_freqs.push(freq_hz);
         s.push_str(&format!(
-            "    let a{i} = create(agent_spec, 1).freq({freq:.2});\n"
+            "    let n{note_idx} = create(e6_note, 1).freq({freq_hz:.2}).amp({amp:.3});\n"
         ));
     }
     s.push_str("    flush();\n");
 
-    for snap_idx in 1..snapshots.len() {
-        let freqs = &snapshots[snap_idx].freqs_hz;
+    for snap in snapshots.iter().skip(1) {
+        let notes = e6_audio_chord_notes(&snap.freqs_hz, max_notes);
         s.push_str(&format!("    wait({step_sec:.4});\n"));
-        let mut any_changed = false;
-        for (i, &agent_i) in selected.iter().enumerate() {
-            let f1 = if agent_i < freqs.len() {
-                freqs[agent_i]
-            } else {
-                continue;
-            };
-            if (f1 - prev_emitted[i]).abs() > 0.01 {
-                s.push_str(&format!("    a{i}.freq({f1:.2});\n"));
-                prev_emitted[i] = f1;
-                any_changed = true;
-            }
+        for note_idx in 0..max_notes {
+            let (freq_hz, amp) = notes
+                .get(note_idx)
+                .map(|note| (note.freq_hz, note.amp))
+                .unwrap_or((prev_freqs[note_idx], 0.0));
+            prev_freqs[note_idx] = freq_hz;
+            s.push_str(&format!(
+                "    let n{note_idx} = n{note_idx}.freq({freq_hz:.2}).amp({amp:.3});\n"
+            ));
         }
-        if any_changed {
-            s.push_str("    flush();\n");
-        }
+        s.push_str("    flush();\n");
     }
 
     s.push_str(&format!("    wait({step_sec:.3});\n"));
+    s.push_str("    release(anchor);\n");
+    for note_idx in 0..max_notes {
+        s.push_str(&format!("    release(n{note_idx});\n"));
+    }
+    s.push_str("    flush();\n");
+    s.push_str("    wait(0.8);\n");
     s.push_str("});\n");
     s
 }
@@ -28719,11 +28908,6 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
     // Select 8 agents evenly from 24
     let e2_selected: Vec<usize> = (0..AUDIO_N_SELECT_E2)
         .map(|k| k * E2_N_AGENTS / AUDIO_N_SELECT_E2)
-        .collect();
-
-    // Select 8 agents evenly from 32
-    let e6_selected: Vec<usize> = (0..AUDIO_N_SELECT_E6)
-        .map(|k| k * E6_POP_SIZE / AUDIO_N_SELECT_E6)
         .collect();
 
     // ── E2 runs ──
@@ -28815,12 +28999,12 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         E6AudioSeg {
             label: "hillonly",
             condition: E6Condition::Random,
-            landscape_weight: 0.5,
+            landscape_weight: E6_HILL_LANDSCAPE_WEIGHT,
         },
         E6AudioSeg {
             label: "both",
             condition: E6Condition::Heredity,
-            landscape_weight: 0.5,
+            landscape_weight: E6_HILL_LANDSCAPE_WEIGHT,
         },
     ];
     let e6_seeds: [u64; 2] = [E6_SEEDS[0], E6_SEEDS[10]];
@@ -28839,7 +29023,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
                 seed,
                 steps_cap: E6_STEPS_CAP,
                 min_deaths: E6_MIN_DEATHS,
-                pop_size: E6_POP_SIZE,
+                pop_size: AUDIO_E6_POP_SIZE,
                 first_k: E6_FIRST_K,
                 condition: cond.condition,
                 mutation_sigma: E6_MUTATION_SIGMA,
@@ -28856,22 +29040,29 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
     // ── 20_integration.rhai ──
     {
         let detail = format!(
-            "// {} agents (selected from {}), tail {} snapshots per segment\n\
+            "// top {} occupied pitch bins per snapshot (from {} agents), tail {} snapshots per segment\n\
              // snapshot_interval={} steps, step_sec={:.3}\n\
+             // fixed sine drone at {:.1} Hz for listening reference\n\
              //\n\
-             // 8 segments: 4 conditions x 2 seeds\n\
-             //   neither   : random   + landscape_weight=0.0\n\
+             // 8 segments: 4 conditions x 2 seeds, ordered from most integrated to random within each seed\n\
+             //   both      : heredity + landscape_weight={:.1}\n\
              //   H-only    : heredity + landscape_weight=0.0\n\
-             //   hill-only : random   + landscape_weight=0.5\n\
-             //   both      : heredity + landscape_weight=0.5\n\
+             //   hill-only : random   + landscape_weight={:.1}\n\
+             //   neither   : random   + landscape_weight=0.0\n\
+             //\n\
+             //   listening replay uses {} agents (audio-only density reduction)\n\
              //\n\
              //   E6_SEEDS[0]  = {}\n\
              //   E6_SEEDS[10] = {}",
             AUDIO_N_SELECT_E6,
-            E6_POP_SIZE,
+            AUDIO_E6_POP_SIZE,
             AUDIO_E6_TAIL_SNAPSHOTS,
             E6_SNAPSHOT_INTERVAL,
             AUDIO_STEP_SEC,
+            AUDIO_E6_FIXED_DRONE_HZ,
+            E6_HILL_LANDSCAPE_WEIGHT,
+            E6_HILL_LANDSCAPE_WEIGHT,
+            AUDIO_E6_POP_SIZE,
             E6_SEEDS[0],
             E6_SEEDS[10],
         );
@@ -28879,7 +29070,21 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             "20_integration.rhai -- E6: Heredity x hill-climbing integration replay",
             &detail,
         );
-        for (i, (label, result)) in e6_results.iter().enumerate() {
+        let integration_order = [
+            "seed0_both",
+            "seed0_honly",
+            "seed0_hillonly",
+            "seed0_neither",
+            "seed10_both",
+            "seed10_honly",
+            "seed10_hillonly",
+            "seed10_neither",
+        ];
+        for (i, label) in integration_order.iter().enumerate() {
+            let (_, result) = e6_results
+                .iter()
+                .find(|(candidate, _)| candidate == label)
+                .unwrap_or_else(|| panic!("missing E6 audio result for label {label}"));
             let snaps = &result.snapshots;
             let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
             let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
@@ -28887,10 +29092,10 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             rhai.push_str(&rhai_e6_segment(
                 &scene,
                 &tail,
-                &e6_selected,
+                AUDIO_N_SELECT_E6,
                 AUDIO_STEP_SEC,
             ));
-            if i + 1 < e6_results.len() {
+            if i + 1 < integration_order.len() {
                 rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
             }
         }
@@ -28900,14 +29105,18 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
     // ── 00_quicklisten.rhai ──
     // 4 segments: E2 baseline seed0, E6 both seed0, E2 nohill seed0, E6 neither seed0
     {
-        let detail = "// 4 segments (curated highlights); all E2 segments include 1 fixed drone at 220 Hz:\n\
+        let detail = format!(
+            "// 4 segments (curated highlights); all E2 segments include 1 fixed drone at 220 Hz,\n\
+             // and E6 segments include a fixed sine drone at 220 Hz for listening reference:\n\
              //   1. E2 baseline  (seed 0) -- hill-climbing + crowding\n\
-             //   2. E6 both      (seed 0) -- heredity + hill-climbing\n\
+             //   2. E6 both      (seed 0) -- heredity + landscape_weight={:.1}\n\
              //   3. E2 no-hill   (seed 0) -- crowding only\n\
-             //   4. E6 neither   (seed 0) -- random control";
+             //   4. E6 neither   (seed 0) -- random control",
+            E6_HILL_LANDSCAPE_WEIGHT
+        );
         let mut rhai = rhai_replay_header(
             "00_quicklisten.rhai -- Orientation montage (replay)",
-            detail,
+            &detail,
         );
 
         // Segment 1: E2 baseline seed0 (index 0)
@@ -28929,7 +29138,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         rhai.push_str(&rhai_e6_segment(
             "ql2_e6_both",
             &tail,
-            &e6_selected,
+            AUDIO_N_SELECT_E6,
             AUDIO_STEP_SEC,
         ));
         rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
@@ -28953,7 +29162,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         rhai.push_str(&rhai_e6_segment(
             "ql4_e6_neither",
             &tail,
-            &e6_selected,
+            AUDIO_N_SELECT_E6,
             AUDIO_STEP_SEC,
         ));
 
