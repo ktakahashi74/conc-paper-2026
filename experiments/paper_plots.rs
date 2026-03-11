@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::env;
 use std::error::Error;
 use std::f32::consts::PI;
-use std::fs::{create_dir_all, remove_dir_all};
+use std::fs::{create_dir_all, read_to_string, remove_dir_all};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1266,6 +1266,10 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
     // Handle --audio-rhai: generate Rhai replay scripts and exit
     if args.iter().any(|arg| arg == "--audio-rhai") {
         generate_audio_replay_rhai()?;
+        return Ok(());
+    }
+    if args.iter().any(|arg| arg == "--postprocess-quicklisten") {
+        postprocess_quicklisten_wav_default()?;
         return Ok(());
     }
 
@@ -28642,7 +28646,11 @@ fn e2_scene_metrics_csv(run: &E2Run, _anchor_hz: f32) -> String {
 /// Audio replay timing constants (shared between E2 and E6 replay scripts)
 const AUDIO_STEP_SEC: f32 = 0.12;
 const AUDIO_GAP_SEC: f32 = 1.0;
+const AUDIO_QUICKLISTEN_GAP_SEC: f32 = AUDIO_GAP_SEC + 1.0;
+const AUDIO_QUICKLISTEN_FADE_SEC: f32 = 1.0;
 const AUDIO_N_SELECT_E2: usize = 8;
+const AUDIO_E2_AGENT_AMP: f32 = 0.10;
+const AUDIO_E2_AGENT_RELEASE_SEC: f32 = 0.8;
 const AUDIO_E6_POP_SIZE: usize = E6_POP_SIZE;
 /// Maximum number of occupied pitch bins rendered per E6 snapshot.
 const AUDIO_N_SELECT_E6: usize = AUDIO_E6_POP_SIZE;
@@ -28665,10 +28673,13 @@ fn rhai_replay_header(title: &str, detail: &str) -> String {
          let agent_spec = derive(sine)\n    \
              .brain(\"drone\")\n    \
              .pitch_mode(\"lock\")\n    \
-             .amp(0.15)\n    \
+             .amp({:.3})\n    \
              .sustain_drive(0.001)\n    \
              .pitch_smooth(0.01)\n    \
-             .adsr(0.3, 0.1, 0.9, 0.8);\n\n"
+             .adsr(0.3, 0.1, 0.9, {:.3});\n\n"
+        ,
+        AUDIO_E2_AGENT_AMP,
+        AUDIO_E2_AGENT_RELEASE_SEC
     )
 }
 
@@ -28896,6 +28907,196 @@ fn rhai_e6_segment(
     s
 }
 
+#[derive(Debug, Clone)]
+struct AudioSegmentWindow {
+    label: String,
+    start_sec: f32,
+    end_sec: f32,
+}
+
+fn parse_rhai_scene_windows(rhai_path: &Path) -> io::Result<Vec<AudioSegmentWindow>> {
+    let text = read_to_string(rhai_path)?;
+    let mut windows = Vec::new();
+    let mut current_label: Option<String> = None;
+    let mut current_start_sec = 0.0f32;
+    let mut current_time_sec = 0.0f32;
+    let mut brace_depth: i32 = 0;
+    let mut current_has_explicit_release = false;
+    let mut current_release_sec: Option<f32> = None;
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if current_label.is_none()
+            && trimmed.starts_with("scene(\"")
+            && let Some(rest) = trimmed.strip_prefix("scene(\"")
+            && let Some((label, _)) = rest.split_once("\", || {")
+        {
+            current_label = Some(label.to_string());
+            current_start_sec = current_time_sec;
+            current_has_explicit_release = false;
+            current_release_sec = None;
+        }
+
+        for (idx, _) in trimmed.match_indices("wait(") {
+            let start = idx + "wait(".len();
+            if let Some(end_rel) = trimmed[start..].find(')') {
+                let wait_str = &trimmed[start..start + end_rel];
+                if let Ok(wait_sec) = wait_str.parse::<f32>() {
+                    current_time_sec += wait_sec;
+                }
+            }
+        }
+
+        if current_label.is_some() {
+            if trimmed.contains("release(") {
+                current_has_explicit_release = true;
+                if current_release_sec.is_none() {
+                    current_release_sec = Some(current_time_sec);
+                }
+            }
+            brace_depth += trimmed.matches('{').count() as i32;
+            brace_depth -= trimmed.matches('}').count() as i32;
+            if brace_depth == 0 {
+                windows.push(AudioSegmentWindow {
+                    label: current_label.take().unwrap_or_default(),
+                    start_sec: current_start_sec,
+                    end_sec: if current_has_explicit_release {
+                        current_release_sec.unwrap_or(current_time_sec)
+                    } else {
+                        current_time_sec + AUDIO_E2_AGENT_RELEASE_SEC
+                    },
+                });
+            }
+        }
+    }
+
+    Ok(windows)
+}
+
+fn resolve_quicklisten_postprocess_paths() -> (PathBuf, PathBuf, PathBuf) {
+    if Path::new("supplementary_audio").is_dir() {
+        (
+            PathBuf::from("supplementary_audio/audio/00_quicklisten.wav"),
+            PathBuf::from("supplementary_audio/scenarios/00_quicklisten.rhai"),
+            PathBuf::from("supplementary_audio/manifest.csv"),
+        )
+    } else {
+        (
+            PathBuf::from("audio/00_quicklisten.wav"),
+            PathBuf::from("scenarios/00_quicklisten.rhai"),
+            PathBuf::from("manifest.csv"),
+        )
+    }
+}
+
+fn rewrite_quicklisten_manifest(
+    manifest_path: &Path,
+    windows: &[AudioSegmentWindow],
+) -> io::Result<()> {
+    let text = read_to_string(manifest_path)?;
+    let mut by_label: HashMap<&str, &AudioSegmentWindow> = HashMap::new();
+    for window in windows {
+        by_label.insert(window.label.as_str(), window);
+    }
+
+    let mut out = String::new();
+    for line in text.lines() {
+        if !line.starts_with("00_quicklisten.wav,") {
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        }
+        let mut cols: Vec<String> = line.split(',').map(|s| s.to_string()).collect();
+        if cols.len() >= 8 && let Some(window) = by_label.get(cols[2].as_str()) {
+            cols[6] = format!("{:.1}", window.start_sec);
+            cols[7] = format!("{:.1}", window.end_sec);
+        }
+        out.push_str(&cols.join(","));
+        out.push('\n');
+    }
+    std::fs::write(manifest_path, out)?;
+    Ok(())
+}
+
+fn apply_segment_fades_i16(
+    wav_path: &Path,
+    windows: &[AudioSegmentWindow],
+    fade_sec: f32,
+) -> io::Result<()> {
+    let mut reader = hound::WavReader::open(wav_path).map_err(io::Error::other)?;
+    let spec = reader.spec();
+    if spec.channels != 1 || spec.sample_rate == 0 || spec.bits_per_sample != 16 {
+        return Err(io::Error::other(format!(
+            "unsupported quicklisten WAV format: channels={}, rate={}, bits={}",
+            spec.channels, spec.sample_rate, spec.bits_per_sample
+        )));
+    }
+    let mut samples: Vec<i16> = reader
+        .samples::<i16>()
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(io::Error::other)?;
+    drop(reader);
+
+    let sr = spec.sample_rate as f32;
+    for (window_idx, window) in windows.iter().enumerate() {
+        let start = (window.start_sec * sr).round().max(0.0) as usize;
+        let end = (window.end_sec * sr).round().max(0.0) as usize;
+        if end <= start || start >= samples.len() {
+            continue;
+        }
+        let end = end.min(samples.len());
+        let seg_len = end - start;
+        let fade_len = ((fade_sec * sr).round() as usize).min(seg_len / 2).max(1);
+
+        if fade_len == 1 {
+            samples[start] = 0;
+            samples[end - 1] = 0;
+            continue;
+        }
+
+        let fade_den = (fade_len - 1) as f32;
+        for i in 0..fade_len {
+            let gain = i as f32 / fade_den;
+            let idx = start + i;
+            samples[idx] = ((samples[idx] as f32) * gain).round() as i16;
+        }
+        for i in 0..fade_len {
+            let gain = (fade_len - 1 - i) as f32 / fade_den;
+            let idx = end - fade_len + i;
+            samples[idx] = ((samples[idx] as f32) * gain).round() as i16;
+        }
+
+        let zero_until = windows
+            .get(window_idx + 1)
+            .map(|next| (next.start_sec * sr).round().max(0.0) as usize)
+            .unwrap_or(samples.len())
+            .min(samples.len());
+        if zero_until > end {
+            samples[end..zero_until].fill(0);
+        }
+    }
+
+    let mut writer = hound::WavWriter::create(wav_path, spec).map_err(io::Error::other)?;
+    for sample in samples {
+        writer.write_sample(sample).map_err(io::Error::other)?;
+    }
+    writer.finalize().map_err(io::Error::other)?;
+    Ok(())
+}
+
+fn postprocess_quicklisten_wav_default() -> io::Result<()> {
+    let (wav_path, rhai_path, manifest_path) = resolve_quicklisten_postprocess_paths();
+    let windows = parse_rhai_scene_windows(&rhai_path)?;
+    rewrite_quicklisten_manifest(&manifest_path, &windows)?;
+    apply_segment_fades_i16(&wav_path, &windows, AUDIO_QUICKLISTEN_FADE_SEC)?;
+    eprintln!(
+        "postprocessed quicklisten WAV: {} segments, {:.1}s fades",
+        windows.len(),
+        AUDIO_QUICKLISTEN_FADE_SEC
+    );
+    Ok(())
+}
+
 /// Generate all audio supplement Rhai scripts from simulation data.
 pub fn generate_audio_replay_rhai() -> io::Result<()> {
     let space = Log2Space::new(20.0, 8000.0, SPACE_BINS_PER_OCT);
@@ -28919,6 +29120,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         (E2_SEEDS[10], E2Condition::NoHillClimb, "seed10_nohill"),
         (E2_SEEDS[10], E2Condition::NoCrowding, "seed10_norep"),
     ];
+    let e2_polyphony_segment_indices: &[usize] = &[0, 2, 3, 5];
 
     eprintln!("  [audio-rhai] Running E2 simulations...");
     let e2_runs: Vec<E2Run> = e2_segments
@@ -28944,7 +29146,8 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             "// {} adaptive agents (selected from {}) + 1 fixed drone at {:.1} Hz, {} sweeps, step={} st\n\
              // Phase switch at step {} (dissonance -> consonance)\n\
              //\n\
-             // 6 segments: 3 conditions x 2 seeds\n\
+             // 4 segments: 2 conditions x 2 seeds\n\
+             //   local-search / no-rep for seed 0 and seed 10\n\
              //   E2_SEEDS[0]  = 0x{:X} = {}\n\
              //   E2_SEEDS[10] = 0x{:X} = {}",
             AUDIO_N_SELECT_E2,
@@ -28962,17 +29165,18 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             "10_exp1_polyphony.rhai -- E2: Hill-climbing + crowding replay",
             &detail,
         );
-        for (i, (_, _, label)) in e2_segments.iter().enumerate() {
-            let scene = format!("s{}_replay_{label}", i + 1);
+        for (scene_idx, &seg_idx) in e2_polyphony_segment_indices.iter().enumerate() {
+            let (_, _, label) = e2_segments[seg_idx];
+            let scene = format!("s{}_replay_{label}", scene_idx + 1);
             rhai.push_str(&rhai_e2_segment(
                 &scene,
-                &e2_runs[i].trajectory_semitones,
+                &e2_runs[seg_idx].trajectory_semitones,
                 anchor_hz,
                 &e2_selected,
-                Some(e2_runs[i].fixed_drone_hz),
+                Some(e2_runs[seg_idx].fixed_drone_hz),
                 AUDIO_STEP_SEC,
             ));
-            if i + 1 < e2_segments.len() {
+            if scene_idx + 1 < e2_polyphony_segment_indices.len() {
                 rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
             }
         }
@@ -29128,7 +29332,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             Some(e2_runs[0].fixed_drone_hz),
             AUDIO_STEP_SEC,
         ));
-        rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
+        rhai.push_str(&format!("wait({AUDIO_QUICKLISTEN_GAP_SEC:.1});\n\n"));
 
         // Segment 2: E6 both seed0 (e6_results index 6: both=cond[3], seed[0])
         let e6_both_seed0 = &e6_results[6].1;
@@ -29141,7 +29345,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             AUDIO_N_SELECT_E6,
             AUDIO_STEP_SEC,
         ));
-        rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
+        rhai.push_str(&format!("wait({AUDIO_QUICKLISTEN_GAP_SEC:.1});\n\n"));
 
         // Segment 3: E2 nohill seed0 (index 1)
         rhai.push_str(&rhai_e2_segment(
@@ -29152,7 +29356,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             Some(e2_runs[1].fixed_drone_hz),
             AUDIO_STEP_SEC,
         ));
-        rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
+        rhai.push_str(&format!("wait({AUDIO_QUICKLISTEN_GAP_SEC:.1});\n\n"));
 
         // Segment 4: E6 neither seed0 (e6_results index 0: neither=cond[0], seed[0])
         let e6_neither_seed0 = &e6_results[0].1;
