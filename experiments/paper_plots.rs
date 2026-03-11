@@ -6567,7 +6567,7 @@ where
         .min(E6_FIG_X_MAX - E6_SNAPSHOT_INTERVAL as f32)
         + E6_SNAPSHOT_INTERVAL as f32;
     let mut chart = ChartBuilder::on(area)
-        .caption("B. Heredity pitch heatmap", ("sans-serif", 72))
+        .caption("B. Heredity pitch heatmap", ("sans-serif", 64))
         .margin(20)
         .x_label_area_size(90)
         .y_label_area_size(120)
@@ -6653,10 +6653,10 @@ where
         * 1.15;
 
     let mut chart = ChartBuilder::on(area)
-        .caption("B. Final C_score", ("sans-serif", 60))
+        .caption("B. Final C_score", ("sans-serif", 68))
         .margin(18)
-        .x_label_area_size(85)
-        .y_label_area_size(105)
+        .x_label_area_size(115)
+        .y_label_area_size(140)
         .build_cartesian_2d(-0.5f32..1.5f32, 0.0f32..y_hi)?;
 
     chart
@@ -6669,8 +6669,8 @@ where
             _ => String::new(),
         })
         .y_desc("C_score")
-        .label_style(("sans-serif", 40).into_font())
-        .axis_desc_style(("sans-serif", 42).into_font())
+        .label_style(("sans-serif", 46).into_font())
+        .axis_desc_style(("sans-serif", 48).into_font())
         .draw()?;
 
     let bar_specs = [
@@ -6694,9 +6694,9 @@ where
     }
 
     chart.draw_series(std::iter::once(Text::new(
-        "light = no hill, dark = hill",
-        (-0.35f32, y_hi * 0.95),
-        ("sans-serif", 28).into_font(),
+        "light: no hill; dark: hill",
+        (-0.42f32, y_hi * 0.95),
+        ("sans-serif", 34).into_font(),
     )))?;
 
     Ok(())
@@ -7175,7 +7175,7 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
     let fig_path = out_dir.join("paper_e6_integration_figure.svg");
     let root = bitmap_root(&fig_path, (1600, 630)).into_drawing_area();
     root.fill(&WHITE)?;
-    let (left, right) = root.split_horizontally(1080);
+    let (left, right) = root.split_horizontally(1140);
     let (left_header, left_plot) = left.split_vertically(120);
 
     let real_series: Vec<_> = all_series
@@ -7199,7 +7199,7 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
     left_header.draw(&Text::new(
         "A. Mean consonance",
         (360, 12),
-        ("sans-serif", 60).into_font(),
+        ("sans-serif", 70).into_font(),
     ))?;
     let legend_items = [
         ("heredity+hill", RGBColor(76, 153, 76), (60, 82)),
@@ -7215,15 +7215,15 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
         left_header.draw(&Text::new(
             label,
             (x + 52, y - 12),
-            ("sans-serif", 30).into_font(),
+            ("sans-serif", 36).into_font(),
         ))?;
     }
 
     let mut chart = ChartBuilder::on(&left_plot)
         .margin(14)
         .margin_bottom(5)
-        .x_label_area_size(65)
-        .y_label_area_size(80)
+        .x_label_area_size(100)
+        .y_label_area_size(115)
         .build_cartesian_2d(0.0f32..x_max, y_lo..y_hi)?;
 
     chart
@@ -7232,8 +7232,8 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
         .y_desc("C_score")
         .x_labels(11)
         .x_label_formatter(&|v| format!("{}", *v as i64))
-        .label_style(("sans-serif", 36).into_font())
-        .axis_desc_style(("sans-serif", 38).into_font())
+        .label_style(("sans-serif", 44).into_font())
+        .axis_desc_style(("sans-serif", 46).into_font())
         .draw()?;
 
     // Draw only the 4 real conditions
