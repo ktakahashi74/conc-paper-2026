@@ -15,7 +15,7 @@ use plotters::prelude::*;
 
 use crate::sim::{
     E3Condition, E3DeathRecord, E3RunConfig, E4_ANCHOR_HZ, E4RuntimeOverrides, E4TailSamples,
-    E6Condition, E6PitchSnapshot, E6RunConfig, E6RunResult, e3_policy_params,
+    E6AgentSnapshot, E6Condition, E6PitchSnapshot, E6RunConfig, E6RunResult, e3_policy_params,
     e3_reference_landscape, e3_reference_landscape_with_partials, e4_paper_meta,
     run_e3_collect_deaths, run_e4_condition_tail_samples, run_e4_condition_tail_samples_with_wr,
     run_e4_mirror_schedule_samples, run_e6, set_e4_runtime_overrides,
@@ -1270,6 +1270,10 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
     }
     if args.iter().any(|arg| arg == "--postprocess-quicklisten") {
         postprocess_quicklisten_wav_default()?;
+        return Ok(());
+    }
+    if args.iter().any(|arg| arg == "--postprocess-integration") {
+        postprocess_integration_wav_default()?;
         return Ok(());
     }
 
@@ -26241,14 +26245,46 @@ mod tests {
     }
 
     #[test]
-    fn e6_audio_chord_notes_prefers_dense_bins() {
-        let freqs = vec![220.0, 220.2, 219.8, 330.0, 330.4, 440.0];
-        let notes = e6_audio_chord_notes(&freqs, 2);
-        assert_eq!(notes.len(), 2);
-        assert!(notes[0].freq_hz < notes[1].freq_hz);
-        assert!((notes[0].freq_hz - 220.0).abs() < 2.0);
-        assert!((notes[1].freq_hz - 330.2).abs() < 2.0);
-        assert!(notes[0].amp >= notes[1].amp);
+    fn rhai_e6_segment_tracks_life_births_and_deaths() {
+        let snaps = vec![
+            E6PitchSnapshot {
+                step: 0,
+                freqs_hz: vec![220.0],
+                agents: vec![E6AgentSnapshot {
+                    life_id: 10,
+                    agent_id: 0,
+                    freq_hz: 220.0,
+                }],
+                phase_coherence: 0.0,
+            },
+            E6PitchSnapshot {
+                step: 25,
+                freqs_hz: vec![233.08],
+                agents: vec![E6AgentSnapshot {
+                    life_id: 10,
+                    agent_id: 0,
+                    freq_hz: 233.08,
+                }],
+                phase_coherence: 0.0,
+            },
+            E6PitchSnapshot {
+                step: 50,
+                freqs_hz: vec![330.0],
+                agents: vec![E6AgentSnapshot {
+                    life_id: 11,
+                    agent_id: 0,
+                    freq_hz: 330.0,
+                }],
+                phase_coherence: 0.0,
+            },
+        ];
+        let refs: Vec<&E6PitchSnapshot> = snaps.iter().collect();
+        let rhai = rhai_e6_segment("test", &refs, 0.12);
+        assert!(rhai.contains("let l10 = create(e6_voice, 1).freq(220.00).amp("));
+        assert!(rhai.contains("let l10 = l10.freq(233.08);"));
+        assert!(rhai.contains("release(l10);"));
+        assert!(rhai.contains("let l11 = create(e6_voice, 1).freq(330.00).amp("));
+        assert!(rhai.contains("// terminal_release"));
     }
 
     #[test]
@@ -28648,17 +28684,33 @@ const AUDIO_STEP_SEC: f32 = 0.12;
 const AUDIO_GAP_SEC: f32 = 1.0;
 const AUDIO_QUICKLISTEN_GAP_SEC: f32 = AUDIO_GAP_SEC + 1.0;
 const AUDIO_QUICKLISTEN_FADE_SEC: f32 = 1.0;
+const AUDIO_INTEGRATION_FADE_SEC: f32 = 0.2;
 const AUDIO_N_SELECT_E2: usize = 8;
 const AUDIO_E2_AGENT_AMP: f32 = 0.10;
+const AUDIO_E2_AGENT_ATTACK_SEC: f32 = 0.30;
+const AUDIO_E2_AGENT_DECAY_SEC: f32 = 0.18;
+const AUDIO_E2_AGENT_SUSTAIN_LEVEL: f32 = 0.70;
 const AUDIO_E2_AGENT_RELEASE_SEC: f32 = 0.8;
 const AUDIO_E6_POP_SIZE: usize = E6_POP_SIZE;
-/// Maximum number of occupied pitch bins rendered per E6 snapshot.
-const AUDIO_N_SELECT_E6: usize = AUDIO_E6_POP_SIZE;
 /// How many E6 snapshots to replay per segment (last N of run)
 const AUDIO_E6_TAIL_SNAPSHOTS: usize = 90;
-const AUDIO_E6_BIN_CENTS: f32 = 50.0;
 const AUDIO_E6_FIXED_DRONE_HZ: f32 = E4_ANCHOR_HZ;
 const AUDIO_E6_FIXED_DRONE_AMP: f32 = 0.035;
+const AUDIO_E6_AGENT_AMP: f32 = 0.055;
+const AUDIO_E6_AGENT_PARTIALS: usize = 6;
+const AUDIO_E6_AGENT_BRIGHTNESS: f32 = 0.32;
+const AUDIO_E6_AGENT_SUSTAIN_DRIVE: f32 = 0.002;
+const AUDIO_E6_AGENT_ATTACK_SEC: f32 = 0.04;
+const AUDIO_E6_AGENT_DECAY_SEC: f32 = 0.18;
+const AUDIO_E6_AGENT_SUSTAIN_LEVEL: f32 = 0.74;
+const AUDIO_E6_AGENT_RELEASE_SEC: f32 = 0.20;
+const AUDIO_E6_ANCHOR_PARTIALS: usize = 4;
+const AUDIO_E6_ANCHOR_BRIGHTNESS: f32 = 0.24;
+const AUDIO_E6_ANCHOR_SUSTAIN_DRIVE: f32 = 0.001;
+const AUDIO_E6_ANCHOR_ATTACK_SEC: f32 = 0.04;
+const AUDIO_E6_ANCHOR_DECAY_SEC: f32 = 0.18;
+const AUDIO_E6_ANCHOR_SUSTAIN_LEVEL: f32 = 0.80;
+const AUDIO_E6_ANCHOR_RELEASE_SEC: f32 = 0.5;
 
 /// Header for generated Rhai replay scripts.
 fn rhai_replay_header(title: &str, detail: &str) -> String {
@@ -28676,9 +28728,12 @@ fn rhai_replay_header(title: &str, detail: &str) -> String {
              .amp({:.3})\n    \
              .sustain_drive(0.001)\n    \
              .pitch_smooth(0.01)\n    \
-             .adsr(0.3, 0.1, 0.9, {:.3});\n\n"
+             .adsr({:.3}, {:.3}, {:.3}, {:.3});\n\n"
         ,
         AUDIO_E2_AGENT_AMP,
+        AUDIO_E2_AGENT_ATTACK_SEC,
+        AUDIO_E2_AGENT_DECAY_SEC,
+        AUDIO_E2_AGENT_SUSTAIN_LEVEL,
         AUDIO_E2_AGENT_RELEASE_SEC
     )
 }
@@ -28781,68 +28836,21 @@ fn rhai_e2_segment(
     s
 }
 
-#[derive(Clone, Copy, Debug)]
-struct E6AudioChordNote {
-    freq_hz: f32,
-    amp: f32,
-}
-
-fn e6_audio_chord_notes(freqs_hz: &[f32], max_notes: usize) -> Vec<E6AudioChordNote> {
-    let max_notes = max_notes.max(1);
-    let mut bins: std::collections::BTreeMap<i32, Vec<f32>> = std::collections::BTreeMap::new();
-    for &freq in freqs_hz {
-        if !freq.is_finite() || freq <= 20.0 {
-            continue;
-        }
-        let cents = 1200.0 * freq.log2();
-        let bin = (cents / AUDIO_E6_BIN_CENTS).round() as i32;
-        bins.entry(bin).or_default().push(freq);
-    }
-    if bins.is_empty() {
-        return Vec::new();
-    }
-
-    let max_count = bins.values().map(|bucket| bucket.len()).max().unwrap_or(1) as f32;
-    let mut notes: Vec<(usize, E6AudioChordNote)> = bins
-        .into_values()
-        .map(|bucket| {
-            let count = bucket.len();
-            let mean_log2 = bucket.iter().map(|f| f.log2()).sum::<f32>() / count as f32;
-            let rel = (count as f32 / max_count).sqrt();
-            let amp = 0.035 + 0.045 * rel;
-            (
-                count,
-                E6AudioChordNote {
-                    freq_hz: 2.0_f32.powf(mean_log2),
-                    amp,
-                },
-            )
-        })
+fn e6_audio_agents_at_snapshot(snapshot: &E6PitchSnapshot) -> Vec<&E6AgentSnapshot> {
+    let mut agents: Vec<&E6AgentSnapshot> = snapshot
+        .agents
+        .iter()
+        .filter(|agent| agent.freq_hz.is_finite() && agent.freq_hz > 20.0)
         .collect();
-    notes.sort_by(|(count_a, note_a), (count_b, note_b)| {
-        count_b.cmp(count_a).then_with(|| {
-            note_a
-                .freq_hz
-                .partial_cmp(&note_b.freq_hz)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-    });
-    notes.truncate(max_notes);
-    let mut selected: Vec<E6AudioChordNote> = notes.into_iter().map(|(_, note)| note).collect();
-    selected.sort_by(|a, b| {
-        a.freq_hz
-            .partial_cmp(&b.freq_hz)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    selected
+    agents.sort_by_key(|agent| (agent.agent_id, agent.life_id));
+    agents
 }
 
-/// Emit Rhai scene for an E6 segment as a continuously morphing chord.
-/// The dominant occupied pitch bins are tracked over time without an added pulse.
+/// Emit Rhai scene for an E6 segment as per-life sustained voices.
+/// Each life gets a fresh attack/decay on birth, sustains while alive, and releases on death.
 fn rhai_e6_segment(
     scene_name: &str,
     snapshots: &[&E6PitchSnapshot],
-    max_notes: usize,
     step_sec: f32,
 ) -> String {
     let mut s = format!("scene(\"{scene_name}\", || {{\n");
@@ -28851,58 +28859,95 @@ fn rhai_e6_segment(
         s.push_str("    wait(1.0);\n});\n");
         return s;
     }
-    let max_notes = max_notes.max(1);
-    let initial_notes = e6_audio_chord_notes(&snapshots[0].freqs_hz, max_notes);
     s.push_str(
         &format!(
-            "    let e6_anchor = derive(sine)\n        .brain(\"drone\")\n        .pitch_mode(\"lock\")\n        .amp({:.3})\n        .sustain_drive(0.02)\n        .pitch_smooth(0.01);\n",
-            AUDIO_E6_FIXED_DRONE_AMP
+            "    let e6_anchor = derive(harmonic)\n        .brain(\"drone\")\n        .pitch_mode(\"lock\")\n        .amp({:.3})\n        .modes(harmonic_modes().count({}))\n        .brightness({:.3})\n        .sustain_drive({:.3})\n        .pitch_smooth(0.01)\n        .adsr({:.3}, {:.3}, {:.3}, {:.3});\n",
+            AUDIO_E6_FIXED_DRONE_AMP,
+            AUDIO_E6_ANCHOR_PARTIALS,
+            AUDIO_E6_ANCHOR_BRIGHTNESS,
+            AUDIO_E6_ANCHOR_SUSTAIN_DRIVE,
+            AUDIO_E6_ANCHOR_ATTACK_SEC,
+            AUDIO_E6_ANCHOR_DECAY_SEC,
+            AUDIO_E6_ANCHOR_SUSTAIN_LEVEL,
+            AUDIO_E6_ANCHOR_RELEASE_SEC
         ),
     );
     s.push_str(&format!(
         "    let anchor = create(e6_anchor, 1).freq({:.2}).amp({:.3});\n",
         AUDIO_E6_FIXED_DRONE_HZ, AUDIO_E6_FIXED_DRONE_AMP
     ));
-    s.push_str(
-        "    let e6_note = derive(harmonic)\n        .brain(\"drone\")\n        .pitch_mode(\"lock\")\n        .amp(0.07)\n        .sustain_drive(0.02)\n        .pitch_smooth(0.03);\n",
-    );
+    s.push_str(&format!(
+        "    let e6_voice = derive(harmonic)\n        .brain(\"drone\")\n        .pitch_mode(\"lock\")\n        .amp({:.3})\n        .modes(harmonic_modes().count({}))\n        .brightness({:.3})\n        .sustain_drive({:.3})\n        .pitch_smooth(0.03)\n        .adsr({:.3}, {:.3}, {:.3}, {:.3});\n",
+        AUDIO_E6_AGENT_AMP,
+        AUDIO_E6_AGENT_PARTIALS,
+        AUDIO_E6_AGENT_BRIGHTNESS,
+        AUDIO_E6_AGENT_SUSTAIN_DRIVE,
+        AUDIO_E6_AGENT_ATTACK_SEC,
+        AUDIO_E6_AGENT_DECAY_SEC,
+        AUDIO_E6_AGENT_SUSTAIN_LEVEL,
+        AUDIO_E6_AGENT_RELEASE_SEC
+    ));
 
-    let mut prev_freqs: Vec<f32> = Vec::with_capacity(max_notes);
-    for note_idx in 0..max_notes {
-        let (freq_hz, amp) = initial_notes
-            .get(note_idx)
-            .map(|note| (note.freq_hz, note.amp))
-            .unwrap_or((220.0, 0.0));
-        prev_freqs.push(freq_hz);
+    let initial_agents = e6_audio_agents_at_snapshot(snapshots[0]);
+    let mut active_freqs: std::collections::BTreeMap<u64, f32> =
+        std::collections::BTreeMap::new();
+    for agent in initial_agents {
+        active_freqs.insert(agent.life_id, agent.freq_hz);
         s.push_str(&format!(
-            "    let n{note_idx} = create(e6_note, 1).freq({freq_hz:.2}).amp({amp:.3});\n"
+            "    let l{} = create(e6_voice, 1).freq({:.2}).amp({:.3});\n",
+            agent.life_id, agent.freq_hz, AUDIO_E6_AGENT_AMP
         ));
     }
     s.push_str("    flush();\n");
 
     for snap in snapshots.iter().skip(1) {
-        let notes = e6_audio_chord_notes(&snap.freqs_hz, max_notes);
+        let agents = e6_audio_agents_at_snapshot(snap);
+        let mut current_freqs: std::collections::BTreeMap<u64, f32> =
+            std::collections::BTreeMap::new();
+        let mut any_changed = false;
         s.push_str(&format!("    wait({step_sec:.4});\n"));
-        for note_idx in 0..max_notes {
-            let (freq_hz, amp) = notes
-                .get(note_idx)
-                .map(|note| (note.freq_hz, note.amp))
-                .unwrap_or((prev_freqs[note_idx], 0.0));
-            prev_freqs[note_idx] = freq_hz;
-            s.push_str(&format!(
-                "    let n{note_idx} = n{note_idx}.freq({freq_hz:.2}).amp({amp:.3});\n"
-            ));
+        for agent in agents {
+            current_freqs.insert(agent.life_id, agent.freq_hz);
+            match active_freqs.get(&agent.life_id) {
+                Some(prev_freq_hz) => {
+                    if (agent.freq_hz - *prev_freq_hz).abs() > 1e-4 {
+                        s.push_str(&format!(
+                            "    let l{} = l{}.freq({:.2});\n",
+                            agent.life_id, agent.life_id, agent.freq_hz
+                        ));
+                        any_changed = true;
+                    }
+                }
+                None => {
+                    s.push_str(&format!(
+                        "    let l{} = create(e6_voice, 1).freq({:.2}).amp({:.3});\n",
+                        agent.life_id, agent.freq_hz, AUDIO_E6_AGENT_AMP
+                    ));
+                    any_changed = true;
+                }
+            }
         }
-        s.push_str("    flush();\n");
+        for life_id in active_freqs.keys() {
+            if !current_freqs.contains_key(life_id) {
+                s.push_str(&format!("    release(l{life_id});\n"));
+                any_changed = true;
+            }
+        }
+        if any_changed {
+            s.push_str("    flush();\n");
+        }
+        active_freqs = current_freqs;
     }
 
+    let final_release_wait = AUDIO_E6_AGENT_RELEASE_SEC.max(AUDIO_E6_ANCHOR_RELEASE_SEC);
     s.push_str(&format!("    wait({step_sec:.3});\n"));
+    s.push_str("    // terminal_release\n");
     s.push_str("    release(anchor);\n");
-    for note_idx in 0..max_notes {
-        s.push_str(&format!("    release(n{note_idx});\n"));
+    for life_id in active_freqs.keys() {
+        s.push_str(&format!("    release(l{life_id});\n"));
     }
     s.push_str("    flush();\n");
-    s.push_str("    wait(0.8);\n");
+    s.push_str(&format!("    wait({final_release_wait:.3});\n"));
     s.push_str("});\n");
     s
 }
@@ -28922,7 +28967,8 @@ fn parse_rhai_scene_windows(rhai_path: &Path) -> io::Result<Vec<AudioSegmentWind
     let mut current_time_sec = 0.0f32;
     let mut brace_depth: i32 = 0;
     let mut current_has_explicit_release = false;
-    let mut current_release_sec: Option<f32> = None;
+    let mut current_first_release_sec: Option<f32> = None;
+    let mut current_terminal_release_sec: Option<f32> = None;
 
     for line in text.lines() {
         let trimmed = line.trim();
@@ -28934,7 +28980,8 @@ fn parse_rhai_scene_windows(rhai_path: &Path) -> io::Result<Vec<AudioSegmentWind
             current_label = Some(label.to_string());
             current_start_sec = current_time_sec;
             current_has_explicit_release = false;
-            current_release_sec = None;
+            current_first_release_sec = None;
+            current_terminal_release_sec = None;
         }
 
         for (idx, _) in trimmed.match_indices("wait(") {
@@ -28948,10 +28995,13 @@ fn parse_rhai_scene_windows(rhai_path: &Path) -> io::Result<Vec<AudioSegmentWind
         }
 
         if current_label.is_some() {
+            if trimmed == "// terminal_release" {
+                current_terminal_release_sec = Some(current_time_sec);
+            }
             if trimmed.contains("release(") {
                 current_has_explicit_release = true;
-                if current_release_sec.is_none() {
-                    current_release_sec = Some(current_time_sec);
+                if current_first_release_sec.is_none() {
+                    current_first_release_sec = Some(current_time_sec);
                 }
             }
             brace_depth += trimmed.matches('{').count() as i32;
@@ -28960,8 +29010,10 @@ fn parse_rhai_scene_windows(rhai_path: &Path) -> io::Result<Vec<AudioSegmentWind
                 windows.push(AudioSegmentWindow {
                     label: current_label.take().unwrap_or_default(),
                     start_sec: current_start_sec,
-                    end_sec: if current_has_explicit_release {
-                        current_release_sec.unwrap_or(current_time_sec)
+                    end_sec: if let Some(terminal_release_sec) = current_terminal_release_sec {
+                        terminal_release_sec
+                    } else if current_has_explicit_release {
+                        current_first_release_sec.unwrap_or(current_time_sec)
                     } else {
                         current_time_sec + AUDIO_E2_AGENT_RELEASE_SEC
                     },
@@ -28973,24 +29025,27 @@ fn parse_rhai_scene_windows(rhai_path: &Path) -> io::Result<Vec<AudioSegmentWind
     Ok(windows)
 }
 
-fn resolve_quicklisten_postprocess_paths() -> (PathBuf, PathBuf, PathBuf) {
+fn resolve_audio_postprocess_paths(wav_stem: &str) -> (PathBuf, PathBuf, PathBuf) {
+    let wav_name = format!("{wav_stem}.wav");
+    let rhai_name = format!("{wav_stem}.rhai");
     if Path::new("supplementary_audio").is_dir() {
         (
-            PathBuf::from("supplementary_audio/audio/00_quicklisten.wav"),
-            PathBuf::from("supplementary_audio/scenarios/00_quicklisten.rhai"),
+            PathBuf::from("supplementary_audio/audio").join(&wav_name),
+            PathBuf::from("supplementary_audio/scenarios").join(&rhai_name),
             PathBuf::from("supplementary_audio/manifest.csv"),
         )
     } else {
         (
-            PathBuf::from("audio/00_quicklisten.wav"),
-            PathBuf::from("scenarios/00_quicklisten.rhai"),
+            PathBuf::from("audio").join(&wav_name),
+            PathBuf::from("scenarios").join(&rhai_name),
             PathBuf::from("manifest.csv"),
         )
     }
 }
 
-fn rewrite_quicklisten_manifest(
+fn rewrite_audio_manifest(
     manifest_path: &Path,
+    wav_name: &str,
     windows: &[AudioSegmentWindow],
 ) -> io::Result<()> {
     let text = read_to_string(manifest_path)?;
@@ -29001,7 +29056,7 @@ fn rewrite_quicklisten_manifest(
 
     let mut out = String::new();
     for line in text.lines() {
-        if !line.starts_with("00_quicklisten.wav,") {
+        if !line.starts_with(&format!("{wav_name},")) {
             out.push_str(line);
             out.push('\n');
             continue;
@@ -29071,8 +29126,9 @@ fn apply_segment_fades_i16(
             .map(|next| (next.start_sec * sr).round().max(0.0) as usize)
             .unwrap_or(samples.len())
             .min(samples.len());
-        if zero_until > end {
-            samples[end..zero_until].fill(0);
+        let zero_from = end.saturating_sub(16);
+        if zero_until > zero_from {
+            samples[zero_from..zero_until].fill(0);
         }
     }
 
@@ -29084,17 +29140,26 @@ fn apply_segment_fades_i16(
     Ok(())
 }
 
-fn postprocess_quicklisten_wav_default() -> io::Result<()> {
-    let (wav_path, rhai_path, manifest_path) = resolve_quicklisten_postprocess_paths();
+fn postprocess_named_wav_default(wav_stem: &str, fade_sec: f32) -> io::Result<()> {
+    let (wav_path, rhai_path, manifest_path) = resolve_audio_postprocess_paths(wav_stem);
     let windows = parse_rhai_scene_windows(&rhai_path)?;
-    rewrite_quicklisten_manifest(&manifest_path, &windows)?;
-    apply_segment_fades_i16(&wav_path, &windows, AUDIO_QUICKLISTEN_FADE_SEC)?;
+    let wav_name = format!("{wav_stem}.wav");
+    rewrite_audio_manifest(&manifest_path, &wav_name, &windows)?;
+    apply_segment_fades_i16(&wav_path, &windows, fade_sec)?;
     eprintln!(
-        "postprocessed quicklisten WAV: {} segments, {:.1}s fades",
+        "postprocessed {wav_name}: {} segments, {:.1}s fades",
         windows.len(),
-        AUDIO_QUICKLISTEN_FADE_SEC
+        fade_sec
     );
     Ok(())
+}
+
+fn postprocess_quicklisten_wav_default() -> io::Result<()> {
+    postprocess_named_wav_default("00_quicklisten", AUDIO_QUICKLISTEN_FADE_SEC)
+}
+
+fn postprocess_integration_wav_default() -> io::Result<()> {
+    postprocess_named_wav_default("20_integration", AUDIO_INTEGRATION_FADE_SEC)
 }
 
 /// Generate all audio supplement Rhai scripts from simulation data.
@@ -29244,8 +29309,9 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
     // ── 20_integration.rhai ──
     {
         let detail = format!(
-            "// top {} occupied pitch bins per snapshot (from {} agents), tail {} snapshots per segment\n\
+            "// per-life agent replay from a {}-agent population, tail {} snapshots per segment\n\
              // snapshot_interval={} steps, step_sec={:.3}\n\
+             // each life uses harmonic ADSR atk={:.2}s dec={:.2}s sus={:.2} rel={:.2}s\n\
              // fixed sine drone at {:.1} Hz for listening reference\n\
              //\n\
              // 8 segments: 4 conditions x 2 seeds, ordered from most integrated to random within each seed\n\
@@ -29254,19 +29320,19 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
              //   hill-only : random   + landscape_weight={:.1}\n\
              //   neither   : random   + landscape_weight=0.0\n\
              //\n\
-             //   listening replay uses {} agents (audio-only density reduction)\n\
-             //\n\
              //   E6_SEEDS[0]  = {}\n\
              //   E6_SEEDS[10] = {}",
-            AUDIO_N_SELECT_E6,
             AUDIO_E6_POP_SIZE,
             AUDIO_E6_TAIL_SNAPSHOTS,
             E6_SNAPSHOT_INTERVAL,
             AUDIO_STEP_SEC,
+            AUDIO_E6_AGENT_ATTACK_SEC,
+            AUDIO_E6_AGENT_DECAY_SEC,
+            AUDIO_E6_AGENT_SUSTAIN_LEVEL,
+            AUDIO_E6_AGENT_RELEASE_SEC,
             AUDIO_E6_FIXED_DRONE_HZ,
             E6_HILL_LANDSCAPE_WEIGHT,
             E6_HILL_LANDSCAPE_WEIGHT,
-            AUDIO_E6_POP_SIZE,
             E6_SEEDS[0],
             E6_SEEDS[10],
         );
@@ -29296,7 +29362,6 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             rhai.push_str(&rhai_e6_segment(
                 &scene,
                 &tail,
-                AUDIO_N_SELECT_E6,
                 AUDIO_STEP_SEC,
             ));
             if i + 1 < integration_order.len() {
@@ -29311,7 +29376,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
     {
         let detail = format!(
             "// 4 segments (curated highlights); all E2 segments include 1 fixed drone at 220 Hz,\n\
-             // and E6 segments include a fixed sine drone at 220 Hz for listening reference:\n\
+             // and E6 segments use per-life harmonic ADSR voices plus a fixed 220 Hz sine anchor:\n\
              //   1. E2 baseline  (seed 0) -- hill-climbing + crowding\n\
              //   2. E6 both      (seed 0) -- heredity + landscape_weight={:.1}\n\
              //   3. E2 no-hill   (seed 0) -- crowding only\n\
@@ -29342,7 +29407,6 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         rhai.push_str(&rhai_e6_segment(
             "ql2_e6_both",
             &tail,
-            AUDIO_N_SELECT_E6,
             AUDIO_STEP_SEC,
         ));
         rhai.push_str(&format!("wait({AUDIO_QUICKLISTEN_GAP_SEC:.1});\n\n"));
@@ -29366,7 +29430,6 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         rhai.push_str(&rhai_e6_segment(
             "ql4_e6_neither",
             &tail,
-            AUDIO_N_SELECT_E6,
             AUDIO_STEP_SEC,
         ));
 
