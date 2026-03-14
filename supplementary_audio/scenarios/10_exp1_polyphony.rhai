@@ -18,7 +18,7 @@ let agent_spec = derive(sine)
     .amp(0.100)
     .sustain_drive(0.001)
     .pitch_smooth(0.01)
-    .adsr(0.300, 0.180, 0.700, 0.800);
+    .adsr(0.300, 0.180, 0.500, 0.800);
 
 scene("s1_replay_seed0_baseline", || {
     let a0 = create(agent_spec, 1).freq(310.71);

@@ -130,9 +130,17 @@ pub struct E6RunConfig {
 }
 
 #[derive(Clone, Debug)]
+pub struct E6AgentSnapshot {
+    pub life_id: u64,
+    pub agent_id: usize,
+    pub freq_hz: f32,
+}
+
+#[derive(Clone, Debug)]
 pub struct E6PitchSnapshot {
     pub step: usize,
     pub freqs_hz: Vec<f32>,
+    pub agents: Vec<E6AgentSnapshot>,
     /// Kuramoto order parameter R ∈ [0,1]: population phase coherence
     pub phase_coherence: f32,
 }
@@ -603,6 +611,7 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
 
         if step % snapshot_interval == 0 {
             let mut freqs_hz: Vec<f32> = Vec::new();
+            let mut agents: Vec<E6AgentSnapshot> = Vec::new();
             let mut phase_sin_sum = 0.0f32;
             let mut phase_cos_sum = 0.0f32;
             let mut phase_count = 0u32;
@@ -611,11 +620,20 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                 if !agent.is_alive() {
                     continue;
                 }
+                let idx = agent.id() as usize;
+                if idx >= states.len() {
+                    continue;
+                }
                 let f = agent.body.base_freq_hz();
                 if !f.is_finite() || f <= 0.0 {
                     continue;
                 }
                 freqs_hz.push(f);
+                agents.push(E6AgentSnapshot {
+                    life_id: states[idx].life_id,
+                    agent_id: idx,
+                    freq_hz: f,
+                });
                 if let AnyArticulationCore::Entrain(ref k) = agent.articulation.core {
                     let phase_err = k.rhythm_phase - theta_phase;
                     phase_sin_sum += phase_err.sin();
@@ -623,6 +641,7 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                     phase_count += 1;
                 }
             }
+            agents.sort_by_key(|agent| agent.life_id);
             let phase_coherence = if phase_count > 0 {
                 let n = phase_count as f32;
                 ((phase_sin_sum / n).powi(2) + (phase_cos_sum / n).powi(2)).sqrt()
@@ -632,6 +651,7 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
             out.snapshots.push(E6PitchSnapshot {
                 step,
                 freqs_hz,
+                agents,
                 phase_coherence,
             });
         }
@@ -1046,6 +1066,7 @@ fn run_e4_condition_with_config(mirror_weight: f32, seed: u64, cfg: &E4SimConfig
         articulation: ArticulationCoreConfig::Drone {
             sway: None,
             breath_gain_init: Some(1.0),
+            envelope: None,
         },
     };
     pop.apply_action(
@@ -1065,6 +1086,7 @@ fn run_e4_condition_with_config(mirror_weight: f32, seed: u64, cfg: &E4SimConfig
         articulation: ArticulationCoreConfig::Drone {
             sway: None,
             breath_gain_init: Some(1.0),
+            envelope: None,
         },
     };
     let ids: Vec<u64> = (1..=cfg.voice_count as u64).collect();
@@ -1185,6 +1207,7 @@ fn run_e4_condition_tail_samples_with_config_uncached(
         articulation: ArticulationCoreConfig::Drone {
             sway: None,
             breath_gain_init: Some(1.0),
+            envelope: None,
         },
     };
     pop.apply_action(
@@ -1204,6 +1227,7 @@ fn run_e4_condition_tail_samples_with_config_uncached(
         articulation: ArticulationCoreConfig::Drone {
             sway: None,
             breath_gain_init: Some(1.0),
+            envelope: None,
         },
     };
     let ids: Vec<u64> = (1..=cfg.voice_count as u64).collect();
@@ -1331,6 +1355,7 @@ fn run_e4_mirror_schedule_samples_with_config(
         articulation: ArticulationCoreConfig::Drone {
             sway: None,
             breath_gain_init: Some(1.0),
+            envelope: None,
         },
     };
     pop.apply_action(
@@ -1350,6 +1375,7 @@ fn run_e4_mirror_schedule_samples_with_config(
         articulation: ArticulationCoreConfig::Drone {
             sway: None,
             breath_gain_init: Some(1.0),
+            envelope: None,
         },
     };
     let ids: Vec<u64> = (1..=cfg.voice_count as u64).collect();

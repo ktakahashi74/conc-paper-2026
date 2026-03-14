@@ -17,7 +17,7 @@ let agent_spec = derive(sine)
     .amp(0.100)
     .sustain_drive(0.001)
     .pitch_smooth(0.01)
-    .adsr(0.300, 0.180, 0.700, 0.800);
+    .adsr(0.300, 0.180, 0.500, 0.800);
 
 scene("ql1_e2_baseline", || {
     let a0 = create(agent_spec, 1).freq(310.71);
@@ -304,7 +304,7 @@ scene("ql2_e6_both", || {
         .brightness(0.240)
         .sustain_drive(0.001)
         .pitch_smooth(0.01)
-        .adsr(0.040, 0.180, 0.800, 0.500);
+        .adsr(0.040, 0.180, 0.500, 0.500);
     let anchor = create(e6_anchor, 1).freq(220.00).amp(0.035);
     let e6_voice = derive(harmonic)
         .brain("drone")
@@ -314,7 +314,7 @@ scene("ql2_e6_both", || {
         .brightness(0.320)
         .sustain_drive(0.002)
         .pitch_smooth(0.03)
-        .adsr(0.040, 0.180, 0.740, 0.200);
+        .adsr(0.040, 0.180, 0.500, 0.200);
     let l30 = create(e6_voice, 1).freq(220.49).amp(0.055);
     let l32 = create(e6_voice, 1).freq(173.42).amp(0.055);
     let l25 = create(e6_voice, 1).freq(440.40).amp(0.055);
@@ -837,7 +837,7 @@ scene("ql4_e6_neither", || {
         .brightness(0.240)
         .sustain_drive(0.001)
         .pitch_smooth(0.01)
-        .adsr(0.040, 0.180, 0.800, 0.500);
+        .adsr(0.040, 0.180, 0.500, 0.500);
     let anchor = create(e6_anchor, 1).freq(220.00).amp(0.035);
     let e6_voice = derive(harmonic)
         .brain("drone")
@@ -847,7 +847,7 @@ scene("ql4_e6_neither", || {
         .brightness(0.320)
         .sustain_drive(0.002)
         .pitch_smooth(0.03)
-        .adsr(0.040, 0.180, 0.740, 0.200);
+        .adsr(0.040, 0.180, 0.500, 0.200);
     let l38 = create(e6_voice, 1).freq(159.83).amp(0.055);
     let l37 = create(e6_voice, 1).freq(177.91).amp(0.055);
     let l39 = create(e6_voice, 1).freq(361.85).amp(0.055);
