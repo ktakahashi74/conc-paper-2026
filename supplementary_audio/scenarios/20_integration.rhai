@@ -6,7 +6,7 @@
 //
 // per-life agent replay from a 5-agent population, tail 90 snapshots per segment
 // snapshot_interval=25 steps, step_sec=0.120
-// each life uses harmonic ADSR atk=0.04s dec=0.18s sus=0.50 rel=0.20s
+// each life uses harmonic ADSR atk=0.04s dec=0.35s sus=0.50 rel=0.20s
 // fixed sine drone at 220.0 Hz for listening reference
 //
 // 8 segments: 4 conditions x 2 seeds, ordered from most integrated to random within each seed
@@ -24,7 +24,7 @@ let agent_spec = derive(sine)
     .amp(0.100)
     .sustain_drive(0.001)
     .pitch_smooth(0.01)
-    .adsr(0.300, 0.180, 0.500, 0.800);
+    .adsr(0.300, 0.350, 0.500, 0.800);
 
 scene("s1_seed0_both", || {
     let e6_anchor = derive(harmonic)
@@ -35,7 +35,7 @@ scene("s1_seed0_both", || {
         .brightness(0.240)
         .sustain_drive(0.001)
         .pitch_smooth(0.01)
-        .adsr(0.040, 0.180, 0.500, 0.500);
+        .adsr(0.040, 0.350, 0.500, 0.500);
     let anchor = create(e6_anchor, 1).freq(220.00).amp(0.035);
     let e6_voice = derive(harmonic)
         .brain("drone")
@@ -45,7 +45,7 @@ scene("s1_seed0_both", || {
         .brightness(0.320)
         .sustain_drive(0.002)
         .pitch_smooth(0.03)
-        .adsr(0.040, 0.180, 0.500, 0.200);
+        .adsr(0.040, 0.350, 0.500, 0.200);
     let l30 = create(e6_voice, 1).freq(220.49).amp(0.055);
     let l32 = create(e6_voice, 1).freq(173.42).amp(0.055);
     let l25 = create(e6_voice, 1).freq(440.40).amp(0.055);
@@ -268,7 +268,7 @@ scene("s2_seed0_honly", || {
         .brightness(0.240)
         .sustain_drive(0.001)
         .pitch_smooth(0.01)
-        .adsr(0.040, 0.180, 0.500, 0.500);
+        .adsr(0.040, 0.350, 0.500, 0.500);
     let anchor = create(e6_anchor, 1).freq(220.00).amp(0.035);
     let e6_voice = derive(harmonic)
         .brain("drone")
@@ -278,7 +278,7 @@ scene("s2_seed0_honly", || {
         .brightness(0.320)
         .sustain_drive(0.002)
         .pitch_smooth(0.03)
-        .adsr(0.040, 0.180, 0.500, 0.200);
+        .adsr(0.040, 0.350, 0.500, 0.200);
     let l32 = create(e6_voice, 1).freq(439.67).amp(0.055);
     let l30 = create(e6_voice, 1).freq(111.97).amp(0.055);
     let l36 = create(e6_voice, 1).freq(186.89).amp(0.055);
@@ -515,7 +515,7 @@ scene("s3_seed0_hillonly", || {
         .brightness(0.240)
         .sustain_drive(0.001)
         .pitch_smooth(0.01)
-        .adsr(0.040, 0.180, 0.500, 0.500);
+        .adsr(0.040, 0.350, 0.500, 0.500);
     let anchor = create(e6_anchor, 1).freq(220.00).amp(0.035);
     let e6_voice = derive(harmonic)
         .brain("drone")
@@ -525,7 +525,7 @@ scene("s3_seed0_hillonly", || {
         .brightness(0.320)
         .sustain_drive(0.002)
         .pitch_smooth(0.03)
-        .adsr(0.040, 0.180, 0.500, 0.200);
+        .adsr(0.040, 0.350, 0.500, 0.200);
     let l37 = create(e6_voice, 1).freq(110.19).amp(0.055);
     let l34 = create(e6_voice, 1).freq(387.36).amp(0.055);
     let l38 = create(e6_voice, 1).freq(116.80).amp(0.055);
@@ -762,7 +762,7 @@ scene("s4_seed0_neither", || {
         .brightness(0.240)
         .sustain_drive(0.001)
         .pitch_smooth(0.01)
-        .adsr(0.040, 0.180, 0.500, 0.500);
+        .adsr(0.040, 0.350, 0.500, 0.500);
     let anchor = create(e6_anchor, 1).freq(220.00).amp(0.035);
     let e6_voice = derive(harmonic)
         .brain("drone")
@@ -772,7 +772,7 @@ scene("s4_seed0_neither", || {
         .brightness(0.320)
         .sustain_drive(0.002)
         .pitch_smooth(0.03)
-        .adsr(0.040, 0.180, 0.500, 0.200);
+        .adsr(0.040, 0.350, 0.500, 0.200);
     let l38 = create(e6_voice, 1).freq(159.83).amp(0.055);
     let l37 = create(e6_voice, 1).freq(177.91).amp(0.055);
     let l39 = create(e6_voice, 1).freq(361.85).amp(0.055);
@@ -1007,7 +1007,7 @@ scene("s5_seed10_both", || {
         .brightness(0.240)
         .sustain_drive(0.001)
         .pitch_smooth(0.01)
-        .adsr(0.040, 0.180, 0.500, 0.500);
+        .adsr(0.040, 0.350, 0.500, 0.500);
     let anchor = create(e6_anchor, 1).freq(220.00).amp(0.035);
     let e6_voice = derive(harmonic)
         .brain("drone")
@@ -1017,7 +1017,7 @@ scene("s5_seed10_both", || {
         .brightness(0.320)
         .sustain_drive(0.002)
         .pitch_smooth(0.03)
-        .adsr(0.040, 0.180, 0.500, 0.200);
+        .adsr(0.040, 0.350, 0.500, 0.200);
     let l33 = create(e6_voice, 1).freq(330.55).amp(0.055);
     let l32 = create(e6_voice, 1).freq(170.99).amp(0.055);
     let l35 = create(e6_voice, 1).freq(256.74).amp(0.055);
@@ -1246,7 +1246,7 @@ scene("s6_seed10_honly", || {
         .brightness(0.240)
         .sustain_drive(0.001)
         .pitch_smooth(0.01)
-        .adsr(0.040, 0.180, 0.500, 0.500);
+        .adsr(0.040, 0.350, 0.500, 0.500);
     let anchor = create(e6_anchor, 1).freq(220.00).amp(0.035);
     let e6_voice = derive(harmonic)
         .brain("drone")
@@ -1256,7 +1256,7 @@ scene("s6_seed10_honly", || {
         .brightness(0.320)
         .sustain_drive(0.002)
         .pitch_smooth(0.03)
-        .adsr(0.040, 0.180, 0.500, 0.200);
+        .adsr(0.040, 0.350, 0.500, 0.200);
     let l33 = create(e6_voice, 1).freq(293.57).amp(0.055);
     let l34 = create(e6_voice, 1).freq(123.38).amp(0.055);
     let l37 = create(e6_voice, 1).freq(164.48).amp(0.055);
@@ -1485,7 +1485,7 @@ scene("s7_seed10_hillonly", || {
         .brightness(0.240)
         .sustain_drive(0.001)
         .pitch_smooth(0.01)
-        .adsr(0.040, 0.180, 0.500, 0.500);
+        .adsr(0.040, 0.350, 0.500, 0.500);
     let anchor = create(e6_anchor, 1).freq(220.00).amp(0.035);
     let e6_voice = derive(harmonic)
         .brain("drone")
@@ -1495,7 +1495,7 @@ scene("s7_seed10_hillonly", || {
         .brightness(0.320)
         .sustain_drive(0.002)
         .pitch_smooth(0.03)
-        .adsr(0.040, 0.180, 0.500, 0.200);
+        .adsr(0.040, 0.350, 0.500, 0.200);
     let l36 = create(e6_voice, 1).freq(245.18).amp(0.055);
     let l37 = create(e6_voice, 1).freq(182.93).amp(0.055);
     let l35 = create(e6_voice, 1).freq(237.62).amp(0.055);
@@ -1729,7 +1729,7 @@ scene("s8_seed10_neither", || {
         .brightness(0.240)
         .sustain_drive(0.001)
         .pitch_smooth(0.01)
-        .adsr(0.040, 0.180, 0.500, 0.500);
+        .adsr(0.040, 0.350, 0.500, 0.500);
     let anchor = create(e6_anchor, 1).freq(220.00).amp(0.035);
     let e6_voice = derive(harmonic)
         .brain("drone")
@@ -1739,7 +1739,7 @@ scene("s8_seed10_neither", || {
         .brightness(0.320)
         .sustain_drive(0.002)
         .pitch_smooth(0.03)
-        .adsr(0.040, 0.180, 0.500, 0.200);
+        .adsr(0.040, 0.350, 0.500, 0.200);
     let l38 = create(e6_voice, 1).freq(231.54).amp(0.055);
     let l35 = create(e6_voice, 1).freq(413.33).amp(0.055);
     let l36 = create(e6_voice, 1).freq(124.88).amp(0.055);
