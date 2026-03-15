@@ -1268,6 +1268,21 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
         generate_audio_replay_rhai()?;
         return Ok(());
     }
+    // Handle --e3-audio: render E3 experiment audio to WAV
+    if args.iter().any(|arg| arg == "--e3-audio") {
+        let out_dir = PathBuf::from("supplementary_audio/audio");
+        let cfg_baseline = crate::sim::E3AudioConfig::default_baseline();
+        let cfg_norecharge = crate::sim::E3AudioConfig::default_norecharge();
+        crate::sim::render_e3_audio(
+            &cfg_baseline,
+            &out_dir.join("30_e3_baseline.wav"),
+        )?;
+        crate::sim::render_e3_audio(
+            &cfg_norecharge,
+            &out_dir.join("30_e3_norecharge.wav"),
+        )?;
+        return Ok(());
+    }
     if args.iter().any(|arg| arg == "--postprocess-quicklisten") {
         postprocess_quicklisten_wav_default()?;
         return Ok(());

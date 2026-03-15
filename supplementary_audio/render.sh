@@ -14,6 +14,9 @@ cd "${SCRIPT_DIR}"
 echo "Regenerating Rhai scenarios..."
 (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --audio-rhai)
 
+echo "Rendering E3 audio..."
+(cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --e3-audio)
+
 for rhai in scenarios/*.rhai; do
   name=$(basename "$rhai" .rhai)
   echo "Rendering ${name}..."

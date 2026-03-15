@@ -90,6 +90,30 @@
   </audio>
 </div>
 
+<div class="track">
+  <h2>30 &mdash; Consonance-Gated Entrainment (Experiment 1)</h2>
+  <p class="meta">~15 s each &middot; 48 agents, 4 Hz theta kick, vitality-coupled Kuramoto</p>
+  <p>All agents start with random phases at the theta frequency.
+     Consonance-dependent energy recharge creates a vitality gradient:
+     consonant agents maintain high vitality (strong coupling, entrain to theta),
+     dissonant agents lose vitality (weak coupling, stay asynchronous).</p>
+  <table>
+    <tr><th>Condition</th><th>Kuramoto coupling</th><th>energy</th></tr>
+    <tr><td>vitality-coupled</td><td>k &times; vitality(consonance)</td><td>dE/dt = &minus;1 + consonance</td></tr>
+    <tr><td>control</td><td>k = 0</td><td>dE/dt = &minus;1 + consonance</td></tr>
+  </table>
+  <p>Listen for the emergence of a rhythmic pulse in the vitality-coupled condition
+     as consonant agents synchronize their attacks to the theta beat.</p>
+  <p><strong>Vitality-coupled</strong> &mdash; consonant agents entrain, pulse emerges:</p>
+  <audio controls preload="none">
+    <source src="audio/30_e3_baseline.wav" type="audio/wav">
+  </audio>
+  <p style="margin-top:0.75rem"><strong>Control</strong> &mdash; no coupling, phases stay scattered:</p>
+  <audio controls preload="none">
+    <source src="audio/30_e3_norecharge.wav" type="audio/wav">
+  </audio>
+</div>
+
 <section class="notes">
   <h2>Methodology</h2>
   <p>Seeds are taken by ordinal index (0 and 10) from the paper's shared seed

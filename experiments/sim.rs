@@ -15,9 +15,11 @@ use conchordal::life::lifecycle::LifecycleConfig;
 use conchordal::life::metabolism_policy::MetabolismPolicy;
 use conchordal::life::population::Population;
 use conchordal::life::scenario::{
-    Action, ArticulationCoreConfig, EnvelopeConfig, PhonationSpec, RhythmCouplingMode, SpawnSpec,
-    SpawnStrategy,
+    Action, ArticulationCoreConfig, EnvelopeConfig, GateThresholds, PhonationSpec,
+    RhythmCouplingMode, SpawnSpec, SpawnStrategy,
 };
+use conchordal::life::schedule_renderer::ScheduleRenderer;
+use conchordal::life::world_model::WorldModel;
 use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::SliceRandom;
@@ -1884,6 +1886,10 @@ fn e6_spawn_spec(anchor_hz: f32, landscape_weight: f32) -> SpawnSpec {
         rhythm_coupling: RhythmCouplingMode::TemporalOnly,
         rhythm_reward: None,
         breath_gain_init: None,
+        k_omega: None,
+        base_sigma: None,
+        gate_thresholds: None,
+        energy_cap: None,
     };
 
     SpawnSpec {
@@ -1905,6 +1911,10 @@ fn e3_spawn_spec(condition: E3Condition, anchor_hz: f32) -> SpawnSpec {
         rhythm_coupling: RhythmCouplingMode::TemporalOnly,
         rhythm_reward: None,
         breath_gain_init: None,
+        k_omega: None,
+        base_sigma: None,
+        gate_thresholds: None,
+        energy_cap: None,
     };
 
     SpawnSpec {
@@ -1935,6 +1945,7 @@ fn e3_lifecycle(condition: E3Condition) -> LifecycleConfig {
         metabolism_rate: E3_METABOLISM_RATE,
         recharge_rate,
         action_cost: None,
+        continuous_recharge_rate: None,
         envelope: EnvelopeConfig::default(),
     }
 }
@@ -1970,6 +1981,296 @@ fn voice_control(cfg: &E4SimConfig) -> AgentControl {
     control.pitch.persistence = cfg.persistence;
     control.phonation.spec = PhonationSpec::default();
     control
+}
+
+// ─── E3 audio rendering ───
+
+const E3_AUDIO_GROUP_ANCHOR: u64 = 0;
+const E3_AUDIO_GROUP_AGENTS: u64 = 1;
+
+/// E3 audio rendering configuration.
+#[derive(Clone, Debug)]
+pub struct E3AudioConfig {
+    pub seed: u64,
+    pub pop_size: usize,
+    pub duration_sec: f32,
+    pub condition: E3Condition,
+    pub anchor_hz: f32,
+    pub theta_freq_hz: f32,
+}
+
+impl E3AudioConfig {
+    pub fn default_baseline() -> Self {
+        Self {
+            seed: 42,
+            pop_size: 48,
+            duration_sec: 15.0,
+            condition: E3Condition::Baseline,
+            anchor_hz: E4_ANCHOR_HZ,
+            theta_freq_hz: 4.0, // min_omega clamp in KuramotoCore is 3 Hz
+        }
+    }
+
+    pub fn default_norecharge() -> Self {
+        Self {
+            condition: E3Condition::NoRecharge,
+            ..Self::default_baseline()
+        }
+    }
+}
+
+/// Render E3 experiment audio to a WAV file.
+///
+/// Uses Population with `ArticulationCoreConfig::Entrain` configured for the
+/// E3 consonance-gated entrainment experiment:
+/// - k_omega = 0 (no frequency adaptation)
+/// - base_sigma = 0 (no noise)
+/// - gate thresholds set to always-open
+/// - continuous recharge instead of event-driven
+pub fn render_e3_audio(cfg: &E3AudioConfig, output_path: &std::path::Path) -> std::io::Result<()> {
+    let fs = E3_FS;
+    let hop = E3_HOP;
+    let tb = Timebase { fs, hop };
+    let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
+    let params = make_landscape_params(&space, fs, 1.0);
+    let mut landscape = build_anchor_landscape(
+        &space,
+        &params,
+        cfg.anchor_hz,
+        E4_ENV_PARTIALS_DEFAULT,
+        E4_ENV_PARTIAL_DECAY_DEFAULT,
+    );
+
+    // Theta rhythm at the specified frequency (2 Hz kick), always-on.
+    landscape.rhythm = NeuralRhythms {
+        theta: RhythmBand {
+            phase: 0.0,
+            freq_hz: cfg.theta_freq_hz,
+            mag: 1.0,
+            alpha: 1.0,
+            beta: 0.0,
+        },
+        delta: RhythmBand::default(),
+        env_open: 1.0,
+        env_level: 1.0,
+    };
+
+    // Consonance-gated entrainment — matches paper E5 simulation model:
+    //   dE/dt = -C_B + RECHARGE * consonance   (continuous, not event-driven)
+    //   vitality = (E / E_cap)^0.5
+    //   k_eff = K_TIME * coupling_multiplier(vitality)  (vitality condition)
+    //   k_eff = 0                                       (control condition)
+    // Paper constants: C_B=0.05, RECHARGE=0.1, E_init=0.1, E_cap=1.0
+    //   c=1.0 → E rises to cap (vitality→1, strong coupling → entrain)
+    //   c<0.5 → E drains to 0  (vitality→0, no coupling → asynchronous)
+    let gc = match cfg.condition {
+        E3Condition::Baseline => 1.0f32,
+        E3Condition::NoRecharge => 0.0f32,
+    };
+    let mut pop = Population::new(tb);
+    pop.set_seed(cfg.seed);
+    pop.set_current_frame(0);
+    pop.global_coupling = gc;
+
+    // Fixed-reference drone — quiet, provides landscape anchor.
+    let anchor_spec = SpawnSpec {
+        control: anchor_control(cfg.anchor_hz),
+        articulation: ArticulationCoreConfig::Drone {
+            sway: None,
+            breath_gain_init: Some(0.05),
+            envelope: None,
+        },
+    };
+    pop.apply_action(
+        Action::Spawn {
+            group_id: E3_AUDIO_GROUP_ANCHOR,
+            ids: vec![0],
+            spec: anchor_spec,
+            strategy: None,
+        },
+        &landscape,
+        None,
+    );
+
+    // Match paper E5: continuous recharge, no event-driven recharge,
+    // gates always open, no noise, low initial energy.
+    // Match paper E5 model exactly:
+    //   E_init=0.1, E_cap=1.0, dE/dt = -0.05 + 0.1*consonance
+    //   c=1.0 → E rises to 1.0 (v=1.0), c<0.5 → E drains to 0 (v=0)
+    let lifecycle = LifecycleConfig::Sustain {
+        // c_level range is [0.70..0.87], so scale recharge to match:
+        //   dE/dt = -metabolism + recharge * c_level
+        //   c=0.87: net = -0.8 + 1.0*0.87 = +0.07 (rises)
+        //   c=0.78: net = -0.8 + 1.0*0.78 = -0.02 (slow drain)
+        //   c=0.70: net = -0.8 + 1.0*0.70 = -0.10 (drains, v→0 in ~10s)
+        initial_energy: 0.1,
+        metabolism_rate: 0.8,
+        recharge_rate: Some(0.0),
+        action_cost: Some(0.0),
+        continuous_recharge_rate: Some(1.0),
+        envelope: EnvelopeConfig {
+            attack_sec: 0.005,
+            decay_sec: 0.06,
+            sustain_level: 0.0,
+            release_sec: 0.03,
+        },
+    };
+    let articulation = ArticulationCoreConfig::Entrain {
+        lifecycle,
+        // Agent intrinsic freq slightly below theta (ratio 0.9, matching paper E5).
+        // k_omega=0 so this stays fixed; coupling pulls phase, not frequency.
+        rhythm_freq: Some(cfg.theta_freq_hz * 0.9),
+        rhythm_sensitivity: None,
+        rhythm_coupling: RhythmCouplingMode::TemporalTimesVitality {
+            lambda_v: 1.0,
+            v_floor: 0.0,
+        },
+        rhythm_reward: None,
+        breath_gain_init: Some(1.0),
+        k_omega: Some(0.0),       // no omega adaptation (paper uses fixed per-agent omega)
+        base_sigma: Some(0.0),    // no noise (paper uses noise=0)
+        gate_thresholds: Some(GateThresholds {
+            env_open: 0.0,
+            mag: 0.0,
+            alpha: 0.0,
+            beta: 1.0,
+        }),
+        energy_cap: Some(1.0), // E5_E_CAP (separate from initial_energy)
+    };
+    let mut agent_control = AgentControl::default();
+    agent_control.pitch.mode = PitchMode::Lock;
+    agent_control.pitch.freq = cfg.anchor_hz;
+    agent_control.body.method = conchordal::life::control::BodyMethod::Harmonic;
+    agent_control.body.timbre.brightness = 0.15;
+    agent_control.phonation.spec = PhonationSpec::default();
+    let agent_spec = SpawnSpec {
+        control: agent_control,
+        articulation,
+    };
+    let strategy = e3_spawn_strategy(cfg.anchor_hz, &space);
+    let ids: Vec<u64> = (1..=cfg.pop_size as u64).collect();
+    pop.apply_action(
+        Action::Spawn {
+            group_id: E3_AUDIO_GROUP_AGENTS,
+            ids,
+            spec: agent_spec.clone(),
+            strategy: Some(strategy.clone()),
+        },
+        &landscape,
+        None,
+    );
+
+    // Simulation + audio rendering loop with respawn (matching paper E3).
+    let dt = hop as f32 / fs;
+    let total_steps = (cfg.duration_sec / dt).ceil() as u64;
+    let mut world = WorldModel::new(tb, space.clone());
+    let mut renderer = ScheduleRenderer::new(tb);
+    let mut all_samples: Vec<f32> = Vec::with_capacity((cfg.duration_sec * fs) as usize);
+
+    for step in 0..total_steps {
+        let now_tick = step * hop as u64;
+        world.advance_to(now_tick);
+
+        // Update landscape with current population.
+        update_e4_landscape_from_population(
+            &space,
+            &params,
+            &pop,
+            &mut landscape,
+            E4_ENV_PARTIALS_DEFAULT,
+            E4_ENV_PARTIAL_DECAY_DEFAULT,
+        );
+        landscape.rhythm.advance_in_place(dt);
+
+        pop.advance(hop, fs, step, dt, &landscape);
+
+        // Log phase coherence at 1-second intervals
+        if step % (1.0 / dt) as u64 == 0 {
+            let mut sin_all = 0.0f32;
+            let mut cos_all = 0.0f32;
+            let mut n_all = 0u32;
+            let mut sin_hi = 0.0f32;
+            let mut cos_hi = 0.0f32;
+            let mut n_hi = 0u32;
+            let mut sum_keff = 0.0f32;
+            for agent in &pop.individuals {
+                if let AnyArticulationCore::Entrain(ref core) = agent.articulation.core {
+                    if core.vitality_level > 0.01 {
+                        sin_all += core.rhythm_phase.sin();
+                        cos_all += core.rhythm_phase.cos();
+                        n_all += 1;
+                        sum_keff += core.vitality_level;
+                    }
+                    if core.vitality_level > 0.8 {
+                        sin_hi += core.rhythm_phase.sin();
+                        cos_hi += core.rhythm_phase.cos();
+                        n_hi += 1;
+                    }
+                }
+            }
+            let r_all = if n_all > 0 { (sin_all*sin_all+cos_all*cos_all).sqrt()/n_all as f32 } else { 0.0 };
+            let r_hi = if n_hi > 0 { (sin_hi*sin_hi+cos_hi*cos_hi).sqrt()/n_hi as f32 } else { 0.0 };
+            let k_avg = if n_all > 0 { sum_keff / n_all as f32 } else { 0.0 };
+            // Sample energy + consonance extremes
+            let (mut e_min, mut e_max, mut c_min, mut c_max) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+            for a in &pop.individuals {
+                if let AnyArticulationCore::Entrain(ref c) = a.articulation.core {
+                    e_min = e_min.min(c.energy);
+                    e_max = e_max.max(c.energy);
+                    let cons = landscape.evaluate_pitch_level(a.body.base_freq_hz());
+                    c_min = c_min.min(cons);
+                    c_max = c_max.max(cons);
+                }
+            }
+            let t = step as f32 * dt;
+            eprintln!("    t={t:.1}s R={r_all:.3} v={k_avg:.2} e=[{e_min:.2}..{e_max:.2}] c=[{c_min:.2}..{c_max:.2}]");
+        }
+
+        let batches = pop.collect_phonation_batches(&mut world, &landscape, now_tick);
+        let audio = renderer.render(&batches, now_tick, &landscape.rhythm);
+        all_samples.extend_from_slice(audio);
+    }
+
+    // Normalize.
+    let peak = all_samples.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+    if peak > 0.01 {
+        let scale = 0.9 / peak;
+        for s in &mut all_samples {
+            *s *= scale;
+        }
+    }
+
+    // Write WAV.
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: fs as u32,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(output_path, spec)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    for &s in &all_samples {
+        let i16_val = (s * 32767.0).clamp(-32768.0, 32767.0) as i16;
+        writer
+            .write_sample(i16_val)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    }
+    writer
+        .finalize()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    let duration_sec = all_samples.len() as f32 / fs;
+    eprintln!(
+        "E3 audio: {} ({:.1}s, peak={:.3}, condition={})",
+        output_path.display(),
+        duration_sec,
+        peak,
+        cfg.condition.label()
+    );
+    Ok(())
 }
 
 #[cfg(test)]
@@ -2158,5 +2459,49 @@ mod tests {
             harmonic_tilt > 0.02,
             "harmonic env should show positive tilt, got {harmonic_tilt}"
         );
+    }
+
+    #[test]
+    fn e3_audio_render_smoke_test() {
+        let tmp = std::env::temp_dir().join("conc_e3_smoke.wav");
+        let cfg = E3AudioConfig {
+            seed: 99,
+            pop_size: 4,
+            duration_sec: 0.5,
+            condition: E3Condition::Baseline,
+            anchor_hz: E4_ANCHOR_HZ,
+            theta_freq_hz: 2.0,
+        };
+        render_e3_audio(&cfg, &tmp).expect("e3 audio render should succeed");
+        let meta = std::fs::metadata(&tmp).expect("wav should exist");
+        assert!(meta.len() > 1000, "wav should not be trivially small");
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn e3_audio_conditions_differ() {
+        let tmp_b = std::env::temp_dir().join("conc_e3_diff_b.wav");
+        let tmp_n = std::env::temp_dir().join("conc_e3_diff_n.wav");
+        let base = E3AudioConfig {
+            seed: 7,
+            pop_size: 6,
+            duration_sec: 2.0,
+            condition: E3Condition::Baseline,
+            anchor_hz: E4_ANCHOR_HZ,
+            theta_freq_hz: 2.0,
+        };
+        let norech = E3AudioConfig {
+            condition: E3Condition::NoRecharge,
+            ..base.clone()
+        };
+        render_e3_audio(&base, &tmp_b).unwrap();
+        render_e3_audio(&norech, &tmp_n).unwrap();
+        // Files should differ (different energy dynamics)
+        let bytes_b = std::fs::read(&tmp_b).unwrap();
+        let bytes_n = std::fs::read(&tmp_n).unwrap();
+        assert_eq!(bytes_b.len(), bytes_n.len(), "same duration → same length");
+        assert_ne!(bytes_b, bytes_n, "baseline and norecharge should produce different audio");
+        let _ = std::fs::remove_file(&tmp_b);
+        let _ = std::fs::remove_file(&tmp_n);
     }
 }
