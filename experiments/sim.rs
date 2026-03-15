@@ -8,7 +8,9 @@ use conchordal::core::log2space::Log2Space;
 use conchordal::core::modulation::{NeuralRhythms, RhythmBand};
 use conchordal::core::roughness_kernel::{KernelParams, RoughnessKernel};
 use conchordal::core::timebase::Timebase;
-use conchordal::life::articulation_core::{AnyArticulationCore, ArticulationState};
+use conchordal::life::articulation_core::{
+    AnyArticulationCore, ArticulationState, kuramoto_phase_step,
+};
 use conchordal::life::control::{AgentControl, PitchCoreKind, PitchMode};
 use conchordal::life::individual::SoundBody;
 use conchordal::life::lifecycle::LifecycleConfig;
@@ -2269,6 +2271,198 @@ pub fn render_e3_audio(cfg: &E3AudioConfig, output_path: &std::path::Path) -> st
         duration_sec,
         peak,
         cfg.condition.label()
+    );
+    Ok(())
+}
+
+// ─── E3 direct synthesis (matches paper E5 model exactly) ───
+
+/// Generate a Rhai scenario script for E3 consonance-gated entrainment.
+///
+/// Runs the paper E5 Kuramoto model to compute per-agent attack times,
+/// then emits a Rhai script with timed note events for conchordal-render.
+pub fn generate_e3_rhai(
+    cfg: &E3AudioConfig,
+    output_path: &std::path::Path,
+) -> std::io::Result<()> {
+    use std::f32::consts::{PI, TAU};
+    use std::io::Write;
+
+    // Paper E5 constants
+    const KICK_FREQ_HZ: f32 = 4.0;
+    const KICK_OMEGA: f32 = TAU * KICK_FREQ_HZ;
+    const AGENT_OMEGA_MEAN: f32 = TAU * 3.6;
+    const AGENT_JITTER: f32 = 0.02;
+    const K_TIME: f32 = 3.0;
+    const LAMBDA_V: f32 = 1.0;
+    const V_FLOOR: f32 = 0.0;
+    const VITALITY_EXP: f32 = 0.5;
+    const E_CAP: f32 = 1.0;
+    const E_INIT: f32 = 0.1;
+    const C_B: f32 = 0.05;
+    const RECHARGE: f32 = 0.1;
+    const SIM_DT: f32 = 0.002;
+
+    let n = cfg.pop_size;
+    let anchor_hz = cfg.anchor_hz;
+
+    // Build landscape for consonance evaluation
+    let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
+    let params = make_landscape_params(&space, 48000.0, 1.0);
+    let landscape = build_anchor_landscape(
+        &space, &params, anchor_hz,
+        E4_ENV_PARTIALS_DEFAULT, E4_ENV_PARTIAL_DECAY_DEFAULT,
+    );
+
+    let mut rng = SmallRng::seed_from_u64(cfg.seed);
+
+    // Random pitches ±1 octave
+    let log2_anchor = anchor_hz.log2();
+    let pitches_hz: Vec<f32> = (0..n)
+        .map(|_| 2.0f32.powf(rng.random_range((log2_anchor - 1.0)..(log2_anchor + 1.0))))
+        .collect();
+
+    // Min-max normalised consonance
+    let raw_scores: Vec<f32> = pitches_hz.iter()
+        .map(|&f| landscape.evaluate_pitch_score(f))
+        .collect();
+    let s_min = raw_scores.iter().copied().fold(f32::INFINITY, f32::min);
+    let s_max = raw_scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let s_range = (s_max - s_min).max(1e-6);
+    let consonances: Vec<f32> = raw_scores.iter()
+        .map(|&s| ((s - s_min) / s_range).clamp(0.0, 1.0))
+        .collect();
+
+    // Per-agent omega with jitter
+    let omegas: Vec<f32> = (0..n)
+        .map(|_| AGENT_OMEGA_MEAN * (1.0 + rng.random_range(-AGENT_JITTER..AGENT_JITTER)))
+        .collect();
+
+    // Random initial phases
+    let mut phases: Vec<f32> = (0..n)
+        .map(|_| rng.random_range(0.0..TAU))
+        .collect();
+
+    let mut energies = vec![E_INIT; n];
+    let mut theta_kick = 0.0f32;
+    let mut prev_phases = phases.clone();
+
+    // Simulate and collect attack events: (time, agent_idx, vitality)
+    struct Attack { time: f32, agent: usize, vitality: f32 }
+    let mut attacks: Vec<Attack> = Vec::new();
+    let total_steps = (cfg.duration_sec / SIM_DT).ceil() as usize;
+
+    for step in 0..total_steps {
+        let t = step as f32 * SIM_DT;
+
+        for i in 0..n {
+            let de = (-C_B + RECHARGE * consonances[i]) * SIM_DT;
+            energies[i] = (energies[i] + de).clamp(0.0, E_CAP);
+        }
+
+        let vitalities: Vec<f32> = energies.iter()
+            .map(|&e| (e / E_CAP).clamp(0.0, 1.0).powf(VITALITY_EXP))
+            .collect();
+
+        for i in 0..n { prev_phases[i] = phases[i]; }
+        theta_kick += KICK_OMEGA * SIM_DT;
+
+        for i in 0..n {
+            let k_eff = match cfg.condition {
+                E3Condition::Baseline => {
+                    let g = ((vitalities[i] - V_FLOOR) / (1.0 - V_FLOOR).max(1e-6)).clamp(0.0, 1.0);
+                    K_TIME * (LAMBDA_V * g).clamp(0.0, 2.0)
+                }
+                E3Condition::NoRecharge => 0.0,
+            };
+            phases[i] = kuramoto_phase_step(phases[i], omegas[i], theta_kick, k_eff, 0.0, SIM_DT);
+        }
+
+        // Detect phase crossing 2π → attack
+        for i in 0..n {
+            if (phases[i] / TAU).floor() > (prev_phases[i] / TAU).floor() {
+                if vitalities[i] > 0.05 {
+                    attacks.push(Attack { time: t, agent: i, vitality: vitalities[i] });
+                }
+            }
+        }
+    }
+
+    eprintln!(
+        "  E3 rhai: {} attacks from {} agents over {:.1}s (condition={})",
+        attacks.len(), n, cfg.duration_sec, cfg.condition.label()
+    );
+
+    // Generate Rhai script
+    let note_dur = 0.12f32; // note duration in seconds
+    let condition_label = cfg.condition.label();
+
+    // Use seq brain: each create() plays one short note then auto-stops.
+    let mut rhai = format!(
+        "// 30_e3_{condition_label}.rhai — Consonance-gated entrainment\n\
+         // AUTO-GENERATED — DO NOT EDIT\n\
+         // {n} agents, {KICK_FREQ_HZ} Hz kick, condition={condition_label}\n\
+         // Paper E5 Kuramoto model: k_eff = {K_TIME} * vitality (baseline) or 0 (control)\n\
+         // Each attack → create a short-lived seq voice at the agent's pitch.\n\n"
+    );
+
+    // Pre-define one spec per agent pitch (seq brain, short duration)
+    for i in 0..n {
+        rhai.push_str(&format!(
+            "let s{i} = derive(harmonic).brain(\"seq\").pitch_mode(\"lock\")\
+             .amp({:.3}).adsr(0.003, 0.08, 0.0, 0.03);\n",
+            0.18
+        ));
+    }
+    rhai.push('\n');
+
+    // Sort attacks by time
+    attacks.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
+
+    rhai.push_str(&format!("scene(\"e3_{condition_label}\", || {{\n"));
+
+    // Quiet drone anchor (continuous)
+    rhai.push_str(&format!(
+        "    let drone = create(derive(harmonic).brain(\"drone\").pitch_mode(\"lock\")\
+         .amp(0.03).adsr(0.01, 0.1, 1.0, 0.5), 1).freq({:.2});\n",
+        anchor_hz
+    ));
+    rhai.push_str("    flush();\n\n");
+
+    let quant = 0.005f32;
+    let mut time_cursor = 0.0f32;
+
+    for atk in &attacks {
+        let target_t = (atk.time / quant).round() * quant;
+        if target_t > time_cursor + 0.0001 {
+            let wait = target_t - time_cursor;
+            rhai.push_str(&format!("    wait({wait:.4});\n"));
+            time_cursor = target_t;
+        }
+        let amp = (0.15 * atk.vitality).max(0.01);
+        // Create a new short-lived voice at this agent's pitch
+        rhai.push_str(&format!(
+            "    create(s{}, 1).freq({:.2}).amp({:.4}); flush();\n",
+            atk.agent, pitches_hz[atk.agent], amp
+        ));
+    }
+
+    let remaining = cfg.duration_sec - time_cursor;
+    if remaining > 0.01 {
+        rhai.push_str(&format!("    wait({remaining:.3});\n"));
+    }
+    rhai.push_str("});\n");
+
+    // Write file
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut f = std::fs::File::create(output_path)?;
+    f.write_all(rhai.as_bytes())?;
+
+    eprintln!(
+        "  wrote {} ({} bytes)",
+        output_path.display(), rhai.len()
     );
     Ok(())
 }

@@ -1270,16 +1270,16 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
     }
     // Handle --e3-audio: render E3 experiment audio to WAV
     if args.iter().any(|arg| arg == "--e3-audio") {
-        let out_dir = PathBuf::from("supplementary_audio/audio");
         let cfg_baseline = crate::sim::E3AudioConfig::default_baseline();
         let cfg_norecharge = crate::sim::E3AudioConfig::default_norecharge();
-        crate::sim::render_e3_audio(
+        let scenario_dir = PathBuf::from("supplementary_audio/scenarios");
+        crate::sim::generate_e3_rhai(
             &cfg_baseline,
-            &out_dir.join("30_e3_baseline.wav"),
+            &scenario_dir.join("30_e3_baseline.rhai"),
         )?;
-        crate::sim::render_e3_audio(
+        crate::sim::generate_e3_rhai(
             &cfg_norecharge,
-            &out_dir.join("30_e3_norecharge.wav"),
+            &scenario_dir.join("30_e3_norecharge.rhai"),
         )?;
         return Ok(());
     }
