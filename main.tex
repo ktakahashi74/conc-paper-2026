@@ -220,7 +220,6 @@ The Conchordal instrument is designed around an extensible agent architecture th
 Each agent proposes local pitch perturbations of magnitude $\lambda=15$\,ct sampled within a bounded neighborhood in log-frequency space. A hill-climbing acceptance rule evaluates candidate positions via $C_{\text{field}}$ and a crowding penalty computed in ERB space. The crowding kernel $K_{\text{crowd}}(\Delta_{\text{erb}})$ is derived analytically as the complement of the roughness kernel: $K_{\text{crowd}}(d) = \max\!\bigl(0,\; 1 - R(d/\kappa) / R_{\text{peak}}\bigr)$, where $R$ is the full Plomp--Levelt roughness kernel and $\kappa$ is a reach factor ($\kappa=2.1$). This construction repels agents that are too close in pitch---preventing collapse to unison---while yielding to landscape-mediated repulsion at wider separations where roughness peaks. The combined score is $S = C_{\text{field}} - \lambda_C \sum_{j \neq i} K_{\text{crowd}}(\Delta_{ij})$. Proposals are accepted with probability $\min\!\bigl(1,\,\exp\bigl(\Delta S/T\bigr)\bigr)$ where $\Delta S = S_{\text{new}} - S_{\text{old}}$ and $T$ decays exponentially ($T_0=0.05$, $\tau=30$\,steps), annealing toward greedy hill-climbing.
 
 \subsection{Metabolic Policy}
-\label{sec:metabolism}
 
 Agents possess energy $E$. Dynamics follow:
 
