@@ -7029,7 +7029,7 @@ fn render_e6_figure(
     final_target_dist_heredity: &[f32],
     final_target_dist_random: &[f32],
 ) -> Result<(), Box<dyn Error>> {
-    let root = bitmap_root(out_path, (3720, 935)).into_drawing_area();
+    let root = bitmap_root(out_path, (3720, 748)).into_drawing_area();
     root.fill(&WHITE)?;
     let (left, right) = root.split_horizontally(2400);
     let left_panels = left.split_evenly((1, 2));
