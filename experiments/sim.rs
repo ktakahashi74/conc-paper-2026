@@ -2017,7 +2017,7 @@ impl E3AudioConfig {
         Self {
             seed: 42,
             pop_size: 48,
-            duration_sec: 15.0,
+            duration_sec: 8.0,
             condition: E3AudioCondition::Shared,
             anchor_hz: E4_ANCHOR_HZ,
             theta_freq_hz: 2.0,

@@ -12,7 +12,7 @@ Qualitative audio demonstrations accompanying the paper
 | `00_quicklisten.wav` | Orientation | ~41 s | Curated montage: best-case emergence vs. ablation controls |
 | `10_exp1_polyphony.wav` | Evidence (E2) | ~53 s | Local-search + repulsion → emergent polyphony |
 | `20_integration.wav` | Evidence (E6) | ~55 s | Heredity × hill-climbing → integration |
-| `30_e3_shared.wav`, `30_e3_scrambled.wav`, `30_e3_off.wav` | Evidence (main E3) | ~15 s each | Shared temporal scaffold vs. scrambled/off controls |
+| `30_e3_shared.wav`, `30_e3_scrambled.wav`, `30_e3_off.wav` | Evidence (main E3) | ~8 s each | Shared temporal scaffold vs. scrambled/off controls |
 
 ### 00_quicklisten — Orientation montage
 
