@@ -285,9 +285,9 @@ const E5_STEPS: usize = 2000;
 const E5_TIME_PLV_WINDOW_STEPS: usize = 200;
 const E5_ANCHOR_HZ: f32 = 220.0;
 const E5_E_CAP: f32 = 1.0;
-const E5_E_INIT: f32 = 0.1;
-const E5_CB: f32 = 0.05;
-const E5_RECHARGE: f32 = 0.1;
+const E5_E_INIT: f32 = 0.0;
+const E5_RECHARGE: f32 = 1.0;
+const E5_DECAY: f32 = 0.5;
 const E5_SEEDS: [u64; 20] = [
     0xE5C0FF_u64,
     0xE5C0FF_u64 + 1,
@@ -5732,7 +5732,7 @@ fn plot_e5_vitality_entrainment(out_dir: &Path) -> Result<(), Box<dyn Error>> {
         }
         let (m, s) = mean_std_scalar(rs);
         eprintln!(
-            "  E5 {} : Pearson r(consonance, PLV) = {:.3} ± {:.3} (n={})",
+            "  E5 {} : Pearson r(C_field, PLV) = {:.3} ± {:.3} (n={})",
             cond.label(),
             m,
             s,
@@ -7352,10 +7352,9 @@ struct E5DeltaSeries {
 }
 
 struct E5SigmoidFit {
-    intercept: f32,
-    slope: f32,
-    c50: f32,
-    s: f32,
+    base: f32,      // y at x → -∞
+    amplitude: f32,  // y at x → +∞ is base + amplitude
+    steepness: f32,  // slope of sigmoid (c50 fixed at 0)
 }
 
 #[derive(Clone, Copy)]
@@ -7364,10 +7363,10 @@ struct E5AgentFinal {
     plv: f32,
 }
 
-// ── E5 pitch selection: stratified by consonance ────────────────
+// ── E5 pitch selection: stratified by raw C_field ────────────────
 /// Scan the landscape over ±1 octave and return N pitches whose
-/// consonance values are approximately uniformly distributed in [0,1].
-/// This ensures the independent variable (consonance) spans the full range.
+/// raw C_field values are approximately uniformly distributed in [0, scan_max].
+/// This ensures the independent variable (C_field) spans the full range.
 fn e5_stratified_pitches(
     n: usize,
     landscape: &conchordal::core::landscape::Landscape,
@@ -7387,22 +7386,44 @@ fn e5_stratified_pitches(
         })
         .collect();
 
-    // Normalise scores to [0,1]
+    // Use raw C_field range [scan_min, scan_max] for stratification
     let s_min = candidates.iter().map(|c| c.1).fold(f32::INFINITY, f32::min);
     let s_max = candidates
         .iter()
         .map(|c| c.1)
         .fold(f32::NEG_INFINITY, f32::max);
     let s_range = (s_max - s_min).max(1e-6);
-    let normed: Vec<(f32, f32)> = candidates
-        .iter()
-        .map(|&(hz, s)| (hz, ((s - s_min) / s_range).clamp(0.0, 1.0)))
-        .collect();
 
-    // Assign each candidate to one of N strata
+    // Diagnostic: scan range, peak/trough, and distribution
+    {
+        let (min_hz, _) = *candidates.iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap()).unwrap();
+        let (max_hz, _) = *candidates.iter().max_by(|a, b| a.1.partial_cmp(&b.1).unwrap()).unwrap();
+        let n_neg = candidates.iter().filter(|c| c.1 < 0.0).count();
+        let n_zero = candidates.iter().filter(|c| c.1.abs() < 1e-6).count();
+        // Find C_field near anchor (220Hz) and at key ratios
+        let near_anchor = candidates.iter().min_by_key(|c| ((c.0 - E5_ANCHOR_HZ).abs() * 100.0) as i32).unwrap();
+        let near_fifth = candidates.iter().min_by_key(|c| ((c.0 - E5_ANCHOR_HZ * 1.5).abs() * 100.0) as i32).unwrap();
+        let near_oct = candidates.iter().min_by_key(|c| ((c.0 - E5_ANCHOR_HZ * 2.0).abs() * 100.0) as i32).unwrap();
+        eprintln!(
+            "  E5 scan: C_field [{:.4}, {:.4}], min@{:.1}Hz, max@{:.1}Hz, n_neg={}, n_zero={}",
+            s_min, s_max, min_hz, max_hz, n_neg, n_zero
+        );
+        eprintln!(
+            "    unison@{:.1}Hz C={:.4}, fifth@{:.1}Hz C={:.4}, octave@{:.1}Hz C={:.4}",
+            near_anchor.0, near_anchor.1, near_fifth.0, near_fifth.1, near_oct.0, near_oct.1
+        );
+        // Bottom 10 (lowest C_field)
+        let mut sorted = candidates.clone();
+        sorted.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        let bottom: Vec<String> = sorted.iter().take(5).map(|(hz, c)| format!("{:.1}Hz:{:.4}", hz, c)).collect();
+        eprintln!("    bottom5: {}", bottom.join(", "));
+    }
+
+    // Assign each candidate to one of N strata over [s_min, s_max]
     let mut strata: Vec<Vec<(f32, f32)>> = (0..n).map(|_| Vec::new()).collect();
-    for &(hz, c) in &normed {
-        let bin = ((c * n as f32) as usize).min(n - 1);
+    for &(hz, c) in &candidates {
+        let frac = ((c - s_min) / s_range).clamp(0.0, 1.0);
+        let bin = ((frac * n as f32) as usize).min(n - 1);
         strata[bin].push((hz, c));
     }
 
@@ -7411,17 +7432,18 @@ fn e5_stratified_pitches(
     let mut pitches = Vec::with_capacity(n);
     let mut consonances = Vec::with_capacity(n);
     for (i, stratum) in strata.iter().enumerate().take(n) {
-        let mid = (i as f32 + 0.5) / n as f32;
+        let mid_frac = (i as f32 + 0.5) / n as f32;
+        let mid_val = s_min + mid_frac * s_range;
         if !stratum.is_empty() {
             let idx = rng.random_range(0..stratum.len());
             let (hz, c) = stratum[idx];
             pitches.push(hz);
             consonances.push(c);
         } else {
-            // Fallback: find candidate closest to stratum midpoint
-            let (hz, c) = *normed
+            // Fallback: find candidate closest to stratum midpoint (in raw C_field)
+            let (hz, c) = *candidates
                 .iter()
-                .min_by(|a, b| (a.1 - mid).abs().partial_cmp(&(b.1 - mid).abs()).unwrap())
+                .min_by(|a, b| (a.1 - mid_val).abs().partial_cmp(&(b.1 - mid_val).abs()).unwrap())
                 .unwrap();
             pitches.push(hz);
             consonances.push(c);
@@ -7460,9 +7482,10 @@ fn simulate_e5_stratified(
 
     for step in 0..E5_STEPS {
         let t = step as f32 * E5_DT;
-        // Energy dynamics
+        // Energy dynamics: dE/dt = R·max(C_field,0) − γ·E
         for i in 0..E5_N_AGENTS {
-            let de = (-E5_CB + E5_RECHARGE * consonances[i]) * E5_DT;
+            let recharge = E5_RECHARGE * consonances[i].max(0.0);
+            let de = (recharge - E5_DECAY * energies[i]) * E5_DT;
             energies[i] = (energies[i] + de).clamp(0.0, E5_E_CAP);
         }
         // Vitality
@@ -7547,17 +7570,10 @@ fn simulate_e5_vitality(
         })
         .collect();
 
-    // Evaluate consonance (raw score, min-max normalised to [0,1])
-    let raw_scores: Vec<f32> = pitches_hz
+    // Evaluate consonance (raw C_field — no normalization)
+    let consonances: Vec<f32> = pitches_hz
         .iter()
         .map(|&f| landscape.evaluate_pitch_score(f))
-        .collect();
-    let s_min = raw_scores.iter().copied().fold(f32::INFINITY, f32::min);
-    let s_max = raw_scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let s_range = (s_max - s_min).max(1e-6);
-    let consonances: Vec<f32> = raw_scores
-        .iter()
-        .map(|&s| ((s - s_min) / s_range).clamp(0.0, 1.0))
         .collect();
 
     // Intrinsic frequencies with jitter
@@ -7589,9 +7605,10 @@ fn simulate_e5_vitality(
     for step in 0..E5_STEPS {
         let t = step as f32 * E5_DT;
 
-        // Energy dynamics: dE/dt = -c_b + r * C_i
+        // Energy dynamics: dE/dt = R·max(C_field,0) − γ·E
         for i in 0..E5_N_AGENTS {
-            let de = (-E5_CB + E5_RECHARGE * consonances[i]) * E5_DT;
+            let recharge = E5_RECHARGE * consonances[i].max(0.0);
+            let de = (recharge - E5_DECAY * energies[i]) * E5_DT;
             energies[i] = (energies[i] + de).clamp(0.0, E5_E_CAP);
         }
 
@@ -7778,75 +7795,61 @@ fn build_e5_delta_series(
     }
 }
 
-#[inline]
-fn e5_sigmoid_value(x: f32, c50: f32, s: f32) -> f32 {
-    let z = -((x - c50) / s.max(1e-4));
-    1.0 / (1.0 + z.exp())
-}
-
+/// Sigmoid fit with midpoint fixed at C_field = 0:
+///   y = base + amplitude · σ(steepness · x)
+/// where σ(z) = 1 / (1 + exp(-z)).
+/// Grid-search over steepness; OLS for (base, amplitude) at each grid point.
 fn fit_e5_sigmoid(points: &[(f32, f32)]) -> Option<E5SigmoidFit> {
-    if points.len() < 6 {
+    if points.len() < 4 {
         return None;
     }
-
     let n = points.len() as f32;
-    let mut best_fit: Option<E5SigmoidFit> = None;
+    let mut best: Option<E5SigmoidFit> = None;
     let mut best_sse = f32::INFINITY;
 
-    // Grid search over midpoint and slope; solve intercept/slope by OLS for each grid.
-    // This keeps fitting robust and dependency-free.
-    for i_c in 10..=90 {
-        let c50 = i_c as f32 / 100.0;
-        for i_s in 4..=50 {
-            let s = i_s as f32 / 200.0; // 0.02 .. 0.25
+    // Grid search over steepness (1..40)
+    for i_s in 1..=80 {
+        let s = i_s as f32 * 0.5; // 0.5 .. 40.0
 
-            let mut sum_g = 0.0f32;
-            let mut sum_y = 0.0f32;
-            let mut sum_gg = 0.0f32;
-            let mut sum_gy = 0.0f32;
+        // Compute g_i = σ(s · x_i) for each point
+        let mut sum_g = 0.0f32;
+        let mut sum_y = 0.0f32;
+        let mut sum_gg = 0.0f32;
+        let mut sum_gy = 0.0f32;
 
-            for &(x, y) in points {
-                let g = e5_sigmoid_value(x, c50, s);
-                sum_g += g;
-                sum_y += y;
-                sum_gg += g * g;
-                sum_gy += g * y;
-            }
+        for &(x, y) in points {
+            let g = 1.0 / (1.0 + (-s * x).exp());
+            sum_g += g;
+            sum_y += y;
+            sum_gg += g * g;
+            sum_gy += g * y;
+        }
 
-            let var_g = sum_gg - (sum_g * sum_g) / n;
-            if var_g <= 1e-8 {
-                continue;
-            }
-            let cov_gy = sum_gy - (sum_g * sum_y) / n;
-            let slope = cov_gy / var_g;
-            if !slope.is_finite() || slope <= 0.0 {
-                continue;
-            }
-            let intercept = (sum_y - slope * sum_g) / n;
-            if !intercept.is_finite() {
-                continue;
-            }
+        // OLS: y = base + amplitude · g
+        let det = n * sum_gg - sum_g * sum_g;
+        if det.abs() < 1e-8 {
+            continue;
+        }
+        let base = (sum_y * sum_gg - sum_g * sum_gy) / det;
+        let amplitude = (n * sum_gy - sum_g * sum_y) / det;
+        if !base.is_finite() || !amplitude.is_finite() {
+            continue;
+        }
 
-            let mut sse = 0.0f32;
-            for &(x, y) in points {
-                let g = e5_sigmoid_value(x, c50, s);
-                let y_hat = intercept + slope * g;
-                let e = y - y_hat;
-                sse += e * e;
-            }
-            if sse < best_sse {
-                best_sse = sse;
-                best_fit = Some(E5SigmoidFit {
-                    intercept,
-                    slope,
-                    c50,
-                    s,
-                });
-            }
+        let mut sse = 0.0f32;
+        for &(x, y) in points {
+            let g = 1.0 / (1.0 + (-s * x).exp());
+            let y_hat = base + amplitude * g;
+            let e = y - y_hat;
+            sse += e * e;
+        }
+        if sse < best_sse {
+            best_sse = sse;
+            best = Some(E5SigmoidFit { base, amplitude, steepness: s });
         }
     }
 
-    best_fit
+    best
 }
 
 fn render_e1_plot(
@@ -25406,7 +25409,7 @@ where
         .margin(14)
         .x_label_area_size(64)
         .y_label_area_size(90)
-        .build_cartesian_2d(0.0f32..x_max, 0.15f32..0.50f32)?;
+        .build_cartesian_2d(0.0f32..x_max, 0.0f32..1.0f32)?;
 
     chart
         .configure_mesh()
@@ -25426,12 +25429,12 @@ where
         let mut band: Vec<(f32, f32)> = Vec::with_capacity(series.len() * 2);
         for &(x, mean, ci) in series {
             if mean.is_finite() {
-                band.push((x, (mean + ci).clamp(0.15, 0.50)));
+                band.push((x, (mean + ci).clamp(0.0, 1.0)));
             }
         }
         for &(x, mean, ci) in series.iter().rev() {
             if mean.is_finite() {
-                band.push((x, (mean - ci).clamp(0.15, 0.50)));
+                band.push((x, (mean - ci).clamp(0.0, 1.0)));
             }
         }
         if band.len() >= 3 {
@@ -25482,23 +25485,8 @@ where
         .fold(0.0f32, f32::max)
         .max(1.0);
 
-    let mut y_min = f32::INFINITY;
-    let mut y_max = f32::NEG_INFINITY;
-    for ds in delta_series {
-        for &(_, mean, ci) in &ds.series {
-            if mean.is_finite() {
-                y_min = y_min.min(mean - ci);
-                y_max = y_max.max(mean + ci);
-            }
-        }
-    }
-    if !y_min.is_finite() || !y_max.is_finite() {
-        y_min = -0.1;
-        y_max = 0.1;
-    }
-    let pad = ((y_max - y_min) * 0.15).max(0.02);
-    let y_lo = (y_min - pad).min(-0.01);
-    let y_hi = (y_max + pad).max(0.01);
+    let y_lo = -0.1f32;
+    let y_hi = 0.6f32;
 
     let mut chart = ChartBuilder::on(area)
         .caption("A2. Paired contrast ΔPLV", ("sans-serif", 72))
@@ -25572,7 +25560,7 @@ where
     Ok(())
 }
 
-/// Panel B: Per-agent final PLV vs consonance scatter (representative seed)
+/// Panel B: Per-agent final PLV vs C_field scatter (representative seed)
 fn draw_e5_scatter_panel<DB: DrawingBackend>(
     area: &DrawingArea<DB, Shift>,
     rep_vitality: Option<&E5VitalityResult>,
@@ -25581,21 +25569,6 @@ fn draw_e5_scatter_panel<DB: DrawingBackend>(
 where
     <DB as DrawingBackend>::ErrorType: 'static,
 {
-    let mut chart = ChartBuilder::on(area)
-        .caption("B. PLV vs consonance", ("sans-serif", 72))
-        .margin(20)
-        .x_label_area_size(90)
-        .y_label_area_size(120)
-        .build_cartesian_2d(0.0f32..1.0f32, 0.0f32..1.05f32)?;
-
-    chart
-        .configure_mesh()
-        .x_desc("consonance")
-        .y_desc("final PLV")
-        .label_style(("sans-serif", 52).into_font())
-        .axis_desc_style(("sans-serif", 56).into_font())
-        .draw()?;
-
     let control_points: Vec<(f32, f32)> = rep_control
         .map(|res| {
             res.agent_final
@@ -25614,6 +25587,24 @@ where
                 .collect()
         })
         .unwrap_or_default();
+
+    let x_lo = -0.5f32;
+    let x_hi = 1.0f32;
+
+    let mut chart = ChartBuilder::on(area)
+        .caption("B. PLV vs C_field", ("sans-serif", 72))
+        .margin(20)
+        .x_label_area_size(90)
+        .y_label_area_size(120)
+        .build_cartesian_2d(x_lo..x_hi, 0.0f32..1.05f32)?;
+
+    chart
+        .configure_mesh()
+        .x_desc("C_field")
+        .y_desc("final PLV")
+        .label_style(("sans-serif", 52).into_font())
+        .axis_desc_style(("sans-serif", 56).into_font())
+        .draw()?;
 
     // Draw control first (behind), then vitality on top
     if rep_control.is_some() {
@@ -25653,15 +25644,15 @@ where
             });
     }
 
-    // Add fitted guides: vitality sigmoid, control mean baseline
+    // Add fitted guides: vitality sigmoid (c50=0), control mean baseline
     if !vitality_points.is_empty()
         && let Some(fit) = fit_e5_sigmoid(&vitality_points)
     {
         let curve: Vec<(f32, f32)> = (0..=200)
             .map(|i| {
-                let x = i as f32 / 200.0;
-                let y = (fit.intercept + fit.slope * e5_sigmoid_value(x, fit.c50, fit.s))
-                    .clamp(0.0, 1.05);
+                let x = x_lo + (x_hi - x_lo) * (i as f32 / 200.0);
+                let g = 1.0 / (1.0 + (-fit.steepness * x).exp());
+                let y = (fit.base + fit.amplitude * g).clamp(0.0, 1.05);
                 (x, y)
             })
             .collect();
@@ -25677,11 +25668,11 @@ where
             control_points.iter().map(|(_, y)| *y).sum::<f32>() / control_points.len() as f32;
         // White underlay improves visibility against dense scatter points.
         chart.draw_series(std::iter::once(PathElement::new(
-            vec![(0.0f32, mean_control), (1.0f32, mean_control)],
+            vec![(x_lo, mean_control), (x_hi, mean_control)],
             ShapeStyle::from(&WHITE.mix(0.95)).stroke_width(11),
         )))?;
         chart.draw_series(std::iter::once(DashedPathElement::new(
-            vec![(0.0f32, mean_control), (1.0f32, mean_control)],
+            vec![(x_lo, mean_control), (x_hi, mean_control)],
             10,
             8,
             ShapeStyle::from(&PAL_E5_CONTROL.mix(0.98)).stroke_width(7),
@@ -25722,7 +25713,7 @@ where
         + 0.05;
 
     let mut chart = ChartBuilder::on(area)
-        .caption("C. Pearson r(C, PLV)", ("sans-serif", 72))
+        .caption("C. Pearson r(C_field, PLV)", ("sans-serif", 72))
         .margin(20)
         .x_label_area_size(90)
         .y_label_area_size(120)

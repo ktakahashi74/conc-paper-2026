@@ -71,7 +71,7 @@
 \hspace*{1em}$R(t) = (1/N)\bigl|\sum_j e^{i\phi_j}\bigr|$ \hfill\textit{(order parameter)}
 
 \smallskip
-\noindent Continuous energy model: $dE_i/dt = -c_b + r_E \cdot C_i$ ($c_b\!=\!0.05$/s, $r_E\!=\!0.1$/s).
+\noindent Continuous energy model: $dE_i/dt = R \cdot \max(C_{\text{field},i},\,0) - \gamma E_i$ ($R\!=\!1.0$/s, $\gamma\!=\!0.5$/s).
 
 \subsection{S1.4 Hereditary Respawn (Experiment 4)}
 
@@ -151,9 +151,10 @@ Phase switch & & step 25 & --- & --- & --- \\
 Burn-in discarded & & 10 steps & --- & --- & --- \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{Metabolism}} \\
-Basal cost & $c_b$ & --- & 0.5/s & 0.05/s$^\dagger$ & 0.5/s \\
+Basal cost & $c_b$ & --- & 0.5/s & --- & 0.5/s \\
 Attack cost & $c_a$ & --- & 0.02 & --- & 0.02 \\
-Recharge coefficient & $r_E$ & --- & 0.5/att & 0.1/s$^\dagger$ & 0.5/att \\
+Recharge coefficient & $R$ / $r_E$ & --- & 0.5/att & 1.0/s$^\dagger$ & 0.5/att \\
+Decay rate & $\gamma$ & --- & --- & 0.5/s$^\dagger$ & --- \\
 Energy cap & $E_{\text{cap}}$ & --- & 1.0 & 1.0 & 1.0 \\
 Time step & $\Delta t$ & --- & 512/48k\,s & 0.02\,s & 512/48k\,s \\
 Termination & & --- & 200 deaths & 40\,s & 4000 deaths \\
@@ -175,7 +176,7 @@ Proximity kernel & $\alpha$ & --- & --- & --- & $4.0 \times 10^{-4}\,\text{ct}^{
 Ratio limit & $p,q$ & --- & --- & --- & $\leq 8$ \\
 Ratio weight & & --- & --- & --- & $1/(pq)$ \\
 \bottomrule
-\multicolumn{6}{@{}l}{\footnotesize $^\dagger$ Experiment 3 uses a simplified continuous energy model (see S1.3).}\\
+\multicolumn{6}{@{}l}{\footnotesize $^\dagger$ Experiment 3 uses a simplified continuous energy model: $dE/dt = R\max(C_{\text{field}},0) - \gamma E$ (see S1.3).}\\
 \multicolumn{6}{@{}l}{\footnotesize $^\ddagger$ Visualization only (Figure~1D); not used in experiment algorithms.}
 \end{tabular}
 \end{table*}

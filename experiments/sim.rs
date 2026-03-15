@@ -2288,19 +2288,19 @@ pub fn generate_e3_rhai(
     use std::f32::consts::{PI, TAU};
     use std::io::Write;
 
-    // Paper E5 constants
-    const KICK_FREQ_HZ: f32 = 4.0;
+    // Paper E5 constants (must match paper_plots.rs)
+    const KICK_FREQ_HZ: f32 = 2.0;
     const KICK_OMEGA: f32 = TAU * KICK_FREQ_HZ;
-    const AGENT_OMEGA_MEAN: f32 = TAU * 3.6;
+    const AGENT_OMEGA_MEAN: f32 = TAU * 1.8;
     const AGENT_JITTER: f32 = 0.02;
     const K_TIME: f32 = 3.0;
     const LAMBDA_V: f32 = 1.0;
     const V_FLOOR: f32 = 0.0;
     const VITALITY_EXP: f32 = 0.5;
     const E_CAP: f32 = 1.0;
-    const E_INIT: f32 = 0.1;
-    const C_B: f32 = 0.05;
-    const RECHARGE: f32 = 0.1;
+    const E_INIT: f32 = 0.0;
+    const RECHARGE: f32 = 1.0;
+    const DECAY: f32 = 0.5;
     const SIM_DT: f32 = 0.002;
 
     let n = cfg.pop_size;
@@ -2322,15 +2322,9 @@ pub fn generate_e3_rhai(
         .map(|_| 2.0f32.powf(rng.random_range((log2_anchor - 1.0)..(log2_anchor + 1.0))))
         .collect();
 
-    // Min-max normalised consonance
-    let raw_scores: Vec<f32> = pitches_hz.iter()
+    // Raw C_field (no normalization — matches paper_plots.rs)
+    let consonances: Vec<f32> = pitches_hz.iter()
         .map(|&f| landscape.evaluate_pitch_score(f))
-        .collect();
-    let s_min = raw_scores.iter().copied().fold(f32::INFINITY, f32::min);
-    let s_max = raw_scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let s_range = (s_max - s_min).max(1e-6);
-    let consonances: Vec<f32> = raw_scores.iter()
-        .map(|&s| ((s - s_min) / s_range).clamp(0.0, 1.0))
         .collect();
 
     // Per-agent omega with jitter
@@ -2356,7 +2350,8 @@ pub fn generate_e3_rhai(
         let t = step as f32 * SIM_DT;
 
         for i in 0..n {
-            let de = (-C_B + RECHARGE * consonances[i]) * SIM_DT;
+            let recharge = RECHARGE * consonances[i].max(0.0);
+            let de = (recharge - DECAY * energies[i]) * SIM_DT;
             energies[i] = (energies[i] + de).clamp(0.0, E_CAP);
         }
 
@@ -2402,7 +2397,7 @@ pub fn generate_e3_rhai(
         "// 30_e3_{condition_label}.rhai — Consonance-gated entrainment\n\
          // AUTO-GENERATED — DO NOT EDIT\n\
          // {n} agents, {KICK_FREQ_HZ} Hz kick, condition={condition_label}\n\
-         // Paper E5 Kuramoto model: k_eff = {K_TIME} * vitality (baseline) or 0 (control)\n\
+         // Paper E5 Kuramoto model: dE/dt = R*max(C_field,0) - gamma*E; k_eff = {K_TIME} * vitality (baseline) or 0 (control)\n\
          // Each attack → create a short-lived seq voice at the agent's pitch.\n\n"
     );
 
