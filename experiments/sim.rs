@@ -2144,18 +2144,12 @@ pub fn render_e3_audio(cfg: &E3AudioConfig, output_path: &std::path::Path) -> st
 
     const NOTE_DUR_SEC: f32 = 0.12;
     const NOTE_ATTACK_SEC: f32 = 0.005;
-    const DRONE_AMP: f32 = 0.03;
     const NOTE_AMP: f32 = 0.16;
 
     let (pitches_hz, attacks) = simulate_e3_audio_attacks(cfg)?;
     let fs = E3_FS;
     let total_samples = (cfg.duration_sec * fs).ceil() as usize;
     let mut samples = vec![0.0f32; total_samples.max(1)];
-
-    for (idx, sample) in samples.iter_mut().enumerate() {
-        let t = idx as f32 / fs;
-        *sample += DRONE_AMP * (TAU * cfg.anchor_hz * t).sin();
-    }
 
     let note_len = (NOTE_DUR_SEC * fs).ceil() as usize;
     for attack in &attacks {
@@ -2241,7 +2235,8 @@ pub fn generate_e3_rhai(
          // shared: continuous common scaffold\n\
          // scrambled: cycle-wise phase resets\n\
          // off: no scaffold coupling\n\
-         // Each attack creates a short-lived seq voice at a static audibility pitch.\n\n",
+         // Each attack creates a short-lived seq voice at a static audibility pitch.\n\
+         // No external drone or metronome is mixed into the render.\n\n",
         n = cfg.pop_size,
         kick = cfg.theta_freq_hz
     );
@@ -2257,13 +2252,6 @@ pub fn generate_e3_rhai(
     attacks.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
 
     rhai.push_str(&format!("scene(\"e3_{condition_label}\", || {{\n"));
-    rhai.push_str(&format!(
-        "    let drone = create(derive(harmonic).brain(\"drone\").pitch_mode(\"lock\")\
-         .amp(0.03).adsr(0.01, 0.1, 1.0, 0.5), 1).freq({:.2});\n",
-        cfg.anchor_hz
-    ));
-    rhai.push_str("    flush();\n\n");
-
     let quant = 0.005f32;
     let mut time_cursor = 0.0f32;
     for attack in &attacks {

@@ -5,6 +5,7 @@
 // scrambled: cycle-wise phase resets
 // off: no scaffold coupling
 // Each attack creates a short-lived seq voice at a static audibility pitch.
+// No external drone or metronome is mixed into the render.
 
 let s0 = derive(harmonic).brain("seq").pitch_mode("lock").amp(0.18).adsr(0.003, 0.08, 0.0, 0.03);
 let s1 = derive(harmonic).brain("seq").pitch_mode("lock").amp(0.18).adsr(0.003, 0.08, 0.0, 0.03);
@@ -56,9 +57,6 @@ let s46 = derive(harmonic).brain("seq").pitch_mode("lock").amp(0.18).adsr(0.003,
 let s47 = derive(harmonic).brain("seq").pitch_mode("lock").amp(0.18).adsr(0.003, 0.08, 0.0, 0.03);
 
 scene("e3_scrambled", || {
-    let drone = create(derive(harmonic).brain("drone").pitch_mode("lock").amp(0.03).adsr(0.01, 0.1, 1.0, 0.5), 1).freq(220.00);
-    flush();
-
     create(s16, 1).freq(147.75); flush();
     wait(0.0100);
     create(s11, 1).freq(357.41); flush();
