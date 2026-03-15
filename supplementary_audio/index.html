@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audio Supplement — Conchordal</title>
+<style>
+  :root { --bg: #fafafa; --fg: #222; --muted: #666; --border: #ddd; --accent: #1a5276; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1a1a1a; --fg: #e0e0e0; --muted: #999; --border: #333; --accent: #5dade2; }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Palatino Linotype", Palatino, Georgia, serif;
+         background: var(--bg); color: var(--fg);
+         max-width: 720px; margin: 0 auto; padding: 2rem 1.5rem; line-height: 1.6; }
+  h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+  .subtitle { color: var(--muted); font-style: italic; margin-bottom: 2rem; font-size: 0.95rem; }
+  .track { border: 1px solid var(--border); border-radius: 6px;
+           padding: 1.25rem; margin-bottom: 1.5rem; }
+  .track h2 { font-size: 1.1rem; margin-bottom: 0.15rem; color: var(--accent); }
+  .track .meta { font-size: 0.85rem; color: var(--muted); margin-bottom: 0.6rem; }
+  .track p { font-size: 0.9rem; margin-bottom: 0.75rem; }
+  .track audio { width: 100%; margin-top: 0.25rem; }
+  .track table { font-size: 0.82rem; border-collapse: collapse; margin: 0.5rem 0; }
+  .track th, .track td { text-align: left; padding: 0.2rem 0.75rem 0.2rem 0;
+                          border-bottom: 1px solid var(--border); }
+  .track th { color: var(--muted); font-weight: 600; }
+  .segments { font-size: 0.85rem; margin: 0.4rem 0 0.6rem 1.2rem; }
+  .segments li { margin-bottom: 0.15rem; }
+  section.notes { margin-top: 2rem; font-size: 0.85rem; color: var(--muted); }
+  section.notes h2 { font-size: 1rem; color: var(--fg); margin-bottom: 0.5rem; }
+  section.notes p { margin-bottom: 0.5rem; }
+  a { color: var(--accent); }
+  footer { margin-top: 2.5rem; font-size: 0.8rem; color: var(--muted);
+           border-top: 1px solid var(--border); padding-top: 1rem; }
+</style>
+</head>
+<body>
+
+<h1>Audio Supplement — Conchordal</h1>
+<p class="subtitle">Qualitative audio demonstrations accompanying<br>
+"Conchordal: A Bio-Acoustic Artificial Life Instrument"</p>
+
+<div class="track">
+  <h2>00 &mdash; Quick Listen (Orientation)</h2>
+  <p class="meta">~41 s &middot; Curated montage: best-case emergence vs. ablation controls</p>
+  <p>Four short segments contrast the strongest emergent behaviour
+     with ablation controls:</p>
+  <ol class="segments">
+    <li><strong>E2 local-search</strong> &mdash; score-based local search + repulsion &rarr; consonant polyphony</li>
+    <li><strong>E6 both</strong> &mdash; hereditary respawn + hill-climbing &rarr; integration</li>
+    <li><strong>E2 random-walk</strong> &mdash; repulsion only, matched random local walk</li>
+    <li><strong>E6 neither</strong> &mdash; random respawn, no landscape &rarr; random control</li>
+  </ol>
+  <audio controls preload="none">
+    <source src="audio/00_quicklisten.wav" type="audio/wav">
+  </audio>
+</div>
+
+<div class="track">
+  <h2>10 &mdash; Emergent Polyphony (Experiment 2)</h2>
+  <p class="meta">~53 s &middot; Local-search + repulsion &rarr; emergent polyphony</p>
+  <p>Two conditions &times; two seeds (index 0, 10). Each segment ~8 s.</p>
+  <table>
+    <tr><th>Condition</th><th>landscape_weight</th><th>repulsion</th></tr>
+    <tr><td>local-search</td><td>1.0</td><td>0.15 @ 72 cents</td></tr>
+    <tr><td>no-rep</td><td>1.0</td><td>off</td></tr>
+  </table>
+  <p>local-search converges to consonant intervals; no-rep collapses toward unison.</p>
+  <audio controls preload="none">
+    <source src="audio/10_exp1_polyphony.wav" type="audio/wav">
+  </audio>
+</div>
+
+<div class="track">
+  <h2>20 &mdash; Integration (Experiment 6)</h2>
+  <p class="meta">~55 s &middot; Heredity &times; hill-climbing &rarr; integration</p>
+  <p>Four conditions &times; two seeds (index 0, 10). Each segment ~6 s.
+     Ordered from most integrated to random within each seed.</p>
+  <table>
+    <tr><th>Condition</th><th>respawn</th><th>landscape_weight</th></tr>
+    <tr><td>both</td><td>hereditary (&sigma;=0.003 oct)</td><td>0.5</td></tr>
+    <tr><td>H-only</td><td>hereditary (&sigma;=0.003 oct)</td><td>0.0</td></tr>
+    <tr><td>hill-only</td><td>random</td><td>0.5</td></tr>
+    <tr><td>neither</td><td>random</td><td>0.0</td></tr>
+  </table>
+  <p>"both" achieves the highest consonance score.</p>
+  <audio controls preload="none">
+    <source src="audio/20_integration.wav" type="audio/wav">
+  </audio>
+</div>
+
+<section class="notes">
+  <h2>Methodology</h2>
+  <p>Seeds are taken by ordinal index (0 and 10) from the paper's shared seed
+     lists &mdash; no cherry-picking. All tracks are rendered with
+     <code>conchordal-render</code>: harmonic voices, mono WAV at 48 kHz,
+     no reverb, no mastering, identical chain across all tracks.</p>
+  <p>These audio demonstrations are <strong>qualitative support only</strong>.
+     Quantitative claims rest on the paper's simulation statistics (Section 5).
+     The audio is generated by the instrument's native Rhai scenario system,
+     not by replaying simulation event logs.</p>
+</section>
+
+<footer>
+  Conchordal
+</footer>
+
+</body>
+</html>

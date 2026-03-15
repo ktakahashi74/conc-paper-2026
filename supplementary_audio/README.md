@@ -1,19 +1,21 @@
-# Audio Supplement — Conchordal (ALIFE 2026)
+# Audio Supplement — Conchordal
 
 Qualitative audio demonstrations accompanying the paper
 *"Conchordal: A Bio-Acoustic Artificial Life Instrument"*.
+
+**[Listen in browser](https://ktakahashi74.github.io/conc-paper/supplementary_audio/)**
 
 ## Track listing
 
 | File | Role | Duration | Description |
 |------|------|----------|-------------|
-| `00_quicklisten.wav` | Orientation | ~35 s | Curated montage: best-case emergence vs. ablation controls |
+| `00_quicklisten.wav` | Orientation | ~41 s | Curated montage: best-case emergence vs. ablation controls |
 | `10_exp1_polyphony.wav` | Evidence (E2) | ~53 s | Local-search + repulsion → emergent polyphony |
 | `20_integration.wav` | Evidence (E6) | ~55 s | Heredity × hill-climbing → integration |
 
 ### 00_quicklisten — Orientation montage
 
-For quick orientation. Four 8-second segments contrast the strongest
+For quick orientation. Four short segments contrast the strongest
 emergent behaviour with ablation controls:
 
 1. **E2 local-search** — score-based local search + repulsion → consonant polyphony
@@ -21,29 +23,35 @@ emergent behaviour with ablation controls:
 3. **E2 random-walk** — repulsion only, matched random local walk
 4. **E6 neither** — random respawn, no landscape → random control
 
+Each segment uses a 1 s fade-in and fade-out, with 2 s silence between
+segments.
+
 ### 10_exp1_polyphony — Experiment 2 (E2)
 
-Three conditions × two seeds (index 0, 10). Each segment ~8 s:
+Two conditions × two seeds (index 0, 10). Each segment ~8 s:
 
 | Condition | landscape_weight | repulsion |
 |-----------|-----------------|-----------|
 | local-search | 1.0 | 0.15 @ 72 cents |
-| random-walk | 0.0 | 0.15 @ 72 cents |
 | no-rep | 1.0 | off |
 
-**Expected:** local-search converges to consonant intervals; random-walk stays
-random; no-rep collapses toward unison.
+**Expected:** local-search converges to consonant intervals; no-rep collapses
+toward unison.
 
 ### 20_integration — Experiment 6 (E6)
 
-Four conditions × two seeds (index 0, 10). Each segment ~6 s:
+Four conditions × two seeds (index 0, 10). Each segment ~6 s. Within each seed,
+segments are ordered from most integrated to random:
 
 | Condition | respawn | landscape_weight |
 |-----------|---------|-----------------|
-| neither | random | 0.0 |
+| both | hereditary (σ=0.003 oct) | 0.5 |
 | H-only | hereditary (σ=0.003 oct) | 0.0 |
 | hill-only | random | 0.5 |
-| both | hereditary (σ=0.003 oct) | 0.5 |
+| neither | random | 0.0 |
+
+The E6 supplementary render uses the same 5-agent sparse regime as the
+current experiment plus a fixed 220 Hz sine drone as a pitch reference.
 
 **Expected:** "both" achieves the highest consonance score.
 
@@ -59,7 +67,8 @@ cherry-picking.
 
 All tracks are rendered with `conchordal-render` using the same pipeline:
 
-- Timbre: `harmonic` (neutral harmonic series)
+- Primary voices: `harmonic` (neutral harmonic series)
+- Fixed reference drones, where present: `sine`
 - Output: mono WAV, 48 kHz
 - No reverb, no mastering, no per-file loudness optimisation
 - Identical rendering chain across all tracks and segments
