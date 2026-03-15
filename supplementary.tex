@@ -31,7 +31,7 @@
 \textbf{Parameters:} step size $\lambda\!=\!15$\,ct, crowding weight $\lambda_C\!=\!0.15$, $T_0\!=\!0.05$, $\tau\!=\!30$.
 
 \smallskip
-\noindent\texttt{for} round $t = 1$ \texttt{to} $100$:\\
+\noindent\texttt{for} sweep $t = 0$ \texttt{to} $49$:\\
 \hspace*{1em}$T_t \gets T_0 \cdot \exp(-t/\tau)$\\
 \hspace*{1em}\texttt{for} each agent $a_i$:\\
 \hspace*{2em}$\delta \sim \mathrm{Uniform}(-\lambda,\,+\lambda)$; \quad $x' \gets x_i + \delta$\\
@@ -41,7 +41,7 @@
 \hspace*{2em}\texttt{if} $U(0,1) < \min\!\bigl(1,\,\exp\bigl((S_{\text{new}} - S_{\text{old}})/T_t\bigr)\bigr)$ \texttt{then} $x_i \gets x'$
 
 \smallskip
-\noindent where $s(t) = -1$ for $t \leq 50$ (dissonance-seeking), $+1$ for $t > 50$ (consonance-seeking).
+\noindent where $s(t) = -1$ for $t \leq 24$ (dissonance-seeking), $+1$ for $t \geq 25$ (consonance-seeking).
 
 \subsection{S1.2 Metabolic Policy (Experiment 2)}
 
@@ -127,7 +127,7 @@ Table~S1 lists all parameters used across experiments.
 Anchor frequency & $f_0$ & 220\,Hz & 220\,Hz & 220\,Hz & 220\,Hz \\
 Population size & $N$ & 24 & 32 & 32 & 32 \\
 Seeds & & 20 & 20 & 20 & 20 \\
-Pitch range & & $\pm 1$\,oct & $\pm 1$\,oct & $\pm 1$\,oct & $\pm 1$\,oct \\
+Pitch range & & $\pm 2$\,oct & $\pm 1$\,oct & $\pm 1$\,oct & $\pm 1$\,oct \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{Harmonicity / Roughness}} \\
 Harmonic order & $N_H$ & 16 & 16 & 16 & 16 \\
@@ -275,6 +275,33 @@ Interval entropy & $1.52 \pm 0.36$ & $1.65 \pm 0.27$ & $1.4$ \\
 \end{table}
 
 Both conditions reach indistinguishable final consonance ($C_{\text{score}} = 0.731$; $p = 0.98$), confirming that consonant structure emerges from the landscape--penalty interaction regardless of schedule. However, the curriculum significantly improves pitch diversity: more unique bins ($9.4$ vs.\ $5.9$; $p < 0.0001$) and wider nearest-neighbour spacing ($0.324$ vs.\ $0.049$\,st; $p = 0.0001$), while interval entropy does not differ significantly ($p = 0.19$). The dissonance-seeking phase thus serves as an initialisation strategy that broadens the pitch distribution, preventing premature collapse to a small number of positions.
+
+\section{S7.1 Derived Metrics: LOO Score and Scene Consonance}
+
+\noindent\textbf{Leave-One-Out (LOO) Score.}
+For each agent~$i$, the field spectrum is recomputed with agent~$i$'s harmonic contribution removed, yielding a leave-one-out field $F_{-i}$.
+The agent's LOO consonance is the consonance field evaluated at its own position~$x_i$ against the remaining agents:
+\begin{equation}
+C_{\text{score},i} = C_{\text{field}}(F_{-i},\, x_i).
+\end{equation}
+The population mean defines the primary outcome metric:
+\begin{equation}
+C_{\text{score}} = \frac{1}{N}\sum_{i=1}^{N} C_{\text{score},i}.
+\end{equation}
+
+\noindent\textbf{Scene Consonance $G(F)$.}
+Scene harmonicity $H_{\text{soc}}$ and roughness $R_{\text{soc}}$ quantify the \emph{emergent} harmonic and roughness structure beyond what individual agents would produce in isolation.
+Let $H(F)$ and $R(F)$ denote harmonicity and roughness evaluated on the full scene spectrum~$F$, and let $H(\{i\})$ and $R(\{i\})$ denote the same quantities for agent~$i$ presented alone.
+Then:
+\begin{align}
+H_{\text{soc}} &= H(F) - \frac{1}{N}\sum_{i=1}^{N} H(\{i\}),\\
+R_{\text{soc}} &= R(F) - \frac{1}{N}\sum_{i=1}^{N} R(\{i\}).
+\end{align}
+Scene consonance applies the same bilinear core (Eq.~4 in the main text):
+\begin{equation}
+G(F) = a\,H_{\text{soc}} + b\,R_{\text{soc}} + c\,H_{\text{soc}}\,R_{\text{soc}}.
+\end{equation}
+By subtracting the mean singleton contribution, $G(F)$ isolates the consonance arising from inter-agent spectral interactions rather than individual tonal quality.
 
 \section{S8. Terrain Control and Robustness Analysis}
 
