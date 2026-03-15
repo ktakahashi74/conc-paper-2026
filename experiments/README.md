@@ -8,9 +8,10 @@ Experiment runner and plot generator for all figures and statistical analyses in
 |--------------|-------------|------------------------------------------------|
 | Experiment 1 | E1, E2      | Landscape Attractors & Self-Organised Polyphony |
 | Experiment 2 | E3          | Consonance as Selection Pressure               |
-| Experiment 3 | E5          | Rhythmic Entrainment                           |
+| Experiment 3 | E7          | Temporal Scaffold                              |
 | *(skipped)*  | E4          | *(excluded from paper)*                        |
 | Experiment 4 | E6          | Hereditary Adaptation                          |
+| Supplementary mechanism check | E5 | Configurable spectral--temporal bridge |
 
 ## Quick start
 
@@ -25,7 +26,7 @@ just paper --exp e2
 just paper-pdf --exp e2
 ```
 
-When `--exp` is omitted, the default set `e1,e2,e3,e5,e6` is run.
+When `--exp` is omitted, the default set `e1,e2,e3,e6,e7` is run.
 
 ## Build and test
 
@@ -58,8 +59,9 @@ Key output files per experiment:
 | E1 | `paper_e1_landscape_scan_anchor220.svg` | `paper_e1_anchor_robustness.txt` |
 | E2 | `paper_e2_figure_e2_1.svg`, `paper_e2_figure_e2_2.svg` | `paper_e2_shuffled_comparison.txt`, `paper_e2_terrain_controls.txt`, `paper_e2_coefficient_sweep.txt` |
 | E3 | `paper_e3_figure4.svg` | `paper_e3_lifetimes.csv` |
-| E5 | `paper_e5_figure.svg` | `paper_e5_summary.csv` |
+| E5 | `paper_e5_figure.svg` | `paper_e5_summary.csv` (supplementary mechanism check) |
 | E6 | `paper_e6_figure.svg`, `paper_e6_integration_figure.svg` | `paper_e6_summary.csv` |
+| E7 | `paper_e7_figure.svg` | `paper_e7_summary.csv` |
 
 Use `--clean` when you need strict reproducibility from a fully fresh output tree.
 

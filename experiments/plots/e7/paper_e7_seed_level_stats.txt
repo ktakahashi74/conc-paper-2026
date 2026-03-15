@@ -1,0 +1,5 @@
+=== E7 Seed-Level Onset Vector Strength ===
+
+shared: 0.998 ± 0.002 (n=20)
+scrambled: 0.166 ± 0.081 (n=20)
+off: 0.005 ± 0.003 (n=20)

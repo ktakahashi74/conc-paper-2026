@@ -56,22 +56,20 @@
 \hspace*{3em}$E_i \gets E_i - c_a + r_E \cdot C_{\text{level01}}$\\
 \hspace*{2em}\texttt{if} $E_i \leq 0$: agent dies; respawn at random pitch within $\pm 1$\,oct
 
-\subsection{S1.3 Kuramoto Phase Coupling (Experiment 3)}
+\subsection{S1.3 Shared Rhythm Scaffold (Experiment 3)}
 
-\noindent\textbf{Parameters:} $k_{\text{time}}\!=\!3.0$, $\lambda_v\!=\!1.0$, $v_{\text{floor}}\!=\!0.0$, $E_{\text{cap}}\!=\!1.0$, kick at 2\,Hz.
+\noindent\textbf{Parameters:} $k_{\text{time}}\!=\!3.0$, kick at 2\,Hz, $\omega_0\!=\!1.8\!\cdot\!2\pi$\,rad/s, $\pm 2\%$ jitter.
 
 \smallskip
 \noindent\texttt{for} each time step $dt$:\\
+\hspace*{1em}Advance canonical beat phase $\theta(t)$ at 2\,Hz\\
+\hspace*{1em}\texttt{if} condition = scrambled \texttt{and} cycle boundary crossed: sample new offset $\psi \sim \mathrm{Uniform}(0,2\pi)$\\
 \hspace*{1em}\texttt{for} each agent $a_i$:\\
-\hspace*{2em}$v_i \gets (E_i / E_{\text{cap}})^{0.5}$ \hfill\textit{(vitality)}\\
-\hspace*{2em}$g_i \gets \mathrm{clamp}\!\bigl((v_i - v_{\text{floor}})/(1 - v_{\text{floor}}),\;0,\;1\bigr)$\\
-\hspace*{2em}$k_{\text{eff},i} \gets k_{\text{time}} \cdot \lambda_v \cdot g_i$\\
-\hspace*{2em}$\dot{\phi}_i \gets \omega_i + (k_{\text{eff},i}/N)\sum_j \sin(\phi_j - \phi_i) + F(t)$\\
+\hspace*{2em}Set drive phase $\theta_i^{\ast} \gets \theta(t)$ (shared), $\theta(t)+\psi$ (scrambled), or none (off)\\
+\hspace*{2em}$k_{\text{eff},i} \gets k_{\text{time}}$ (shared/scrambled) or $0$ (off)\\
+\hspace*{2em}$\dot{\phi}_i \gets \omega_i + (k_{\text{eff},i}/N)\sum_j \sin(\phi_j - \phi_i) + F(\theta_i^{\ast})$\\
 \hspace*{2em}$\phi_i \gets \phi_i + \dot{\phi}_i \cdot dt$\\
-\hspace*{1em}$R(t) = (1/N)\bigl|\sum_j e^{i\phi_j}\bigr|$ \hfill\textit{(order parameter)}
-
-\smallskip
-\noindent Continuous energy model: $dE_i/dt = R \cdot \max(C_{\text{field},i},\,0) - \gamma E_i$ ($R\!=\!1.0$/s, $\gamma\!=\!0.5$/s).
+\hspace*{1em}Record PLV and onset phase relative to the canonical beat $\theta(t)$
 
 \subsection{S1.4 Hereditary Respawn (Experiment 4)}
 
@@ -153,16 +151,13 @@ Burn-in discarded & & 10 steps & --- & --- & --- \\
 \multicolumn{6}{@{}l}{\emph{Metabolism}} \\
 Basal cost & $c_b$ & --- & 0.5/s & --- & 0.5/s \\
 Attack cost & $c_a$ & --- & 0.02 & --- & 0.02 \\
-Recharge coefficient & $R$ / $r_E$ & --- & 0.5/att & 1.0/s$^\dagger$ & 0.5/att \\
-Decay rate & $\gamma$ & --- & --- & 0.5/s$^\dagger$ & --- \\
-Energy cap & $E_{\text{cap}}$ & --- & 1.0 & 1.0 & 1.0 \\
+Recharge coefficient & $r_E$ & --- & 0.5/att & --- & 0.5/att \\
+Energy cap & $E_{\text{cap}}$ & --- & 1.0 & --- & 1.0 \\
 Time step & $\Delta t$ & --- & 512/48k\,s & 0.02\,s & 512/48k\,s \\
 Termination & & --- & 200 deaths & 40\,s & 4000 deaths \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{Temporal coupling}} \\
 Base coupling & $k_{\text{time}}$ & --- & --- & 3.0 & --- \\
-Vitality sensitivity & $\lambda_v$ & --- & --- & 1.0 & --- \\
-Vitality floor & $v_{\text{floor}}$ & --- & --- & 0.0 & --- \\
 External kick & $f_{\text{kick}}$ & --- & --- & 2\,Hz & --- \\
 Intrinsic frequency & $\omega_0$ & --- & --- & $1.8 \cdot 2\pi$ & --- \\
 Frequency jitter & & --- & --- & $\pm 2\%$ & --- \\
@@ -176,10 +171,20 @@ Proximity kernel & $\alpha$ & --- & --- & --- & $4.0 \times 10^{-4}\,\text{ct}^{
 Ratio limit & $p,q$ & --- & --- & --- & $\leq 8$ \\
 Ratio weight & & --- & --- & --- & $1/(pq)$ \\
 \bottomrule
-\multicolumn{6}{@{}l}{\footnotesize $^\dagger$ Experiment 3 uses a simplified continuous energy model: $dE/dt = R\max(C_{\text{field}},0) - \gamma E$ (see S1.3).}\\
 \multicolumn{6}{@{}l}{\footnotesize $^\ddagger$ Visualization only (Figure~1D); not used in experiment algorithms.}
 \end{tabular}
 \end{table*}
+
+\subsection{S3.1 Supplementary Mechanism Check: Configurable Spectral--Temporal Bridge}
+
+The relation between Conchordal's spectral and temporal axes is not treated as a uniquely determined neurocognitive law. Existing neuroscience motivates several plausible couplings between harmonic structure, salience, attention, and rhythmic prediction, but does not reduce them to a single fixed mapping. Conchordal therefore treats the bridge from spectral state to temporal coupling as a design degree of freedom available to the composer. The current implementation includes one such mapping: consonance modulates metabolic vitality, and vitality gates the effective coupling strength of the phase oscillator. In the supplementary assay shown here, the bridge uses $R=1.0$/s, $\gamma=0.5$/s, $E_{\text{cap}}=1.0$, $\lambda_v=1.0$, and $v_{\text{floor}}=0.0$. Figure~\ref{fig:supp-e5-bridge} reports this assay as an implementation-level mechanism check, not as evidence that consonance uniquely determines rhythmic coupling in biological cognition.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{experiments/plots/e5/paper_e5_figure.pdf}
+\caption{Supplementary mechanism check for one configurable spectral--temporal bridge (20 seeds $\times$ 3 conditions). (A1)~Group mean PLV over time (95\% CI). (A2)~Paired contrast $\Delta$PLV (95\% CI). (B)~Per-agent final PLV vs.\ $C_{\text{field}}$ (representative seed) with sigmoid fit ($c_{50}$ fixed at 0). (C)~Seed-level Pearson $r(C_{\text{field}},\,\text{PLV})$. In the current implementation, vitality-gated coupling yields a graded bridge from spectral state to entrainment strength; alternative bridge mappings remain possible within the broader Conchordal design.}
+\label{fig:supp-e5-bridge}
+\end{figure*}
 
 \section{S4. Experiment 4: Full Sweep Results}
 

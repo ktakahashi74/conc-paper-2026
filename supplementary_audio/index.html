@@ -91,26 +91,30 @@
 </div>
 
 <div class="track">
-  <h2>30 &mdash; Consonance-Gated Entrainment (Experiment 1)</h2>
-  <p class="meta">~15 s each &middot; 48 agents, 4 Hz theta kick, vitality-coupled Kuramoto</p>
-  <p>All agents start with random phases at the theta frequency.
-     Consonance-dependent energy recharge creates a vitality gradient:
-     consonant agents maintain high vitality (strong coupling, entrain to theta),
-     dissonant agents lose vitality (weak coupling, stay asynchronous).</p>
+  <h2>30 &mdash; Temporal Scaffold (Experiment 3)</h2>
+  <p class="meta">~15 s each &middot; shared vs. scrambled vs. off at 2 Hz</p>
+  <p>These renders track the main paper's temporal-scaffold assay. All agents
+     share the same pitch inventory and intrinsic-frequency jitter; only the
+     temporal drive changes across conditions.</p>
   <table>
-    <tr><th>Condition</th><th>Kuramoto coupling</th><th>energy</th></tr>
-    <tr><td>vitality-coupled</td><td>k &times; vitality(consonance)</td><td>dE/dt = &minus;1 + consonance</td></tr>
-    <tr><td>control</td><td>k = 0</td><td>dE/dt = &minus;1 + consonance</td></tr>
+    <tr><th>Condition</th><th>Drive</th><th>Coupling</th></tr>
+    <tr><td>shared</td><td>single continuous 2 Hz phase reference</td><td>fixed</td></tr>
+    <tr><td>scrambled</td><td>2 Hz cycles preserved, phase reset each cycle</td><td>fixed</td></tr>
+    <tr><td>off</td><td>no shared phase drive</td><td>0</td></tr>
   </table>
-  <p>Listen for the emergence of a rhythmic pulse in the vitality-coupled condition
-     as consonant agents synchronize their attacks to the theta beat.</p>
-  <p><strong>Vitality-coupled</strong> &mdash; consonant agents entrain, pulse emerges:</p>
+  <p>Listen for the emergence of a stable pulse in <strong>shared</strong>, its
+     weakening in <strong>scrambled</strong>, and the diffuse timing of <strong>off</strong>.</p>
+  <p><strong>Shared</strong> &mdash; common scaffold, strongest beat alignment:</p>
   <audio controls preload="none">
-    <source src="audio/30_e3_baseline.wav" type="audio/wav">
+    <source src="audio/30_e3_shared.wav" type="audio/wav">
   </audio>
-  <p style="margin-top:0.75rem"><strong>Control</strong> &mdash; no coupling, phases stay scattered:</p>
+  <p style="margin-top:0.75rem"><strong>Scrambled</strong> &mdash; cycle-wise phase resets weaken stability:</p>
   <audio controls preload="none">
-    <source src="audio/30_e3_norecharge.wav" type="audio/wav">
+    <source src="audio/30_e3_scrambled.wav" type="audio/wav">
+  </audio>
+  <p style="margin-top:0.75rem"><strong>Off</strong> &mdash; no scaffold, phases remain diffuse:</p>
+  <audio controls preload="none">
+    <source src="audio/30_e3_off.wav" type="audio/wav">
   </audio>
 </div>
 

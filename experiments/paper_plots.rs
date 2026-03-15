@@ -316,6 +316,47 @@ const PAL_E5_VITALITY: RGBColor = PAL_CD; // cobalt blue for vitality condition
 const PAL_E5_UNIFORM: RGBColor = PAL_R; // dark rose for uniform condition
 const PAL_E5_CONTROL: RGBColor = PAL_C; // purple grey for control
 
+// ── E7: Temporal Scaffold Assay ──────────────────────────────────
+const E7_KICK_HZ: f32 = 2.0;
+const E7_KICK_OMEGA: f32 = 2.0 * PI * E7_KICK_HZ;
+const E7_AGENT_OMEGA_MEAN: f32 = 2.0 * PI * 1.8;
+const E7_AGENT_JITTER: f32 = 0.02;
+const E7_K_TIME: f32 = 3.0;
+const E7_N_AGENTS: usize = 32;
+const E7_DT: f32 = 0.02;
+const E7_STEPS: usize = 2000;
+const E7_TIME_PLV_WINDOW_STEPS: usize = 200;
+const E7_STEPS_PER_CYCLE: usize = 25;
+const E7_PHASE_HIST_BINS: usize = 24;
+const E7_ONSET_ANALYSIS_START_SEC: f32 = 5.0;
+const E7_REPRESENTATIVE_SEED_IDX: usize = 10;
+const E7_SEEDS: [u64; 20] = [
+    0xE70000_u64,
+    0xE70000_u64 + 1,
+    0xE70000_u64 + 2,
+    0xE70000_u64 + 3,
+    0xE70000_u64 + 4,
+    0xE70000_u64 + 5,
+    0xE70000_u64 + 6,
+    0xE70000_u64 + 7,
+    0xE70000_u64 + 8,
+    0xE70000_u64 + 9,
+    0xE70000_u64 + 10,
+    0xE70000_u64 + 11,
+    0xE70000_u64 + 12,
+    0xE70000_u64 + 13,
+    0xE70000_u64 + 14,
+    0xE70000_u64 + 15,
+    0xE70000_u64 + 16,
+    0xE70000_u64 + 17,
+    0xE70000_u64 + 18,
+    0xE70000_u64 + 19,
+];
+
+const PAL_E7_SHARED: RGBColor = PAL_CD;
+const PAL_E7_SCRAMBLED: RGBColor = PAL_R;
+const PAL_E7_OFF: RGBColor = PAL_C;
+
 const E6_FIRST_K: usize = 20;
 // Listening-aligned sparse regime: 2 octaves with roughly 5 voices.
 const E6_POP_SIZE: usize = 5;
@@ -437,6 +478,7 @@ enum Experiment {
     E4,
     E5,
     E6,
+    E7,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -483,6 +525,7 @@ impl Experiment {
             Experiment::E4 => "E4",
             Experiment::E5 => "E5",
             Experiment::E6 => "E6",
+            Experiment::E7 => "E7",
         }
     }
 
@@ -494,6 +537,7 @@ impl Experiment {
             Experiment::E4 => "e4",
             Experiment::E5 => "e5",
             Experiment::E6 => "e6",
+            Experiment::E7 => "e7",
         }
     }
 
@@ -505,6 +549,7 @@ impl Experiment {
             Experiment::E4,
             Experiment::E5,
             Experiment::E6,
+            Experiment::E7,
         ]
     }
 
@@ -513,8 +558,8 @@ impl Experiment {
             Experiment::E1,
             Experiment::E2,
             Experiment::E3,
-            Experiment::E5,
             Experiment::E6,
+            Experiment::E7,
         ]
     }
 }
@@ -576,7 +621,7 @@ fn usage() -> String {
         "  paper --e2-render-proposal 5 4 2",
         "  paper --exp e2 --e2-quick --e2-dense-sweep",
         "  paper --exp e2 --e2-quick --e2-candidate-search",
-        "If no experiment is specified, paper defaults (E1,E2,E3,E5,E6) run.",
+        "If no experiment is specified, paper defaults (E1,E2,E3,E6,E7) run.",
         "Use --exp e4 to run E4 explicitly.",
         "E4 histogram dumps default to off (use --e4-hist on to enable).",
         "E4 kernel gate plot default to off (use --e4-kernel-gate on to enable).",
@@ -797,6 +842,7 @@ fn parse_experiments(args: &[String]) -> Result<Vec<Experiment>, String> {
                 "4" | "e4" | "E4" => Experiment::E4,
                 "5" | "e5" | "E5" => Experiment::E5,
                 "6" | "e6" | "E6" => Experiment::E6,
+                "7" | "e7" | "E7" => Experiment::E7,
                 _ => {
                     return Err(format!("Unknown experiment '{token}'.\n{}", usage()));
                 }
@@ -1268,19 +1314,31 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
         generate_audio_replay_rhai()?;
         return Ok(());
     }
-    // Handle --e3-audio: render E3 experiment audio to WAV
+    // Handle --e3-audio: generate supplementary Experiment 3 scenarios
     if args.iter().any(|arg| arg == "--e3-audio") {
-        let cfg_baseline = crate::sim::E3AudioConfig::default_baseline();
-        let cfg_norecharge = crate::sim::E3AudioConfig::default_norecharge();
+        let cfg_shared = crate::sim::E3AudioConfig::default_shared();
+        let cfg_scrambled = crate::sim::E3AudioConfig::default_scrambled();
+        let cfg_off = crate::sim::E3AudioConfig::default_off();
         let scenario_dir = PathBuf::from("supplementary_audio/scenarios");
+        let audio_dir = PathBuf::from("supplementary_audio/audio");
         crate::sim::generate_e3_rhai(
-            &cfg_baseline,
-            &scenario_dir.join("30_e3_baseline.rhai"),
+            &cfg_shared,
+            &scenario_dir.join("30_e3_shared.rhai"),
+        )?;
+        crate::sim::render_e3_audio(&cfg_shared, &audio_dir.join("30_e3_shared.wav"))?;
+        crate::sim::generate_e3_rhai(
+            &cfg_scrambled,
+            &scenario_dir.join("30_e3_scrambled.rhai"),
+        )?;
+        crate::sim::render_e3_audio(
+            &cfg_scrambled,
+            &audio_dir.join("30_e3_scrambled.wav"),
         )?;
         crate::sim::generate_e3_rhai(
-            &cfg_norecharge,
-            &scenario_dir.join("30_e3_norecharge.rhai"),
+            &cfg_off,
+            &scenario_dir.join("30_e3_off.rhai"),
         )?;
+        crate::sim::render_e3_audio(&cfg_off, &audio_dir.join("30_e3_off.wav"))?;
         return Ok(());
     }
     if args.iter().any(|arg| arg == "--postprocess-quicklisten") {
@@ -1399,6 +1457,13 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
                 Experiment::E6 => {
                     let h = s.spawn(|| {
                         plot_e6_hereditary_adaptation(out_dir, space_ref, anchor_hz)
+                            .map_err(|err| io::Error::other(err.to_string()))
+                    });
+                    handles.push((exp.label(), h));
+                }
+                Experiment::E7 => {
+                    let h = s.spawn(|| {
+                        plot_e7_temporal_scaffold(out_dir)
                             .map_err(|err| io::Error::other(err.to_string()))
                     });
                     handles.push((exp.label(), h));
@@ -5743,6 +5808,607 @@ fn plot_e5_vitality_entrainment(out_dir: &Path) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+// ── E7 Temporal Scaffold Assay ───────────────────────────────────
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum E7Condition {
+    Shared,
+    Scrambled,
+    Off,
+}
+
+impl E7Condition {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Shared => "shared",
+            Self::Scrambled => "scrambled",
+            Self::Off => "off",
+        }
+    }
+
+    fn color(self) -> RGBColor {
+        match self {
+            Self::Shared => PAL_E7_SHARED,
+            Self::Scrambled => PAL_E7_SCRAMBLED,
+            Self::Off => PAL_E7_OFF,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct E7Onset {
+    agent: usize,
+    time_sec: f32,
+    phase_rad: f32,
+}
+
+struct E7Result {
+    group_plv_series: Vec<(f32, f32)>,
+    onset_events: Vec<E7Onset>,
+    vector_strength: f32,
+    condition: E7Condition,
+    seed: u64,
+}
+
+fn e7_vector_strength(phases: &[f32]) -> f32 {
+    if phases.is_empty() {
+        return 0.0;
+    }
+    let inv = 1.0 / phases.len() as f32;
+    let mean_cos = phases.iter().map(|p| p.cos()).sum::<f32>() * inv;
+    let mean_sin = phases.iter().map(|p| p.sin()).sum::<f32>() * inv;
+    (mean_cos * mean_cos + mean_sin * mean_sin).sqrt()
+}
+
+fn e7_onset_phase_histogram(phases: &[f32]) -> Vec<(f32, f32)> {
+    let bin_width = (2.0 * PI) / E7_PHASE_HIST_BINS as f32;
+    let counts = histogram_counts_fixed(phases, 0.0, 2.0 * PI, bin_width);
+    let total: f32 = counts.iter().map(|(_, c)| *c).sum();
+    if total > 0.0 {
+        counts.iter().map(|(x, c)| (*x, *c / total)).collect()
+    } else {
+        counts.iter().map(|(x, _)| (*x, 0.0)).collect()
+    }
+}
+
+fn pick_e7_representative_seed(results: &[E7Result]) -> Option<u64> {
+    let mut shared: Vec<(u64, f32)> = results
+        .iter()
+        .filter(|r| r.condition == E7Condition::Shared)
+        .map(|r| (r.seed, r.vector_strength))
+        .collect();
+    if shared.is_empty() {
+        return None;
+    }
+    shared.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    Some(shared[shared.len() / 2].0)
+}
+
+fn simulate_e7_temporal_scaffold(seed: u64, condition: E7Condition) -> E7Result {
+    let mut rng = seeded_rng(seed);
+    let omegas: Vec<f32> = (0..E7_N_AGENTS)
+        .map(|_| {
+            let jitter = rng.random_range(-E7_AGENT_JITTER..E7_AGENT_JITTER);
+            E7_AGENT_OMEGA_MEAN * (1.0 + jitter)
+        })
+        .collect();
+    let mut phases: Vec<f32> = (0..E7_N_AGENTS)
+        .map(|_| rng.random_range(0.0f32..(2.0 * PI)))
+        .collect();
+    let mut prev_phases = phases.clone();
+    let mut canonical_phase = 0.0f32;
+    let mut scramble_offset = 0.0f32;
+    let mut plv_buffers: Vec<SlidingPlv> = (0..E7_N_AGENTS)
+        .map(|_| SlidingPlv::new(E7_TIME_PLV_WINDOW_STEPS))
+        .collect();
+    let mut group_plv_series: Vec<(f32, f32)> = Vec::with_capacity(E7_STEPS);
+    let mut onset_events: Vec<E7Onset> = Vec::new();
+
+    for step in 0..E7_STEPS {
+        let t = step as f32 * E7_DT;
+        if condition == E7Condition::Scrambled && step % E7_STEPS_PER_CYCLE == 0 {
+            scramble_offset = rng.random_range(0.0f32..(2.0 * PI));
+        }
+
+        canonical_phase = (canonical_phase + E7_KICK_OMEGA * E7_DT).rem_euclid(2.0 * PI);
+        let drive_phase = match condition {
+            E7Condition::Shared => canonical_phase,
+            E7Condition::Scrambled => (canonical_phase + scramble_offset).rem_euclid(2.0 * PI),
+            E7Condition::Off => canonical_phase,
+        };
+        let k_eff = match condition {
+            E7Condition::Shared | E7Condition::Scrambled => E7_K_TIME,
+            E7Condition::Off => 0.0,
+        };
+
+        for i in 0..E7_N_AGENTS {
+            prev_phases[i] = phases[i];
+            phases[i] = kuramoto_phase_step(phases[i], omegas[i], drive_phase, k_eff, 0.0, E7_DT);
+        }
+
+        let mut plv_sum = 0.0f32;
+        let mut plv_count = 0usize;
+        for i in 0..E7_N_AGENTS {
+            let phase_diff = wrap_pm_pi(phases[i] - canonical_phase);
+            plv_buffers[i].push(phase_diff);
+            if plv_buffers[i].is_full() {
+                let p = plv_buffers[i].plv();
+                if p.is_finite() {
+                    plv_sum += p;
+                    plv_count += 1;
+                }
+            }
+
+            let prev_wraps = (prev_phases[i] / (2.0 * PI)).floor() as i32;
+            let next_wraps = (phases[i] / (2.0 * PI)).floor() as i32;
+            if next_wraps > prev_wraps && t >= E7_ONSET_ANALYSIS_START_SEC {
+                onset_events.push(E7Onset {
+                    agent: i,
+                    time_sec: t,
+                    phase_rad: canonical_phase,
+                });
+            }
+        }
+
+        let group_plv = if plv_count > 0 {
+            plv_sum / plv_count as f32
+        } else {
+            f32::NAN
+        };
+        group_plv_series.push((t, group_plv));
+    }
+
+    let onset_phases: Vec<f32> = onset_events.iter().map(|o| o.phase_rad).collect();
+    E7Result {
+        group_plv_series,
+        onset_events,
+        vector_strength: e7_vector_strength(&onset_phases),
+        condition,
+        seed,
+    }
+}
+
+fn plot_e7_temporal_scaffold(out_dir: &Path) -> Result<(), Box<dyn Error>> {
+    let conditions = [E7Condition::Shared, E7Condition::Scrambled, E7Condition::Off];
+    let mut all_results: Vec<E7Result> = Vec::new();
+    for &cond in &conditions {
+        for &seed in &E7_SEEDS {
+            all_results.push(simulate_e7_temporal_scaffold(seed, cond));
+        }
+    }
+
+    let mut summary_csv = String::from("condition,seed,vector_strength,group_plv_final,onset_count\n");
+    for res in &all_results {
+        let final_plv = res
+            .group_plv_series
+            .last()
+            .map(|(_, p)| *p)
+            .unwrap_or(f32::NAN);
+        summary_csv.push_str(&format!(
+            "{},{},{:.6},{:.6},{}\n",
+            res.condition.label(),
+            res.seed,
+            res.vector_strength,
+            final_plv,
+            res.onset_events.len()
+        ));
+    }
+    write_with_log(out_dir.join("paper_e7_summary.csv"), &summary_csv)?;
+
+    let phase_hist_by_cond: Vec<(E7Condition, Vec<(f32, f32, f32)>)> = conditions
+        .iter()
+        .copied()
+        .map(|cond| {
+            let cond_results: Vec<&E7Result> =
+                all_results.iter().filter(|r| r.condition == cond).collect();
+            let seed_hists: Vec<Vec<(f32, f32)>> = cond_results
+                .iter()
+                .map(|res| {
+                    let phases: Vec<f32> = res.onset_events.iter().map(|o| o.phase_rad).collect();
+                    e7_onset_phase_histogram(&phases)
+                })
+                .collect();
+            let mut bins = Vec::with_capacity(E7_PHASE_HIST_BINS);
+            if let Some(first) = seed_hists.first() {
+                for bin_idx in 0..first.len() {
+                    let center = first[bin_idx].0;
+                    let vals: Vec<f32> = seed_hists.iter().map(|hist| hist[bin_idx].1).collect();
+                    let mean = vals.iter().copied().sum::<f32>() / vals.len() as f32;
+                    let var = vals.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / vals.len() as f32;
+                    let ci95 = 1.96 * var.sqrt() / (vals.len() as f32).sqrt();
+                    bins.push((center, mean, ci95));
+                }
+            }
+            (cond, bins)
+        })
+        .collect();
+    let mut phase_hist_csv =
+        String::from("condition,bin_index,phase_center_rad,probability_mean,probability_ci95\n");
+    for (cond, bins) in &phase_hist_by_cond {
+        for (idx, (center, mean, ci95)) in bins.iter().enumerate() {
+            phase_hist_csv.push_str(&format!(
+                "{},{},{:.6},{:.6},{:.6}\n",
+                cond.label(),
+                idx,
+                center,
+                mean,
+                ci95
+            ));
+        }
+    }
+    write_with_log(out_dir.join("paper_e7_phase_hist_summary.csv"), &phase_hist_csv)?;
+
+    let rep_seed = pick_e7_representative_seed(&all_results)
+        .unwrap_or(E7_SEEDS[E7_REPRESENTATIVE_SEED_IDX.min(E7_SEEDS.len() - 1)]);
+    let mut rep_note =
+        String::from("Diagnostic representative seed selection (not used in Fig. 5B):\n");
+    let mut ranked: Vec<(u64, f32)> = all_results
+        .iter()
+        .filter(|r| r.condition == E7Condition::Shared)
+        .map(|r| (r.seed, r.vector_strength))
+        .collect();
+    ranked.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    for (seed, vs) in &ranked {
+        rep_note.push_str(&format!("{seed},{vs:.6}\n"));
+    }
+    rep_note.push_str(&format!("chosen_seed={rep_seed}\n"));
+    write_with_log(out_dir.join("paper_e7_representative_seed.txt"), rep_note)?;
+
+    let mut onset_csv = String::from("condition,seed,agent,time_sec,phase_rad\n");
+    for res in all_results.iter().filter(|r| r.seed == rep_seed) {
+        for onset in &res.onset_events {
+            onset_csv.push_str(&format!(
+                "{},{},{},{:.6},{:.6}\n",
+                res.condition.label(),
+                res.seed,
+                onset.agent,
+                onset.time_sec,
+                onset.phase_rad
+            ));
+        }
+    }
+    write_with_log(out_dir.join("paper_e7_onset_phase_detail.csv"), &onset_csv)?;
+
+    let mut cond_series: Vec<(E7Condition, Vec<(f32, f32, f32)>)> = Vec::new();
+    for &cond in &conditions {
+        let cond_results: Vec<&E7Result> =
+            all_results.iter().filter(|r| r.condition == cond).collect();
+        let n_steps = cond_results
+            .first()
+            .map(|r| r.group_plv_series.len())
+            .unwrap_or(0);
+        let n_runs = cond_results.len() as f32;
+        let mut series: Vec<(f32, f32, f32)> = Vec::with_capacity(n_steps);
+        for step in 0..n_steps {
+            let t = cond_results[0].group_plv_series[step].0;
+            let vals: Vec<f32> = cond_results
+                .iter()
+                .filter_map(|r| {
+                    let p = r.group_plv_series[step].1;
+                    p.is_finite().then_some(p)
+                })
+                .collect();
+            if vals.is_empty() {
+                series.push((t, f32::NAN, 0.0));
+                continue;
+            }
+            let mean = vals.iter().copied().sum::<f32>() / vals.len() as f32;
+            let var = vals.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / vals.len() as f32;
+            let ci = 1.96 * var.sqrt() / n_runs.sqrt();
+            series.push((t, mean, ci));
+        }
+        cond_series.push((cond, series));
+    }
+
+    let vector_strength_by_cond: Vec<(E7Condition, Vec<f32>)> = conditions
+        .iter()
+        .copied()
+        .map(|cond| {
+            let values = all_results
+                .iter()
+                .filter(|r| r.condition == cond)
+                .map(|r| r.vector_strength)
+                .collect();
+            (cond, values)
+        })
+        .collect();
+    let mut stats_text = String::from("=== E7 Seed-Level Onset Vector Strength ===\n\n");
+    for (cond, values) in &vector_strength_by_cond {
+        if values.is_empty() {
+            continue;
+        }
+        let (mean, std) = mean_std_scalar(values);
+        stats_text.push_str(&format!(
+            "{}: {:.3} ± {:.3} (n={})\n",
+            cond.label(),
+            mean,
+            std,
+            values.len()
+        ));
+    }
+    write_with_log(out_dir.join("paper_e7_seed_level_stats.txt"), &stats_text)?;
+
+    render_e7_combined_figure(
+        &out_dir.join("paper_e7_figure.svg"),
+        &cond_series,
+        &phase_hist_by_cond,
+        &vector_strength_by_cond,
+    )?;
+
+    for (cond, values) in &vector_strength_by_cond {
+        let (mean, std) = mean_std_scalar(values);
+        eprintln!(
+            "  E7 {} : vector strength = {:.3} ± {:.3} (n={})",
+            cond.label(),
+            mean,
+            std,
+            values.len()
+        );
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::type_complexity)]
+fn render_e7_combined_figure(
+    out_path: &Path,
+    cond_series: &[(E7Condition, Vec<(f32, f32, f32)>)],
+    phase_hist_by_cond: &[(E7Condition, Vec<(f32, f32, f32)>)],
+    vector_strength_by_cond: &[(E7Condition, Vec<f32>)],
+) -> Result<(), Box<dyn Error>> {
+    let root = bitmap_root(out_path, (3600, 770)).into_drawing_area();
+    root.fill(&WHITE)?;
+    let panels = root.split_evenly((1, 3));
+
+    draw_e7_plv_panel(&panels[0], cond_series)?;
+    draw_e7_phase_hist_panel(&panels[1], phase_hist_by_cond)?;
+    draw_e7_vector_strength_panel(&panels[2], vector_strength_by_cond)?;
+
+    root.present()?;
+    Ok(())
+}
+
+#[allow(clippy::type_complexity)]
+fn draw_e7_plv_panel<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    cond_series: &[(E7Condition, Vec<(f32, f32, f32)>)],
+) -> Result<(), Box<dyn Error>>
+where
+    <DB as DrawingBackend>::ErrorType: 'static,
+{
+    let x_max = cond_series
+        .iter()
+        .flat_map(|(_, s)| s.iter().map(|(t, _, _)| *t))
+        .fold(0.0f32, f32::max)
+        .max(1.0);
+    let mut chart = ChartBuilder::on(area)
+        .caption("A. PLV to canonical beat", ("sans-serif", 72))
+        .margin(20)
+        .x_label_area_size(90)
+        .y_label_area_size(120)
+        .build_cartesian_2d(0.0f32..x_max, 0.0f32..1.05f32)?;
+
+    chart
+        .configure_mesh()
+        .x_desc("time (s)")
+        .y_desc("PLV")
+        .label_style(("sans-serif", 52).into_font())
+        .axis_desc_style(("sans-serif", 56).into_font())
+        .draw()?;
+
+    for (cond, series) in cond_series {
+        if series.is_empty() {
+            continue;
+        }
+        let color = cond.color();
+        let mut band: Vec<(f32, f32)> = Vec::with_capacity(series.len() * 2);
+        for &(x, mean, ci) in series {
+            if mean.is_finite() {
+                band.push((x, (mean + ci).clamp(0.0, 1.05)));
+            }
+        }
+        for &(x, mean, ci) in series.iter().rev() {
+            if mean.is_finite() {
+                band.push((x, (mean - ci).clamp(0.0, 1.05)));
+            }
+        }
+        if band.len() >= 3 {
+            chart.draw_series(std::iter::once(Polygon::new(
+                band,
+                color.mix(0.18).filled(),
+            )))?;
+        }
+
+        let line_points: Vec<(f32, f32)> = series
+            .iter()
+            .filter(|(_, m, _)| m.is_finite())
+            .map(|(x, m, _)| (*x, *m))
+            .collect();
+        chart
+            .draw_series(LineSeries::new(
+                line_points,
+                ShapeStyle::from(&color).stroke_width(3),
+            ))?
+            .label(cond.label())
+            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
+    }
+
+    chart
+        .configure_series_labels()
+        .position(SeriesLabelPosition::UpperRight)
+        .background_style(WHITE.mix(0.85))
+        .border_style(BLACK)
+        .label_font(("sans-serif", 40).into_font())
+        .draw()?;
+
+    Ok(())
+}
+
+fn draw_e7_phase_hist_panel<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    phase_hist_by_cond: &[(E7Condition, Vec<(f32, f32, f32)>)],
+) -> Result<(), Box<dyn Error>>
+where
+    <DB as DrawingBackend>::ErrorType: 'static,
+{
+    let bin_width = (2.0 * PI) / E7_PHASE_HIST_BINS as f32;
+    let y_min = -0.1f32;
+    let mut y_max = phase_hist_by_cond
+        .iter()
+        .flat_map(|(_, bins)| bins.iter().map(|(_, mean, ci95)| mean + ci95))
+        .fold(0.1f32, f32::max);
+    y_max *= 1.15;
+
+    let mut chart = ChartBuilder::on(area)
+        .caption("B. Seed-averaged onset phase histogram", ("sans-serif", 72))
+        .margin(20)
+        .x_label_area_size(90)
+        .y_label_area_size(120)
+        .build_cartesian_2d(0.0f32..(2.0 * PI), y_min..y_max.max(0.1))?;
+
+    chart
+        .configure_mesh()
+        .x_desc("phase vs canonical beat (rad)")
+        .y_desc("probability")
+        .x_labels(5)
+        .x_label_formatter(&|x| {
+            if (*x - 0.0).abs() < 0.01 {
+                "0".to_string()
+            } else if (*x - PI / 2.0).abs() < 0.05 {
+                "pi/2".to_string()
+            } else if (*x - PI).abs() < 0.05 {
+                "pi".to_string()
+            } else if (*x - 3.0 * PI / 2.0).abs() < 0.05 {
+                "3pi/2".to_string()
+            } else if (*x - 2.0 * PI).abs() < 0.05 {
+                "2pi".to_string()
+            } else {
+                String::new()
+            }
+        })
+        .label_style(("sans-serif", 52).into_font())
+        .axis_desc_style(("sans-serif", 56).into_font())
+        .draw()?;
+
+    for (cond, bins) in phase_hist_by_cond {
+        let color = cond.color();
+        let mut upper_pairs = Vec::with_capacity(bins.len());
+        let mut lower_pairs = Vec::with_capacity(bins.len());
+        let mut mean_pairs = Vec::with_capacity(bins.len());
+        for &(center, mean, ci95) in bins {
+            upper_pairs.push((center, (mean + ci95).max(0.0)));
+            lower_pairs.push((center, (mean - ci95).max(0.0)));
+            mean_pairs.push((center, mean));
+        }
+        let step_points = |pairs: &[(f32, f32)]| {
+            let mut points = Vec::with_capacity(pairs.len() * 3);
+            for (idx, &(_, y)) in pairs.iter().enumerate() {
+                let x_left = idx as f32 * bin_width;
+                let x_right = ((idx + 1) as f32 * bin_width).min(2.0 * PI);
+                if idx == 0 {
+                    points.push((x_left, y));
+                } else {
+                    let prev_y = pairs[idx - 1].1;
+                    points.push((x_left, prev_y));
+                    points.push((x_left, y));
+                }
+                points.push((x_right, y));
+            }
+            points
+        };
+        let mut band = step_points(&upper_pairs);
+        let mut lower_rev = step_points(&lower_pairs);
+        lower_rev.reverse();
+        band.extend(lower_rev);
+        if band.len() >= 4 {
+            chart.draw_series(std::iter::once(Polygon::new(
+                band,
+                color.mix(0.14).filled(),
+            )))?;
+        }
+        chart
+            .draw_series(std::iter::once(PathElement::new(
+                step_points(&mean_pairs),
+                ShapeStyle::from(&color).stroke_width(4),
+            )))?
+            .label(cond.label())
+            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
+    }
+
+    chart
+        .configure_series_labels()
+        .position(SeriesLabelPosition::UpperRight)
+        .background_style(WHITE.mix(0.85))
+        .border_style(BLACK)
+        .label_font(("sans-serif", 40).into_font())
+        .draw()?;
+
+    Ok(())
+}
+
+fn draw_e7_vector_strength_panel<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    vector_strength_by_cond: &[(E7Condition, Vec<f32>)],
+) -> Result<(), Box<dyn Error>>
+where
+    <DB as DrawingBackend>::ErrorType: 'static,
+{
+    let n_conds = vector_strength_by_cond.len() as f32;
+    let mut chart = ChartBuilder::on(area)
+        .caption("C. Onset vector strength", ("sans-serif", 72))
+        .margin(20)
+        .x_label_area_size(90)
+        .y_label_area_size(120)
+        .build_cartesian_2d(-0.5f32..(n_conds - 0.5), 0.0f32..1.05f32)?;
+
+    chart
+        .configure_mesh()
+        .disable_mesh()
+        .y_desc("vector strength")
+        .x_labels(vector_strength_by_cond.len())
+        .x_label_formatter(&|x| {
+            let idx = x.round() as usize;
+            vector_strength_by_cond
+                .get(idx)
+                .map(|(cond, _)| cond.label().to_string())
+                .unwrap_or_default()
+        })
+        .label_style(("sans-serif", 52).into_font())
+        .axis_desc_style(("sans-serif", 56).into_font())
+        .draw()?;
+
+    for (i, (cond, values)) in vector_strength_by_cond.iter().enumerate() {
+        let color = cond.color();
+        let center = i as f32;
+        if values.is_empty() {
+            continue;
+        }
+
+        let mut jitter_rng = seeded_rng(i as u64 + 0xE7D0);
+        for &value in values {
+            let jx = jitter_rng.random_range(-0.15f32..0.15);
+            chart.draw_series(std::iter::once(Circle::new(
+                (center + jx, value),
+                5,
+                color.mix(0.5).filled(),
+            )))?;
+        }
+
+        let (mean, std) = mean_std_scalar(values);
+        let x0 = center - 0.2;
+        let x1 = center + 0.2;
+        chart.draw_series(std::iter::once(Rectangle::new(
+            [(x0, (mean - std).max(0.0)), (x1, (mean + std).min(1.05))],
+            color.mix(0.25).filled(),
+        )))?;
+        chart.draw_series(std::iter::once(PathElement::new(
+            vec![(x0, mean), (x1, mean)],
+            ShapeStyle::from(&color).stroke_width(4),
+        )))?;
+    }
+
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug)]
 struct E6SnapshotPoint {
     mean_c_score: f32,
@@ -7393,31 +8059,6 @@ fn e5_stratified_pitches(
         .map(|c| c.1)
         .fold(f32::NEG_INFINITY, f32::max);
     let s_range = (s_max - s_min).max(1e-6);
-
-    // Diagnostic: scan range, peak/trough, and distribution
-    {
-        let (min_hz, _) = *candidates.iter().min_by(|a, b| a.1.partial_cmp(&b.1).unwrap()).unwrap();
-        let (max_hz, _) = *candidates.iter().max_by(|a, b| a.1.partial_cmp(&b.1).unwrap()).unwrap();
-        let n_neg = candidates.iter().filter(|c| c.1 < 0.0).count();
-        let n_zero = candidates.iter().filter(|c| c.1.abs() < 1e-6).count();
-        // Find C_field near anchor (220Hz) and at key ratios
-        let near_anchor = candidates.iter().min_by_key(|c| ((c.0 - E5_ANCHOR_HZ).abs() * 100.0) as i32).unwrap();
-        let near_fifth = candidates.iter().min_by_key(|c| ((c.0 - E5_ANCHOR_HZ * 1.5).abs() * 100.0) as i32).unwrap();
-        let near_oct = candidates.iter().min_by_key(|c| ((c.0 - E5_ANCHOR_HZ * 2.0).abs() * 100.0) as i32).unwrap();
-        eprintln!(
-            "  E5 scan: C_field [{:.4}, {:.4}], min@{:.1}Hz, max@{:.1}Hz, n_neg={}, n_zero={}",
-            s_min, s_max, min_hz, max_hz, n_neg, n_zero
-        );
-        eprintln!(
-            "    unison@{:.1}Hz C={:.4}, fifth@{:.1}Hz C={:.4}, octave@{:.1}Hz C={:.4}",
-            near_anchor.0, near_anchor.1, near_fifth.0, near_fifth.1, near_oct.0, near_oct.1
-        );
-        // Bottom 10 (lowest C_field)
-        let mut sorted = candidates.clone();
-        sorted.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-        let bottom: Vec<String> = sorted.iter().take(5).map(|(hz, c)| format!("{:.1}Hz:{:.4}", hz, c)).collect();
-        eprintln!("    bottom5: {}", bottom.join(", "));
-    }
 
     // Assign each candidate to one of N strata over [s_min, s_max]
     let mut strata: Vec<Vec<(f32, f32)>> = (0..n).map(|_| Vec::new()).collect();
@@ -28260,6 +28901,34 @@ mod tests {
         ];
         let r = pearson_r_e5(&agents);
         assert!((r - 1.0).abs() < 1e-5, "expected r≈1, got {r}");
+    }
+
+    #[test]
+    fn e7_temporal_scaffold_produces_expected_outputs() {
+        let res = simulate_e7_temporal_scaffold(E7_SEEDS[0], E7Condition::Shared);
+        assert_eq!(res.group_plv_series.len(), E7_STEPS);
+        assert!(res.vector_strength.is_finite());
+        assert!(!res.onset_events.is_empty(), "shared condition should emit onsets");
+    }
+
+    #[test]
+    fn e7_shared_beats_off_on_vector_strength() {
+        let shared = simulate_e7_temporal_scaffold(E7_SEEDS[0], E7Condition::Shared);
+        let off = simulate_e7_temporal_scaffold(E7_SEEDS[0], E7Condition::Off);
+        assert!(
+            shared.vector_strength > off.vector_strength + 0.05,
+            "expected shared ({:.3}) > off ({:.3})",
+            shared.vector_strength,
+            off.vector_strength
+        );
+    }
+
+    #[test]
+    fn e7_phase_histogram_is_normalized() {
+        let values = [0.0f32, PI / 2.0, PI, 1.5 * PI];
+        let hist = e7_onset_phase_histogram(&values);
+        let sum = hist.iter().map(|(_, frac)| *frac).sum::<f32>();
+        assert!((sum - 1.0).abs() < 1e-6, "histogram should sum to 1, got {sum}");
     }
 
     #[test]

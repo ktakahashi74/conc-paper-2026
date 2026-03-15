@@ -12,6 +12,7 @@ Qualitative audio demonstrations accompanying the paper
 | `00_quicklisten.wav` | Orientation | ~41 s | Curated montage: best-case emergence vs. ablation controls |
 | `10_exp1_polyphony.wav` | Evidence (E2) | ~53 s | Local-search + repulsion → emergent polyphony |
 | `20_integration.wav` | Evidence (E6) | ~55 s | Heredity × hill-climbing → integration |
+| `30_e3_shared.wav`, `30_e3_scrambled.wav`, `30_e3_off.wav` | Evidence (main E3) | ~15 s each | Shared temporal scaffold vs. scrambled/off controls |
 
 ### 00_quicklisten — Orientation montage
 
@@ -54,6 +55,23 @@ The E6 supplementary render uses the same 5-agent sparse regime as the
 current experiment plus a fixed 220 Hz sine drone as a pitch reference.
 
 **Expected:** "both" achieves the highest consonance score.
+
+### 30_exp3_temporal_scaffold — Experiment 3 (main paper)
+
+Three qualitative renders contrast the temporal scaffold conditions used
+in the main paper's Experiment 3:
+
+| Condition | Drive | Coupling |
+|-----------|-------|----------|
+| `shared` | single continuous 2 Hz phase reference | fixed |
+| `scrambled` | 2 Hz cycles preserved, phase reset each cycle | fixed |
+| `off` | no shared phase drive | 0 |
+
+All three tracks use the same pitch inventory and intrinsic-frequency
+jitter; only the temporal scaffold differs.
+
+**Expected:** `shared` produces the clearest beat-aligned pulse,
+`scrambled` is less stable, and `off` remains diffuse.
 
 ## Methodology
 

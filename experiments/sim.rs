@@ -17,11 +17,9 @@ use conchordal::life::lifecycle::LifecycleConfig;
 use conchordal::life::metabolism_policy::MetabolismPolicy;
 use conchordal::life::population::Population;
 use conchordal::life::scenario::{
-    Action, ArticulationCoreConfig, EnvelopeConfig, GateThresholds, PhonationSpec,
-    RhythmCouplingMode, SpawnSpec, SpawnStrategy,
+    Action, ArticulationCoreConfig, EnvelopeConfig, PhonationSpec, RhythmCouplingMode,
+    SpawnSpec, SpawnStrategy,
 };
-use conchordal::life::schedule_renderer::ScheduleRenderer;
-use conchordal::life::world_model::WorldModel;
 use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::SliceRandom;
@@ -1987,262 +1985,207 @@ fn voice_control(cfg: &E4SimConfig) -> AgentControl {
 
 // ─── E3 audio rendering ───
 
-const E3_AUDIO_GROUP_ANCHOR: u64 = 0;
-const E3_AUDIO_GROUP_AGENTS: u64 = 1;
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum E3AudioCondition {
+    Shared,
+    Scrambled,
+    Off,
+}
 
-/// E3 audio rendering configuration.
+impl E3AudioCondition {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Shared => "shared",
+            Self::Scrambled => "scrambled",
+            Self::Off => "off",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct E3AudioConfig {
     pub seed: u64,
     pub pop_size: usize,
     pub duration_sec: f32,
-    pub condition: E3Condition,
+    pub condition: E3AudioCondition,
     pub anchor_hz: f32,
     pub theta_freq_hz: f32,
 }
 
 impl E3AudioConfig {
-    pub fn default_baseline() -> Self {
+    pub fn default_shared() -> Self {
         Self {
             seed: 42,
             pop_size: 48,
             duration_sec: 15.0,
-            condition: E3Condition::Baseline,
+            condition: E3AudioCondition::Shared,
             anchor_hz: E4_ANCHOR_HZ,
-            theta_freq_hz: 4.0, // min_omega clamp in KuramotoCore is 3 Hz
+            theta_freq_hz: 2.0,
         }
     }
 
-    pub fn default_norecharge() -> Self {
+    pub fn default_scrambled() -> Self {
         Self {
-            condition: E3Condition::NoRecharge,
-            ..Self::default_baseline()
+            condition: E3AudioCondition::Scrambled,
+            ..Self::default_shared()
+        }
+    }
+
+    pub fn default_off() -> Self {
+        Self {
+            condition: E3AudioCondition::Off,
+            ..Self::default_shared()
         }
     }
 }
 
-/// Render E3 experiment audio to a WAV file.
-///
-/// Uses Population with `ArticulationCoreConfig::Entrain` configured for the
-/// E3 consonance-gated entrainment experiment:
-/// - k_omega = 0 (no frequency adaptation)
-/// - base_sigma = 0 (no noise)
-/// - gate thresholds set to always-open
-/// - continuous recharge instead of event-driven
-pub fn render_e3_audio(cfg: &E3AudioConfig, output_path: &std::path::Path) -> std::io::Result<()> {
-    let fs = E3_FS;
-    let hop = E3_HOP;
-    let tb = Timebase { fs, hop };
-    let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
-    let params = make_landscape_params(&space, fs, 1.0);
-    let mut landscape = build_anchor_landscape(
-        &space,
-        &params,
-        cfg.anchor_hz,
-        E4_ENV_PARTIALS_DEFAULT,
-        E4_ENV_PARTIAL_DECAY_DEFAULT,
-    );
+#[derive(Clone, Copy, Debug)]
+struct E3AudioAttack {
+    time: f32,
+    agent: usize,
+}
 
-    // Theta rhythm at the specified frequency (2 Hz kick), always-on.
-    landscape.rhythm = NeuralRhythms {
-        theta: RhythmBand {
-            phase: 0.0,
-            freq_hz: cfg.theta_freq_hz,
-            mag: 1.0,
-            alpha: 1.0,
-            beta: 0.0,
-        },
-        delta: RhythmBand::default(),
-        env_open: 1.0,
-        env_level: 1.0,
-    };
+fn validate_e3_audio_config(cfg: &E3AudioConfig) -> std::io::Result<()> {
+    if cfg.pop_size == 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "E3 audio requires pop_size > 0",
+        ));
+    }
+    if cfg.duration_sec <= 0.0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "E3 audio requires duration_sec > 0",
+        ));
+    }
+    if cfg.anchor_hz <= 0.0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "E3 audio requires anchor_hz > 0",
+        ));
+    }
+    if cfg.theta_freq_hz <= 0.0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "E3 audio requires theta_freq_hz > 0",
+        ));
+    }
+    Ok(())
+}
 
-    // Consonance-gated entrainment — matches paper E5 simulation model:
-    //   dE/dt = -C_B + RECHARGE * consonance   (continuous, not event-driven)
-    //   vitality = (E / E_cap)^0.5
-    //   k_eff = K_TIME * coupling_multiplier(vitality)  (vitality condition)
-    //   k_eff = 0                                       (control condition)
-    // Paper constants: C_B=0.05, RECHARGE=0.1, E_init=0.1, E_cap=1.0
-    //   c=1.0 → E rises to cap (vitality→1, strong coupling → entrain)
-    //   c<0.5 → E drains to 0  (vitality→0, no coupling → asynchronous)
-    let gc = match cfg.condition {
-        E3Condition::Baseline => 1.0f32,
-        E3Condition::NoRecharge => 0.0f32,
-    };
-    let mut pop = Population::new(tb);
-    pop.set_seed(cfg.seed);
-    pop.set_current_frame(0);
-    pop.global_coupling = gc;
+fn simulate_e3_audio_attacks(
+    cfg: &E3AudioConfig,
+) -> std::io::Result<(Vec<f32>, Vec<E3AudioAttack>)> {
+    use std::f32::consts::TAU;
 
-    // Fixed-reference drone — quiet, provides landscape anchor.
-    let anchor_spec = SpawnSpec {
-        control: anchor_control(cfg.anchor_hz),
-        articulation: ArticulationCoreConfig::Drone {
-            sway: None,
-            breath_gain_init: Some(0.05),
-            envelope: None,
-        },
-    };
-    pop.apply_action(
-        Action::Spawn {
-            group_id: E3_AUDIO_GROUP_ANCHOR,
-            ids: vec![0],
-            spec: anchor_spec,
-            strategy: None,
-        },
-        &landscape,
-        None,
-    );
+    const SIM_DT: f32 = 0.002;
+    const K_TIME: f32 = 3.0;
+    const AGENT_OMEGA_MEAN: f32 = TAU * 1.8;
+    const AGENT_JITTER: f32 = 0.02;
 
-    // Match paper E5: continuous recharge, no event-driven recharge,
-    // gates always open, no noise, low initial energy.
-    // Match paper E5 model exactly:
-    //   E_init=0.1, E_cap=1.0, dE/dt = -0.05 + 0.1*consonance
-    //   c=1.0 → E rises to 1.0 (v=1.0), c<0.5 → E drains to 0 (v=0)
-    let lifecycle = LifecycleConfig::Sustain {
-        // c_level range is [0.70..0.87], so scale recharge to match:
-        //   dE/dt = -metabolism + recharge * c_level
-        //   c=0.87: net = -0.8 + 1.0*0.87 = +0.07 (rises)
-        //   c=0.78: net = -0.8 + 1.0*0.78 = -0.02 (slow drain)
-        //   c=0.70: net = -0.8 + 1.0*0.70 = -0.10 (drains, v→0 in ~10s)
-        initial_energy: 0.1,
-        metabolism_rate: 0.8,
-        recharge_rate: Some(0.0),
-        action_cost: Some(0.0),
-        continuous_recharge_rate: Some(1.0),
-        envelope: EnvelopeConfig {
-            attack_sec: 0.005,
-            decay_sec: 0.06,
-            sustain_level: 0.0,
-            release_sec: 0.03,
-        },
-    };
-    let articulation = ArticulationCoreConfig::Entrain {
-        lifecycle,
-        // Agent intrinsic freq slightly below theta (ratio 0.9, matching paper E5).
-        // k_omega=0 so this stays fixed; coupling pulls phase, not frequency.
-        rhythm_freq: Some(cfg.theta_freq_hz * 0.9),
-        rhythm_sensitivity: None,
-        rhythm_coupling: RhythmCouplingMode::TemporalTimesVitality {
-            lambda_v: 1.0,
-            v_floor: 0.0,
-        },
-        rhythm_reward: None,
-        breath_gain_init: Some(1.0),
-        k_omega: Some(0.0),       // no omega adaptation (paper uses fixed per-agent omega)
-        base_sigma: Some(0.0),    // no noise (paper uses noise=0)
-        gate_thresholds: Some(GateThresholds {
-            env_open: 0.0,
-            mag: 0.0,
-            alpha: 0.0,
-            beta: 1.0,
-        }),
-        energy_cap: Some(1.0), // E5_E_CAP (separate from initial_energy)
-    };
-    let mut agent_control = AgentControl::default();
-    agent_control.pitch.mode = PitchMode::Lock;
-    agent_control.pitch.freq = cfg.anchor_hz;
-    agent_control.body.method = conchordal::life::control::BodyMethod::Harmonic;
-    agent_control.body.timbre.brightness = 0.15;
-    agent_control.phonation.spec = PhonationSpec::default();
-    let agent_spec = SpawnSpec {
-        control: agent_control,
-        articulation,
-    };
-    let strategy = e3_spawn_strategy(cfg.anchor_hz, &space);
-    let ids: Vec<u64> = (1..=cfg.pop_size as u64).collect();
-    pop.apply_action(
-        Action::Spawn {
-            group_id: E3_AUDIO_GROUP_AGENTS,
-            ids,
-            spec: agent_spec.clone(),
-            strategy: Some(strategy.clone()),
-        },
-        &landscape,
-        None,
-    );
+    validate_e3_audio_config(cfg)?;
 
-    // Simulation + audio rendering loop with respawn (matching paper E3).
-    let dt = hop as f32 / fs;
-    let total_steps = (cfg.duration_sec / dt).ceil() as u64;
-    let mut world = WorldModel::new(tb, space.clone());
-    let mut renderer = ScheduleRenderer::new(tb);
-    let mut all_samples: Vec<f32> = Vec::with_capacity((cfg.duration_sec * fs) as usize);
+    let mut rng = SmallRng::seed_from_u64(cfg.seed);
+    let kick_freq_hz = cfg.theta_freq_hz;
+    let kick_omega = TAU * kick_freq_hz;
+    let steps_per_cycle = ((1.0 / kick_freq_hz) / SIM_DT).round().max(1.0) as usize;
+
+    let log2_anchor = cfg.anchor_hz.log2();
+    let pitches_hz: Vec<f32> = (0..cfg.pop_size)
+        .map(|_| 2.0f32.powf(rng.random_range((log2_anchor - 1.0)..(log2_anchor + 1.0))))
+        .collect();
+    let omegas: Vec<f32> = (0..cfg.pop_size)
+        .map(|_| AGENT_OMEGA_MEAN * (1.0 + rng.random_range(-AGENT_JITTER..AGENT_JITTER)))
+        .collect();
+    let mut phases: Vec<f32> = (0..cfg.pop_size)
+        .map(|_| rng.random_range(0.0f32..TAU))
+        .collect();
+    let mut prev_phases = phases.clone();
+    let mut theta_canonical = 0.0f32;
+    let mut scramble_offset = rng.random_range(0.0f32..TAU);
+    let total_steps = (cfg.duration_sec / SIM_DT).ceil() as usize;
+    let mut attacks = Vec::new();
 
     for step in 0..total_steps {
-        let now_tick = step * hop as u64;
-        world.advance_to(now_tick);
-
-        // Update landscape with current population.
-        update_e4_landscape_from_population(
-            &space,
-            &params,
-            &pop,
-            &mut landscape,
-            E4_ENV_PARTIALS_DEFAULT,
-            E4_ENV_PARTIAL_DECAY_DEFAULT,
-        );
-        landscape.rhythm.advance_in_place(dt);
-
-        pop.advance(hop, fs, step, dt, &landscape);
-
-        // Log phase coherence at 1-second intervals
-        if step % (1.0 / dt) as u64 == 0 {
-            let mut sin_all = 0.0f32;
-            let mut cos_all = 0.0f32;
-            let mut n_all = 0u32;
-            let mut sin_hi = 0.0f32;
-            let mut cos_hi = 0.0f32;
-            let mut n_hi = 0u32;
-            let mut sum_keff = 0.0f32;
-            for agent in &pop.individuals {
-                if let AnyArticulationCore::Entrain(ref core) = agent.articulation.core {
-                    if core.vitality_level > 0.01 {
-                        sin_all += core.rhythm_phase.sin();
-                        cos_all += core.rhythm_phase.cos();
-                        n_all += 1;
-                        sum_keff += core.vitality_level;
-                    }
-                    if core.vitality_level > 0.8 {
-                        sin_hi += core.rhythm_phase.sin();
-                        cos_hi += core.rhythm_phase.cos();
-                        n_hi += 1;
-                    }
-                }
-            }
-            let r_all = if n_all > 0 { (sin_all*sin_all+cos_all*cos_all).sqrt()/n_all as f32 } else { 0.0 };
-            let r_hi = if n_hi > 0 { (sin_hi*sin_hi+cos_hi*cos_hi).sqrt()/n_hi as f32 } else { 0.0 };
-            let k_avg = if n_all > 0 { sum_keff / n_all as f32 } else { 0.0 };
-            // Sample energy + consonance extremes
-            let (mut e_min, mut e_max, mut c_min, mut c_max) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
-            for a in &pop.individuals {
-                if let AnyArticulationCore::Entrain(ref c) = a.articulation.core {
-                    e_min = e_min.min(c.energy);
-                    e_max = e_max.max(c.energy);
-                    let cons = landscape.evaluate_pitch_level(a.body.base_freq_hz());
-                    c_min = c_min.min(cons);
-                    c_max = c_max.max(cons);
-                }
-            }
-            let t = step as f32 * dt;
-            eprintln!("    t={t:.1}s R={r_all:.3} v={k_avg:.2} e=[{e_min:.2}..{e_max:.2}] c=[{c_min:.2}..{c_max:.2}]");
+        let t = step as f32 * SIM_DT;
+        if cfg.condition == E3AudioCondition::Scrambled && step > 0 && step % steps_per_cycle == 0 {
+            scramble_offset = rng.random_range(0.0f32..TAU);
         }
 
-        let batches = pop.collect_phonation_batches(&mut world, &landscape, now_tick);
-        let audio = renderer.render(&batches, now_tick, &landscape.rhythm);
-        all_samples.extend_from_slice(audio);
+        let theta_drive = match cfg.condition {
+            E3AudioCondition::Shared => theta_canonical,
+            E3AudioCondition::Scrambled => theta_canonical + scramble_offset,
+            E3AudioCondition::Off => theta_canonical,
+        };
+
+        for i in 0..cfg.pop_size {
+            prev_phases[i] = phases[i];
+            let k_eff = match cfg.condition {
+                E3AudioCondition::Off => 0.0,
+                E3AudioCondition::Shared | E3AudioCondition::Scrambled => K_TIME,
+            };
+            phases[i] = kuramoto_phase_step(phases[i], omegas[i], theta_drive, k_eff, 0.0, SIM_DT);
+        }
+
+        for i in 0..cfg.pop_size {
+            if (phases[i] / TAU).floor() > (prev_phases[i] / TAU).floor() {
+                attacks.push(E3AudioAttack { time: t, agent: i });
+            }
+        }
+
+        theta_canonical += kick_omega * SIM_DT;
     }
 
-    // Normalize.
-    let peak = all_samples.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+    Ok((pitches_hz, attacks))
+}
+
+pub fn render_e3_audio(cfg: &E3AudioConfig, output_path: &std::path::Path) -> std::io::Result<()> {
+    use std::f32::consts::TAU;
+
+    const NOTE_DUR_SEC: f32 = 0.12;
+    const NOTE_ATTACK_SEC: f32 = 0.005;
+    const DRONE_AMP: f32 = 0.03;
+    const NOTE_AMP: f32 = 0.16;
+
+    let (pitches_hz, attacks) = simulate_e3_audio_attacks(cfg)?;
+    let fs = E3_FS;
+    let total_samples = (cfg.duration_sec * fs).ceil() as usize;
+    let mut samples = vec![0.0f32; total_samples.max(1)];
+
+    for (idx, sample) in samples.iter_mut().enumerate() {
+        let t = idx as f32 / fs;
+        *sample += DRONE_AMP * (TAU * cfg.anchor_hz * t).sin();
+    }
+
+    let note_len = (NOTE_DUR_SEC * fs).ceil() as usize;
+    for attack in &attacks {
+        let start = (attack.time * fs).round() as usize;
+        let freq = pitches_hz[attack.agent];
+        for local_idx in 0..note_len {
+            let sample_idx = start + local_idx;
+            if sample_idx >= samples.len() {
+                break;
+            }
+            let local_t = local_idx as f32 / fs;
+            let env = if local_t < NOTE_ATTACK_SEC {
+                (local_t / NOTE_ATTACK_SEC).clamp(0.0, 1.0)
+            } else {
+                (1.0 - (local_t - NOTE_ATTACK_SEC) / (NOTE_DUR_SEC - NOTE_ATTACK_SEC)).clamp(0.0, 1.0)
+            };
+            let phase = TAU * freq * local_t;
+            let voice = phase.sin() + 0.35 * (2.0 * phase).sin() + 0.18 * (3.0 * phase).sin();
+            samples[sample_idx] += NOTE_AMP * env * voice;
+        }
+    }
+
+    let peak = samples.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
     if peak > 0.01 {
         let scale = 0.9 / peak;
-        for s in &mut all_samples {
-            *s *= scale;
+        for sample in &mut samples {
+            *sample *= scale;
         }
     }
 
-    // Write WAV.
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -2253,212 +2196,101 @@ pub fn render_e3_audio(cfg: &E3AudioConfig, output_path: &std::path::Path) -> st
         sample_format: hound::SampleFormat::Int,
     };
     let mut writer = hound::WavWriter::create(output_path, spec)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-    for &s in &all_samples {
-        let i16_val = (s * 32767.0).clamp(-32768.0, 32767.0) as i16;
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    for &sample in &samples {
+        let i16_val = (sample * 32767.0).clamp(-32768.0, 32767.0) as i16;
         writer
             .write_sample(i16_val)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
     }
     writer
         .finalize()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
 
-    let duration_sec = all_samples.len() as f32 / fs;
     eprintln!(
-        "E3 audio: {} ({:.1}s, peak={:.3}, condition={})",
+        "E3 audio: {} ({:.1}s, attacks={}, condition={})",
         output_path.display(),
-        duration_sec,
-        peak,
+        samples.len() as f32 / fs,
+        attacks.len(),
         cfg.condition.label()
     );
     Ok(())
 }
 
-// ─── E3 direct synthesis (matches paper E5 model exactly) ───
-
-/// Generate a Rhai scenario script for E3 consonance-gated entrainment.
-///
-/// Runs the paper E5 Kuramoto model to compute per-agent attack times,
-/// then emits a Rhai script with timed note events for conchordal-render.
 pub fn generate_e3_rhai(
     cfg: &E3AudioConfig,
     output_path: &std::path::Path,
 ) -> std::io::Result<()> {
-    use std::f32::consts::{PI, TAU};
     use std::io::Write;
 
-    // Paper E5 constants (must match paper_plots.rs)
-    const KICK_FREQ_HZ: f32 = 2.0;
-    const KICK_OMEGA: f32 = TAU * KICK_FREQ_HZ;
-    const AGENT_OMEGA_MEAN: f32 = TAU * 1.8;
-    const AGENT_JITTER: f32 = 0.02;
-    const K_TIME: f32 = 3.0;
-    const LAMBDA_V: f32 = 1.0;
-    const V_FLOOR: f32 = 0.0;
-    const VITALITY_EXP: f32 = 0.5;
-    const E_CAP: f32 = 1.0;
-    const E_INIT: f32 = 0.0;
-    const RECHARGE: f32 = 1.0;
-    const DECAY: f32 = 0.5;
-    const SIM_DT: f32 = 0.002;
-
-    let n = cfg.pop_size;
-    let anchor_hz = cfg.anchor_hz;
-
-    // Build landscape for consonance evaluation
-    let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
-    let params = make_landscape_params(&space, 48000.0, 1.0);
-    let landscape = build_anchor_landscape(
-        &space, &params, anchor_hz,
-        E4_ENV_PARTIALS_DEFAULT, E4_ENV_PARTIAL_DECAY_DEFAULT,
-    );
-
-    let mut rng = SmallRng::seed_from_u64(cfg.seed);
-
-    // Random pitches ±1 octave
-    let log2_anchor = anchor_hz.log2();
-    let pitches_hz: Vec<f32> = (0..n)
-        .map(|_| 2.0f32.powf(rng.random_range((log2_anchor - 1.0)..(log2_anchor + 1.0))))
-        .collect();
-
-    // Raw C_field (no normalization — matches paper_plots.rs)
-    let consonances: Vec<f32> = pitches_hz.iter()
-        .map(|&f| landscape.evaluate_pitch_score(f))
-        .collect();
-
-    // Per-agent omega with jitter
-    let omegas: Vec<f32> = (0..n)
-        .map(|_| AGENT_OMEGA_MEAN * (1.0 + rng.random_range(-AGENT_JITTER..AGENT_JITTER)))
-        .collect();
-
-    // Random initial phases
-    let mut phases: Vec<f32> = (0..n)
-        .map(|_| rng.random_range(0.0..TAU))
-        .collect();
-
-    let mut energies = vec![E_INIT; n];
-    let mut theta_kick = 0.0f32;
-    let mut prev_phases = phases.clone();
-
-    // Simulate and collect attack events: (time, agent_idx, vitality)
-    struct Attack { time: f32, agent: usize, vitality: f32 }
-    let mut attacks: Vec<Attack> = Vec::new();
-    let total_steps = (cfg.duration_sec / SIM_DT).ceil() as usize;
-
-    for step in 0..total_steps {
-        let t = step as f32 * SIM_DT;
-
-        for i in 0..n {
-            let recharge = RECHARGE * consonances[i].max(0.0);
-            let de = (recharge - DECAY * energies[i]) * SIM_DT;
-            energies[i] = (energies[i] + de).clamp(0.0, E_CAP);
-        }
-
-        let vitalities: Vec<f32> = energies.iter()
-            .map(|&e| (e / E_CAP).clamp(0.0, 1.0).powf(VITALITY_EXP))
-            .collect();
-
-        for i in 0..n { prev_phases[i] = phases[i]; }
-        theta_kick += KICK_OMEGA * SIM_DT;
-
-        for i in 0..n {
-            let k_eff = match cfg.condition {
-                E3Condition::Baseline => {
-                    let g = ((vitalities[i] - V_FLOOR) / (1.0 - V_FLOOR).max(1e-6)).clamp(0.0, 1.0);
-                    K_TIME * (LAMBDA_V * g).clamp(0.0, 2.0)
-                }
-                E3Condition::NoRecharge => 0.0,
-            };
-            phases[i] = kuramoto_phase_step(phases[i], omegas[i], theta_kick, k_eff, 0.0, SIM_DT);
-        }
-
-        // Detect phase crossing 2π → attack
-        for i in 0..n {
-            if (phases[i] / TAU).floor() > (prev_phases[i] / TAU).floor() {
-                if vitalities[i] > 0.05 {
-                    attacks.push(Attack { time: t, agent: i, vitality: vitalities[i] });
-                }
-            }
-        }
-    }
+    let (pitches_hz, mut attacks) = simulate_e3_audio_attacks(cfg)?;
+    let condition_label = cfg.condition.label();
 
     eprintln!(
         "  E3 rhai: {} attacks from {} agents over {:.1}s (condition={})",
-        attacks.len(), n, cfg.duration_sec, cfg.condition.label()
+        attacks.len(),
+        cfg.pop_size,
+        cfg.duration_sec,
+        condition_label
     );
 
-    // Generate Rhai script
-    let note_dur = 0.12f32; // note duration in seconds
-    let condition_label = cfg.condition.label();
-
-    // Use seq brain: each create() plays one short note then auto-stops.
     let mut rhai = format!(
-        "// 30_e3_{condition_label}.rhai — Consonance-gated entrainment\n\
+        "// 30_e3_{condition_label}.rhai — Temporal scaffold assay\n\
          // AUTO-GENERATED — DO NOT EDIT\n\
-         // {n} agents, {KICK_FREQ_HZ} Hz kick, condition={condition_label}\n\
-         // Paper E5 Kuramoto model: dE/dt = R*max(C_field,0) - gamma*E; k_eff = {K_TIME} * vitality (baseline) or 0 (control)\n\
-         // Each attack → create a short-lived seq voice at the agent's pitch.\n\n"
+         // {n} agents, {kick:.1} Hz canonical beat, condition={condition_label}\n\
+         // shared: continuous common scaffold\n\
+         // scrambled: cycle-wise phase resets\n\
+         // off: no scaffold coupling\n\
+         // Each attack creates a short-lived seq voice at a static audibility pitch.\n\n",
+        n = cfg.pop_size,
+        kick = cfg.theta_freq_hz
     );
 
-    // Pre-define one spec per agent pitch (seq brain, short duration)
-    for i in 0..n {
+    for i in 0..cfg.pop_size {
         rhai.push_str(&format!(
             "let s{i} = derive(harmonic).brain(\"seq\").pitch_mode(\"lock\")\
-             .amp({:.3}).adsr(0.003, 0.08, 0.0, 0.03);\n",
-            0.18
+             .amp(0.18).adsr(0.003, 0.08, 0.0, 0.03);\n"
         ));
     }
     rhai.push('\n');
 
-    // Sort attacks by time
     attacks.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
 
     rhai.push_str(&format!("scene(\"e3_{condition_label}\", || {{\n"));
-
-    // Quiet drone anchor (continuous)
     rhai.push_str(&format!(
         "    let drone = create(derive(harmonic).brain(\"drone\").pitch_mode(\"lock\")\
          .amp(0.03).adsr(0.01, 0.1, 1.0, 0.5), 1).freq({:.2});\n",
-        anchor_hz
+        cfg.anchor_hz
     ));
     rhai.push_str("    flush();\n\n");
 
     let quant = 0.005f32;
     let mut time_cursor = 0.0f32;
-
-    for atk in &attacks {
-        let target_t = (atk.time / quant).round() * quant;
+    for attack in &attacks {
+        let target_t = (attack.time / quant).round() * quant;
         if target_t > time_cursor + 0.0001 {
             let wait = target_t - time_cursor;
             rhai.push_str(&format!("    wait({wait:.4});\n"));
             time_cursor = target_t;
         }
-        let amp = (0.15 * atk.vitality).max(0.01);
-        // Create a new short-lived voice at this agent's pitch
         rhai.push_str(&format!(
-            "    create(s{}, 1).freq({:.2}).amp({:.4}); flush();\n",
-            atk.agent, pitches_hz[atk.agent], amp
+            "    create(s{}, 1).freq({:.2}); flush();\n",
+            attack.agent, pitches_hz[attack.agent]
         ));
     }
-
     let remaining = cfg.duration_sec - time_cursor;
     if remaining > 0.01 {
         rhai.push_str(&format!("    wait({remaining:.3});\n"));
     }
     rhai.push_str("});\n");
 
-    // Write file
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let mut f = std::fs::File::create(output_path)?;
     f.write_all(rhai.as_bytes())?;
 
-    eprintln!(
-        "  wrote {} ({} bytes)",
-        output_path.display(), rhai.len()
-    );
+    eprintln!("  wrote {} ({} bytes)", output_path.display(), rhai.len());
     Ok(())
 }
 
@@ -2657,7 +2489,7 @@ mod tests {
             seed: 99,
             pop_size: 4,
             duration_sec: 0.5,
-            condition: E3Condition::Baseline,
+            condition: E3AudioCondition::Shared,
             anchor_hz: E4_ANCHOR_HZ,
             theta_freq_hz: 2.0,
         };
@@ -2669,28 +2501,69 @@ mod tests {
 
     #[test]
     fn e3_audio_conditions_differ() {
-        let tmp_b = std::env::temp_dir().join("conc_e3_diff_b.wav");
-        let tmp_n = std::env::temp_dir().join("conc_e3_diff_n.wav");
-        let base = E3AudioConfig {
+        let tmp_shared = std::env::temp_dir().join("conc_e3_diff_shared.wav");
+        let tmp_off = std::env::temp_dir().join("conc_e3_diff_off.wav");
+        let shared = E3AudioConfig {
             seed: 7,
             pop_size: 6,
             duration_sec: 2.0,
-            condition: E3Condition::Baseline,
+            condition: E3AudioCondition::Shared,
             anchor_hz: E4_ANCHOR_HZ,
             theta_freq_hz: 2.0,
         };
-        let norech = E3AudioConfig {
-            condition: E3Condition::NoRecharge,
-            ..base.clone()
+        let off = E3AudioConfig {
+            condition: E3AudioCondition::Off,
+            ..shared.clone()
         };
-        render_e3_audio(&base, &tmp_b).unwrap();
-        render_e3_audio(&norech, &tmp_n).unwrap();
-        // Files should differ (different energy dynamics)
-        let bytes_b = std::fs::read(&tmp_b).unwrap();
-        let bytes_n = std::fs::read(&tmp_n).unwrap();
-        assert_eq!(bytes_b.len(), bytes_n.len(), "same duration → same length");
-        assert_ne!(bytes_b, bytes_n, "baseline and norecharge should produce different audio");
-        let _ = std::fs::remove_file(&tmp_b);
-        let _ = std::fs::remove_file(&tmp_n);
+        render_e3_audio(&shared, &tmp_shared).unwrap();
+        render_e3_audio(&off, &tmp_off).unwrap();
+        let bytes_shared = std::fs::read(&tmp_shared).unwrap();
+        let bytes_off = std::fs::read(&tmp_off).unwrap();
+        assert_eq!(
+            bytes_shared.len(),
+            bytes_off.len(),
+            "same duration should produce same file length"
+        );
+        assert_ne!(
+            bytes_shared, bytes_off,
+            "shared and off scaffold conditions should produce different audio"
+        );
+        let _ = std::fs::remove_file(&tmp_shared);
+        let _ = std::fs::remove_file(&tmp_off);
+    }
+
+    #[test]
+    fn e3_rhai_zero_pop_returns_invalid_input() {
+        let tmp = std::env::temp_dir().join("conc_e3_zero_pop.rhai");
+        let cfg = E3AudioConfig {
+            seed: 1,
+            pop_size: 0,
+            duration_sec: 1.0,
+            condition: E3AudioCondition::Shared,
+            anchor_hz: E4_ANCHOR_HZ,
+            theta_freq_hz: 2.0,
+        };
+        let err = generate_e3_rhai(&cfg, &tmp).expect_err("zero-pop should be rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn e3_rhai_uses_temporal_scaffold_labels() {
+        let tmp = std::env::temp_dir().join("conc_e3_scrambled.rhai");
+        let cfg = E3AudioConfig {
+            seed: 11,
+            pop_size: 5,
+            duration_sec: 1.0,
+            condition: E3AudioCondition::Scrambled,
+            anchor_hz: E4_ANCHOR_HZ,
+            theta_freq_hz: 2.0,
+        };
+        generate_e3_rhai(&cfg, &tmp).expect("scrambled rhai generation should succeed");
+        let script = std::fs::read_to_string(&tmp).expect("rhai script should exist");
+        assert!(script.contains("Temporal scaffold assay"));
+        assert!(script.contains("condition=scrambled"));
+        assert!(script.contains("cycle-wise phase resets"));
+        assert!(!script.contains("Consonance-gated entrainment"));
+        let _ = std::fs::remove_file(&tmp);
     }
 }

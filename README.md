@@ -73,9 +73,10 @@ just paper --clean --exp e2  # Clean plots directory first
 |--------------|-------------|------------------------------|
 | Experiment 1 | E1, E2      | Landscape Attractors & Self-Organised Polyphony |
 | Experiment 2 | E3          | Consonance as Selection      |
-| Experiment 3 | E5          | Rhythmic Entrainment         |
+| Experiment 3 | E7          | Temporal Scaffold            |
 | *(E4 skipped)* | E4        | *(excluded from paper)*      |
 | Experiment 4 | E6          | Hereditary Adaptation        |
+| Supplementary mechanism check | E5 | Configurable spectral--temporal bridge |
 
 ### Verify
 

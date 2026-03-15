@@ -21,3 +21,6 @@ file,segment_index,segment_label,experiment,condition,seed,start_sec,end_sec
 15_exp1_replay.wav,4,s4_replay_seed10_baseline,E2-replay,baseline,252645135,39.0,51.0
 15_exp1_replay.wav,5,s5_replay_seed10_nohill,E2-replay,no-hill,252645135,52.0,64.0
 15_exp1_replay.wav,6,s6_replay_seed10_norep,E2-replay,no-rep,252645135,65.0,77.0
+30_e3_shared.wav,1,s1_e3_shared,E3,shared,42,0.0,15.0
+30_e3_scrambled.wav,1,s1_e3_scrambled,E3,scrambled,42,0.0,15.0
+30_e3_off.wav,1,s1_e3_off,E3,off,42,0.0,15.0
