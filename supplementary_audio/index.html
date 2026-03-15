@@ -67,6 +67,16 @@
     <tr><td>no-rep</td><td>1.0</td><td>off</td></tr>
   </table>
   <p>local-search converges to consonant intervals; no-rep collapses toward unison.</p>
+  <p><strong>Periodic pitch alternation (seed 10).</strong>
+     In the local-search condition of seed 10, some agents settle into a stable
+     limit cycle, alternating between two consonant pitch positions on successive
+     sweeps rather than converging to a fixed point. This periodic alternation
+     emerges spontaneously from the update dynamics: under the checkerboard
+     schedule, an agent's optimal position depends on its neighbours' current
+     state, which in turn depends on the agent's previous position, creating a
+     self-sustaining oscillation. The phenomenon is reminiscent of a discrete
+     time crystal&mdash;a system whose steady state spontaneously breaks
+     discrete time-translation symmetry.</p>
   <audio controls preload="none">
     <source src="audio/10_exp1_polyphony.wav" type="audio/wav">
   </audio>

@@ -6263,28 +6263,13 @@ where
         .margin(20)
         .x_label_area_size(90)
         .y_label_area_size(120)
-        .build_cartesian_2d(0.0f32..(2.0 * PI), y_min..y_max.max(0.1))?;
+        .build_cartesian_2d(0.0f32..2.0f32, y_min..y_max.max(0.1))?;
 
     chart
         .configure_mesh()
-        .x_desc("phase vs canonical beat (rad)")
+        .x_desc("phase vs canonical beat (\u{00d7}\u{03c0} rad)")
         .y_desc("probability")
         .x_labels(5)
-        .x_label_formatter(&|x| {
-            if (*x - 0.0).abs() < 0.01 {
-                "0".to_string()
-            } else if (*x - PI / 2.0).abs() < 0.05 {
-                "pi/2".to_string()
-            } else if (*x - PI).abs() < 0.05 {
-                "pi".to_string()
-            } else if (*x - 3.0 * PI / 2.0).abs() < 0.05 {
-                "3pi/2".to_string()
-            } else if (*x - 2.0 * PI).abs() < 0.05 {
-                "2pi".to_string()
-            } else {
-                String::new()
-            }
-        })
         .label_style(("sans-serif", 52).into_font())
         .axis_desc_style(("sans-serif", 56).into_font())
         .draw()?;
@@ -6302,8 +6287,8 @@ where
         let step_points = |pairs: &[(f32, f32)]| {
             let mut points = Vec::with_capacity(pairs.len() * 3);
             for (idx, &(_, y)) in pairs.iter().enumerate() {
-                let x_left = idx as f32 * bin_width;
-                let x_right = ((idx + 1) as f32 * bin_width).min(2.0 * PI);
+                let x_left = idx as f32 * bin_width / PI;
+                let x_right = (((idx + 1) as f32 * bin_width) / PI).min(2.0);
                 if idx == 0 {
                     points.push((x_left, y));
                 } else {
@@ -7029,7 +7014,7 @@ fn render_e6_figure(
     final_target_dist_heredity: &[f32],
     final_target_dist_random: &[f32],
 ) -> Result<(), Box<dyn Error>> {
-    let root = bitmap_root(out_path, (3720, 748)).into_drawing_area();
+    let root = bitmap_root(out_path, (3720, 935)).into_drawing_area();
     root.fill(&WHITE)?;
     let (left, right) = root.split_horizontally(2400);
     let left_panels = left.split_evenly((1, 2));
@@ -26322,7 +26307,7 @@ where
 
     chart
         .configure_series_labels()
-        .position(SeriesLabelPosition::Coordinate(170, 110))
+        .position(SeriesLabelPosition::Coordinate(130, 110))
         .background_style(WHITE.mix(0.88))
         .border_style(BLACK)
         .label_font(("sans-serif", 56).into_font())
