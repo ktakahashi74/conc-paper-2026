@@ -24367,7 +24367,7 @@ fn render_e2_figure2(
         let y_max = (1.15 * y_peak.max(1e-4)).max(1e-4);
         let mut chart = ChartBuilder::on(&panel_a)
             .caption(
-                "A. Interval histogram: local-search vs random-walk",
+                "E. Interval histogram: local-search vs random-walk",
                 ("sans-serif", 32),
             )
             .margin(10)
@@ -24424,7 +24424,7 @@ fn render_e2_figure2(
 
     draw_entropy_panel_for_conditions(
         &panel_b,
-        "B. Entropy",
+        "F. Entropy",
         hist_rows,
         &["baseline", "nohill"],
         32,
@@ -24433,7 +24433,7 @@ fn render_e2_figure2(
     )?;
     draw_polyphony_panel_for_conditions(
         &panel_c,
-        "C. Polyphony",
+        "G. Polyphony",
         diversity_rows,
         &["baseline", "nohill"],
         32,

@@ -244,19 +244,18 @@ where $K$ is coupling strength and $F(t)$ an external forcing term. Neural entra
 
 \section{Results}
 
-\begin{figure*}[b]
+\begin{figure*}[t]
 \centering
 \includegraphics[width=\textwidth,trim=56 0 56 0,clip]{experiments/plots/e2/paper_e2_figure_e2_1.pdf}
-\caption{Population dynamics and emergent structure. (A)~Mean LOO consonance $C_{\text{score}}$, the local surrogate each agent optimises, over time (95\,\% CI); the vertical marker indicates the phase switch at step~25, and the shaded band marks the 10-step post-switch burn-in window excluded from summary statistics. (B)~Scene consonance $G(F)$ (Eq.~\ref{eq:consonance-core}), evaluated on the shared field after singleton subtraction, over time (95\,\% CI). (C)~Representative local-search trajectories (cents from drone). (D)~Final unique pitch bins (95\,\% CI).}
+\vspace{0.3em}
+\includegraphics[width=\textwidth]{experiments/plots/e2/paper_e2_figure_e2_2.pdf}
+\caption{Self-organised polyphony (Exp.~1). \emph{Top}---(A)~Mean LOO consonance $C_{\text{score}}$ over time (95\% CI); vertical line = phase switch (step~25), shaded band = burn-in excluded from statistics. (B)~Scene consonance $G(F)$ (Eq.~\ref{eq:consonance-core}) after singleton subtraction (95\% CI). (C)~Representative local-search trajectories (cents from drone). (D)~Final unique pitch bins (95\% CI). \emph{Bottom}---(E)~Pairwise interval histogram (25\,ct bins): \emph{local-search} concentrates mass at consonant intervals; \emph{random-walk} spreads broadly. (F)~Entropy of the 5\,ct interval distribution (95\% CI). (G)~Unique pitch bins (95\% CI; 25\,ct bins).}
 \label{fig:e2-dynamics}
+\label{fig:e2-intervals}
 \end{figure*}
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\textwidth]{experiments/plots/e2/paper_e2_figure_e2_2.pdf}
-\caption{Emergent interval structure. (A) Pairwise interval histogram, displayed at 25\,ct bins for readability: \emph{local-search} runs concentrate interval mass at a small set of octave-equivalent intervals, whereas \emph{random-walk} spreads mass broadly and therefore remains near the floor at each individual bin. (B) Entropy of the raw 5\,ct pairwise interval distribution (95\% CI): \emph{random-walk} approaches a near-uniform interval distribution ($H \approx 4.97$), while \emph{local-search} remains much lower ($H \approx 1.57$). (C) Polyphony (95\% CI; 25\,ct bins): \emph{local-search} self-organizes into fewer occupied pitch bins ($\approx 9.4$) than \emph{random-walk} ($\approx 22.5$), but does not collapse to unison.}
-\label{fig:e2-intervals}
-\vspace{0.5em}
 \includegraphics[width=\textwidth]{experiments/plots/e3/paper_e3_figure4.pdf}
 \caption{Consonance as selection pressure (pooled, $n\!\approx\!4{,}000$). (A,\,B) Kaplan--Meier survival by $C_{\mathrm{firstK}}$ median split. (A) Baseline: survival advantage for high-consonance agents. (B) No recharge: effect vanishes. (C,\,D) $C_{\mathrm{firstK}}$ vs.\ lifetime scatter. (C) Baseline: strong association. (D) No recharge: none.}
 \label{fig:e3-selection}
@@ -292,11 +291,11 @@ Duration    & 50 rnds & 200 deaths & 40\,s & 4k deaths \\
 
 Twenty-four adaptive voices plus one immobile drone at 220\,Hz are placed on a discrete log-frequency grid (0.0025\,oct bins) spanning $\pm 2$ octaves from the drone. In the \emph{local-search} condition, agents generate local pitch proposals and accept them according to an exact leave-one-out (LOO) objective combining consonance with a crowding penalty. The \emph{random-walk} ablation keeps the same schedule, step window, and pitch bounds but replaces this score-based local search with a matched random local walk. LOO consonance is evaluated by removing each agent's spectral contribution from the shared environment before rescoring---an exact LOO that the real-time instrument approximates with a lighter-weight harmonic-projection subtraction. The LOO mean of $C_{\text{field}}$ across all agents defines $C_{\text{score}}$, the primary outcome metric.
 
-Each run consists of 50 sweeps: a dissonance-seeking phase (steps 0--24) followed by a consonance-seeking phase (steps 25--49); the dissonance phase disperses agents before convergence, and the switch is implemented by negating the same exact-LOO proposal score ($S \to -S$). A consonance-only control (Supplementary S7) confirms that structure also emerges without this curriculum, though with significantly fewer stable pitch positions ($5.9$ vs.\ $9.4$ unique bins; $p < 0.0001$). Two conditions were compared (Figures~\ref{fig:e2-dynamics}--\ref{fig:e2-intervals}).
+Each run consists of 50 sweeps: a dissonance-seeking phase (steps 0--24) followed by a consonance-seeking phase (steps 25--49); the dissonance phase disperses agents before convergence, and the switch is implemented by negating the same exact-LOO proposal score ($S \to -S$). A consonance-only control (Supplementary S7) confirms that structure also emerges without this curriculum, though with significantly fewer stable pitch positions ($5.9$ vs.\ $9.4$ unique bins; $p < 0.0001$). Two conditions were compared (Figure~\ref{fig:e2-dynamics}).
 
 \textbf{Diversity.} Unique pitch bins averaged $9.4 \pm 1.2$ (\emph{local-search}) vs.\ $22.5 \pm 1.2$ (\emph{random-walk}). Under the crowding penalty and two-phase curriculum, score-based local search concentrates 24 agents into $\approx$\,9 distinct pitch classes at consonant intervals, whereas random walks distribute agents nearly uniformly across the grid. The crowding penalty is essential for preventing collapse to unison, while the dissonance-seeking phase broadens the pitch distribution (see Supplementary~S7). Scene consonance $G(F)=aH_{\mathrm{soc}}+bR_{\mathrm{soc}}+cH_{\mathrm{soc}}R_{\mathrm{soc}}$ (Eq.~\ref{eq:consonance-core}), where $H_{\mathrm{soc}}$ and $R_{\mathrm{soc}}$ denote the scene harmonicity and roughness after subtracting the mean singleton contribution, confirms the same dynamic: a sharp rise after the phase switch for \emph{local-search}, while \emph{random-walk} remains flat (Figure~\ref{fig:e2-dynamics}B).
 
-\textbf{Interval Structure.} Shannon entropy of the pairwise interval distribution (240 bins of 5\,ct over 0--1200\,ct; uniform maximum $\ln 240 = 5.48$\,nats) was $1.57 \pm 0.35$\,nats (\emph{local-search}) vs.\ $4.97 \pm 0.04$ (\emph{random-walk}). The \emph{local-search} distribution concentrates mass at a small number of just-intonation intervals (Figure~\ref{fig:e2-intervals}A), whereas \emph{random-walk} approaches a near-uniform distribution. An independent just-intonation proximity score ($\mathrm{JI}_{\text{score}}$; defined in \S\ref{sec:e6}) confirms the result: \emph{local-search} $0.453 \pm 0.039$ vs.\ \emph{random-walk} $0.105 \pm 0.013$ ($p < 0.0001$).
+\textbf{Interval Structure.} Shannon entropy of the pairwise interval distribution (240 bins of 5\,ct over 0--1200\,ct; uniform maximum $\ln 240 = 5.48$\,nats) was $1.57 \pm 0.35$\,nats (\emph{local-search}) vs.\ $4.97 \pm 0.04$ (\emph{random-walk}). The \emph{local-search} distribution concentrates mass at a small number of just-intonation intervals (Figure~\ref{fig:e2-dynamics}E), whereas \emph{random-walk} approaches a near-uniform distribution. An independent just-intonation proximity score ($\mathrm{JI}_{\text{score}}$; defined in \S\ref{sec:e6}) confirms the result: \emph{local-search} $0.453 \pm 0.039$ vs.\ \emph{random-walk} $0.105 \pm 0.013$ ($p < 0.0001$).
 
 These results show that score-based local search is the primary source of structured polyphony: replacing it with matched random-walk updates disperses agents broadly and raises interval entropy toward the uniform ceiling. A shuffled-landscape control (\S Terrain Validity) further confirms that coherent psychoacoustic gradients are required.
 
