@@ -6,9 +6,6 @@ Histogram Structure: Entropy
 <text x="10" y="222" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000" transform="rotate(270, 10, 222)">
 entropy
 </text>
-<text x="325" y="440" dy="-0.5ex" text-anchor="middle" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
-condition
-</text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="59,34 59,409 "/>
 <text x="50" y="409" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
 0.0
@@ -67,7 +64,7 @@ nohill
 nocrowd
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="500,410 500,415 "/>
-<rect x="95" y="302" width="106" height="107" opacity="1" fill="#3A6A78" stroke="none"/>
+<rect x="95" y="272" width="106" height="137" opacity="1" fill="#3A6A78" stroke="none"/>
 <rect x="271" y="69" width="106" height="340" opacity="1" fill="#8B2252" stroke="none"/>
 <rect x="447" y="308" width="106" height="101" opacity="1" fill="#3E6FB6" stroke="none"/>
 <text x="900" y="15" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="14.516129032258064" opacity="1" fill="#000000">
@@ -75,9 +72,6 @@ Histogram Structure: Gini
 </text>
 <text x="610" y="222" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000" transform="rotate(270, 610, 222)">
 gini
-</text>
-<text x="925" y="440" dy="-0.5ex" text-anchor="middle" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
-condition
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="659,34 659,409 "/>
 <text x="650" y="409" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
@@ -137,7 +131,7 @@ nohill
 nocrowd
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="1100,410 1100,415 "/>
-<rect x="695" y="69" width="106" height="340" opacity="1" fill="#3A6A78" stroke="none"/>
+<rect x="695" y="72" width="106" height="337" opacity="1" fill="#3A6A78" stroke="none"/>
 <rect x="871" y="237" width="106" height="172" opacity="1" fill="#8B2252" stroke="none"/>
 <rect x="1047" y="69" width="106" height="340" opacity="1" fill="#3E6FB6" stroke="none"/>
 <text x="300" y="465" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="14.516129032258064" opacity="1" fill="#000000">
@@ -145,9 +139,6 @@ Histogram Structure: Peakiness
 </text>
 <text x="10" y="672" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000" transform="rotate(270, 10, 672)">
 peakiness
-</text>
-<text x="325" y="890" dy="-0.5ex" text-anchor="middle" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
-condition
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="59,484 59,859 "/>
 <text x="50" y="859" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
@@ -199,7 +190,7 @@ nohill
 nocrowd
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="500,860 500,865 "/>
-<rect x="95" y="532" width="106" height="327" opacity="1" fill="#3A6A78" stroke="none"/>
+<rect x="95" y="662" width="106" height="197" opacity="1" fill="#3A6A78" stroke="none"/>
 <rect x="271" y="843" width="106" height="16" opacity="1" fill="#8B2252" stroke="none"/>
 <rect x="447" y="519" width="106" height="340" opacity="1" fill="#3E6FB6" stroke="none"/>
 <text x="900" y="465" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="14.516129032258064" opacity="1" fill="#000000">
@@ -207,9 +198,6 @@ Histogram Structure: KL vs Uniform
 </text>
 <text x="610" y="672" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000" transform="rotate(270, 610, 672)">
 KL
-</text>
-<text x="925" y="890" dy="-0.5ex" text-anchor="middle" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
-condition
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="659,484 659,859 "/>
 <text x="650" y="859" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
@@ -261,7 +249,7 @@ nohill
 nocrowd
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="1100,860 1100,865 "/>
-<rect x="695" y="526" width="106" height="333" opacity="1" fill="#3A6A78" stroke="none"/>
+<rect x="695" y="564" width="106" height="295" opacity="1" fill="#3A6A78" stroke="none"/>
 <rect x="871" y="816" width="106" height="43" opacity="1" fill="#8B2252" stroke="none"/>
 <rect x="1047" y="519" width="106" height="340" opacity="1" fill="#3E6FB6" stroke="none"/>
 </svg>
