@@ -47,6 +47,9 @@ const E3_THETA_FREQ_HZ: f32 = 1.0;
 const E3_METABOLISM_RATE: f32 = 0.5;
 const E2_MATCH_CROWDING_WEIGHT: f32 = 0.15;
 const E4_MATCH_SIGMA_CENTS: f32 = 15.0;
+/// Hereditary spawn radius: offspring placed within ±INHERIT_RADIUS_LOG2 of parent pitch.
+/// ±5 ct preserves the parent's niche while leaving room for hill-climbing refinement.
+const E6_INHERIT_RADIUS_LOG2: f32 = 5.0 / 1200.0;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct E4RuntimeOverrides {
@@ -772,18 +775,24 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                             parent_freq,
                             spec.control.pitch.crowding_sigma_cents,
                         );
+                        let parent_log2 = parent_freq.log2();
+                        let inherit_min = 2.0f32.powf(
+                            (parent_log2 - E6_INHERIT_RADIUS_LOG2).max(min_spawn.log2()),
+                        );
+                        let inherit_max = 2.0f32.powf(
+                            (parent_log2 + E6_INHERIT_RADIUS_LOG2).min(max_spawn.log2()),
+                        );
                         pop.apply_action(
                             Action::Spawn {
                                 group_id: E3_GROUP_AGENTS,
                                 ids: vec![id],
                                 spec: spec.clone(),
-                                strategy: Some(SpawnStrategy::ConsonanceDensity {
-                                    min_freq: min_spawn,
-                                    max_freq: max_spawn,
-                                    min_dist_erb,
+                                strategy: Some(SpawnStrategy::RandomLog {
+                                    min_freq: inherit_min,
+                                    max_freq: inherit_max,
                                 }),
                             },
-                            &parent_landscape,
+                            &landscape,
                             None,
                         );
                         continue;
