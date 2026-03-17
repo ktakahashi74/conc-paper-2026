@@ -164,14 +164,14 @@ In all experiments $N=16$ and $\rho=0.4$. Overtone and undertone projections are
 
 Roughness $R(x)$ quantifies sensory dissonance from unresolved beating within the critical band \citep{plomp1965}. Like harmonicity, roughness reflects early peripheral processing: it arises from amplitude-modulation products on the basilar membrane, a mechanism rooted in cochlear mechanics \citep{glasberg1990}.
 
-The computation maps the amplitude spectrum $S$ onto the ERB-rate scale
+The amplitude spectrum is first mapped onto the ERB-rate scale
 %
 \begin{equation}
   z = 21.4\,\log_{10}(0.00437\,f+1)
   \label{eq:erb}
 \end{equation}
 %
-and convolves with a Plomp--Levelt interference kernel:
+and then convolved with a Plomp--Levelt interference kernel $g_{\mathrm{PL}}$ \citep{sethares1993}:
 %
 \begin{equation}
   R_{\mathrm{raw}}(z) = \int S(\zeta)\;g_{\mathrm{PL}}(|z-\zeta|)
@@ -179,9 +179,7 @@ and convolves with a Plomp--Levelt interference kernel:
   \label{eq:roughness}
 \end{equation}
 %
-where $g_{\mathrm{PL}}$ peaks at approximately $0.25$\,ERB and vanishes at both zero separation (no self-interference) and wide separation (outside the critical band). At simple integer ratios $p\!:\!q$, harmonics are spaced well beyond the critical band, producing roughness troughs that complement the harmonicity peaks (Figure~\ref{fig:e1-landscape}B).
-
-The raw output is normalized via a reference-based saturation map to $R_{01}\in[0,1]$.
+where $S(\zeta)$ is the spectral energy at ERB-rate $\zeta$ and $g_{\mathrm{PL}}$ peaks near $0.25$\,ERB, vanishing at both zero and wide separations. At low-order integer ratios $p\!:\!q$ (small $\max(p,q)$), the interval is wide enough that non-coincident harmonics generally fall outside each other's critical bands, so roughness troughs complement the harmonicity peaks (Figure~\ref{fig:e1-landscape}B). For higher-order ratios the interval narrows and harmonic pairs increasingly fall within the critical band, raising roughness even where harmonicity remains elevated. The raw output is normalized to $R_{01}\in[0,1]$.
 
 \subsection{Consonance}
 
