@@ -48,8 +48,9 @@ const E3_METABOLISM_RATE: f32 = 0.5;
 const E2_MATCH_CROWDING_WEIGHT: f32 = 0.15;
 const E4_MATCH_SIGMA_CENTS: f32 = 15.0;
 /// Hereditary spawn radius: offspring placed within ±INHERIT_RADIUS_LOG2 of parent pitch.
-/// ±5 ct preserves the parent's niche while leaving room for hill-climbing refinement.
-const E6_INHERIT_RADIUS_LOG2: f32 = 5.0 / 1200.0;
+/// ±50 ct (half semitone) gives ConsonanceDensity room to find a consonant position
+/// while keeping offspring in the parent's niche.
+const E6_INHERIT_RADIUS_LOG2: f32 = 15.0 / 1200.0;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct E4RuntimeOverrides {
@@ -787,12 +788,13 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                                 group_id: E3_GROUP_AGENTS,
                                 ids: vec![id],
                                 spec: spec.clone(),
-                                strategy: Some(SpawnStrategy::RandomLog {
+                                strategy: Some(SpawnStrategy::ConsonanceDensity {
                                     min_freq: inherit_min,
                                     max_freq: inherit_max,
+                                    min_dist_erb,
                                 }),
                             },
-                            &landscape,
+                            &parent_landscape,
                             None,
                         );
                         continue;
