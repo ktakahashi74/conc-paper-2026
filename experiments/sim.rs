@@ -6,7 +6,8 @@ use conchordal::core::landscape::{
 };
 use conchordal::core::log2space::Log2Space;
 use conchordal::core::modulation::{NeuralRhythms, RhythmBand};
-use conchordal::core::roughness_kernel::{KernelParams, RoughnessKernel};
+use conchordal::core::psycho_state::{compute_roughness_reference, r_pot_scan_to_r_state01_scan};
+use conchordal::core::roughness_kernel::{KernelParams, RoughnessKernel, erb_grid};
 use conchordal::core::timebase::Timebase;
 use conchordal::life::articulation_core::{
     AnyArticulationCore, ArticulationState, kuramoto_phase_step,
@@ -612,7 +613,14 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
         .clamp(space.fmin, space.fmax)
         .max((anchor_hz * 2.0f32.powf(-half)).clamp(space.fmin, space.fmax));
 
+    const LANDSCAPE_REFRESH_INTERVAL: usize = 100;
     for step in 0..cfg.steps_cap {
+        // Periodically recompute landscape from all alive agents (includes roughness)
+        if step > 0 && step % LANDSCAPE_REFRESH_INTERVAL == 0 {
+            update_e4_landscape_from_population(
+                &space, &params, &pop, &mut landscape, partials, E4_ENV_PARTIAL_DECAY_DEFAULT,
+            );
+        }
         pop.advance(E3_HOP, E3_FS, step as u64, dt, &landscape);
 
         if step % snapshot_interval == 0 {
@@ -772,29 +780,28 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                             partials,
                             E4_ENV_PARTIAL_DECAY_DEFAULT,
                         );
-                        let min_dist_erb = crowding_sigma_erb_from_hz(
-                            parent_freq,
-                            spec.control.pitch.crowding_sigma_cents,
-                        );
+                        // Sample offspring position from parent's harmonicity profile (±1 oct)
                         let parent_log2 = parent_freq.log2();
-                        let inherit_min = 2.0f32.powf(
-                            (parent_log2 - E6_INHERIT_RADIUS_LOG2).max(min_spawn.log2()),
+                        let sample_min_log2 = (parent_log2 - 1.0).max(min_spawn.log2());
+                        let sample_max_log2 = (parent_log2 + 1.0).min(max_spawn.log2());
+                        let offspring_freq = sample_from_harmonicity(
+                            &parent_landscape,
+                            sample_min_log2,
+                            sample_max_log2,
+                            &mut rng,
                         );
-                        let inherit_max = 2.0f32.powf(
-                            (parent_log2 + E6_INHERIT_RADIUS_LOG2).min(max_spawn.log2()),
-                        );
+                        let spawn_freq = offspring_freq.clamp(min_spawn, max_spawn);
                         pop.apply_action(
                             Action::Spawn {
                                 group_id: E3_GROUP_AGENTS,
                                 ids: vec![id],
                                 spec: spec.clone(),
-                                strategy: Some(SpawnStrategy::ConsonanceDensity {
-                                    min_freq: inherit_min,
-                                    max_freq: inherit_max,
-                                    min_dist_erb,
+                                strategy: Some(SpawnStrategy::RandomLog {
+                                    min_freq: spawn_freq,
+                                    max_freq: spawn_freq,
                                 }),
                             },
-                            &parent_landscape,
+                            &landscape,
                             None,
                         );
                         continue;
@@ -1690,10 +1697,29 @@ fn build_density_landscape_from_freqs(
     landscape.binding_strength = h_dual.metrics.binding_strength;
     landscape.harmonic_tilt = h_dual.metrics.harmonic_tilt;
     landscape.harmonicity_mirror_weight = params.harmonicity_kernel.params.mirror_weight;
-    landscape.roughness.fill(0.0);
-    landscape.roughness01.fill(0.0);
-    landscape.recompute_consonance(params);
+    // Compute roughness from multi-source spectrum
+    compute_roughness_for_landscape(space, params, &mut landscape);
     landscape
+}
+
+fn compute_roughness_for_landscape(
+    space: &Log2Space,
+    params: &LandscapeParams,
+    landscape: &mut Landscape,
+) {
+    let (_erb, du) = erb_grid(space);
+    let (density, _mass) = conchordal::core::psycho_state::normalize_density(
+        &landscape.subjective_intensity, &du, 1e-12,
+    );
+    let (r_pot, _r_total) = params
+        .roughness_kernel
+        .potential_r_from_log2_spectrum_density(&density, space);
+    let r_ref = compute_roughness_reference(params, space);
+    landscape.roughness = r_pot;
+    let mut r01 = vec![0.0f32; space.n_bins()];
+    r_pot_scan_to_r_state01_scan(&landscape.roughness, r_ref.peak, params.roughness_k, &mut r01);
+    landscape.roughness01 = r01;
+    landscape.recompute_consonance(params);
 }
 
 fn build_e6_parent_conditioned_landscape(
@@ -1711,6 +1737,51 @@ fn build_e6_parent_conditioned_landscape(
         env_partials,
         env_partial_decay,
     )
+}
+
+/// Sample a frequency from the landscape's harmonicity01 profile, weighted proportionally.
+/// Returns a frequency in Hz. Falls back to uniform if all weights are zero.
+fn sample_from_harmonicity(
+    landscape: &Landscape,
+    min_log2: f32,
+    max_log2: f32,
+    rng: &mut impl Rng,
+) -> f32 {
+    let space = &landscape.space;
+    let n = space.n_bins();
+    if n == 0 || landscape.harmonicity01.len() != n {
+        return 2.0f32.powf((min_log2 + max_log2) * 0.5);
+    }
+    // Collect bins within range and their H weights
+    let mut indices = Vec::new();
+    let mut weights = Vec::new();
+    for i in 0..n {
+        let log2 = space.centers_log2[i];
+        if log2 >= min_log2 && log2 <= max_log2 {
+            let w = landscape.harmonicity01[i].max(0.0);
+            indices.push(i);
+            weights.push(w);
+        }
+    }
+    if indices.is_empty() {
+        return 2.0f32.powf((min_log2 + max_log2) * 0.5);
+    }
+    let total: f32 = weights.iter().sum();
+    if total <= 0.0 {
+        // Uniform fallback
+        let pick = rng.random_range(0..indices.len());
+        return space.centers_hz[indices[pick]];
+    }
+    // Weighted sampling
+    let r: f32 = rng.random::<f32>() * total;
+    let mut cumulative = 0.0f32;
+    for (j, &w) in weights.iter().enumerate() {
+        cumulative += w;
+        if r <= cumulative {
+            return space.centers_hz[indices[j]];
+        }
+    }
+    space.centers_hz[*indices.last().unwrap()]
 }
 
 fn crowding_sigma_erb_from_hz(freq_hz: f32, sigma_cents: f32) -> f32 {
@@ -1832,10 +1903,7 @@ fn update_e4_landscape_from_population(
     landscape.binding_strength = h_dual.metrics.binding_strength;
     landscape.harmonic_tilt = h_dual.metrics.harmonic_tilt;
     landscape.harmonicity_mirror_weight = params.harmonicity_kernel.params.mirror_weight;
-    landscape.roughness.fill(0.0);
-    landscape.roughness_shape_raw.fill(0.0);
-    landscape.roughness01.fill(0.0);
-    landscape.recompute_consonance(params);
+    compute_roughness_for_landscape(space, params, landscape);
 }
 
 fn init_rhythms(theta_freq_hz: f32) -> NeuralRhythms {
