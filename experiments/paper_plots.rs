@@ -6450,10 +6450,12 @@ fn plot_e6_hereditary_adaptation(
     let mut heat_counts: HashMap<(usize, i32), f32> = HashMap::new();
     let mut hered_seed_last_step: HashMap<u64, usize> = HashMap::new();
     let mut hered_seed_last_bins: HashMap<u64, Vec<i32>> = HashMap::new();
-    let mut final_occ_heredity: Vec<f32> = Vec::new();
-    let mut final_occ_random: Vec<f32> = Vec::new();
-    let mut final_target_dist_heredity: Vec<f32> = Vec::new();
-    let mut final_target_dist_random: Vec<f32> = Vec::new();
+    let mut endpoint_metrics_csv =
+        String::from("condition,seed,anchor_ji_mass,pairwise_ji_score\n");
+    let mut final_anchor_ji_heredity: Vec<f32> = Vec::new();
+    let mut final_anchor_ji_random: Vec<f32> = Vec::new();
+    let mut final_pairwise_ji_heredity: Vec<f32> = Vec::new();
+    let mut final_pairwise_ji_random: Vec<f32> = Vec::new();
 
     for (condition, seed, result) in &all_results {
         let cond_label = condition.label();
@@ -6532,10 +6534,15 @@ fn plot_e6_hereditary_adaptation(
             n_alive: 0,
         });
         let end = run_points.last().copied().unwrap_or(start);
-        let final_target_distance_ct = result
+        let final_anchor_ji_mass = result
             .snapshots
             .last()
-            .map(|snap| e6_mean_target_distance_ct(&snap.freqs_hz, anchor_hz))
+            .map(|snap| e6_anchor_ji_mass(&snap.freqs_hz, anchor_hz))
+            .unwrap_or(0.0);
+        let final_pairwise_ji_score = result
+            .snapshots
+            .last()
+            .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
             .unwrap_or(0.0);
         let mean_n_alive = if run_points.is_empty() {
             0.0
@@ -6544,14 +6551,18 @@ fn plot_e6_hereditary_adaptation(
         };
         match condition {
             E6Condition::Heredity => {
-                final_occ_heredity.push(end.consonant_occupation);
-                final_target_dist_heredity.push(final_target_distance_ct);
+                final_anchor_ji_heredity.push(final_anchor_ji_mass);
+                final_pairwise_ji_heredity.push(final_pairwise_ji_score);
             }
             E6Condition::Random => {
-                final_occ_random.push(end.consonant_occupation);
-                final_target_dist_random.push(final_target_distance_ct);
+                final_anchor_ji_random.push(final_anchor_ji_mass);
+                final_pairwise_ji_random.push(final_pairwise_ji_score);
             }
         }
+        endpoint_metrics_csv.push_str(&format!(
+            "{},{},{:.6},{:.6}\n",
+            cond_label, seed, final_anchor_ji_mass, final_pairwise_ji_score
+        ));
         summary_csv.push_str(&format!(
             "{},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.3}\n",
             cond_label,
@@ -6574,6 +6585,10 @@ fn plot_e6_hereditary_adaptation(
     write_with_log(out_dir.join("paper_e6_deaths_long.csv"), deaths_long_csv)?;
     write_with_log(out_dir.join("paper_e6_snapshots.csv"), snapshots_csv)?;
     write_with_log(out_dir.join("paper_e6_summary.csv"), summary_csv)?;
+    write_with_log(
+        out_dir.join("paper_e6_endpoint_metrics.csv"),
+        endpoint_metrics_csv,
+    )?;
 
     {
         let global_max_step = heat_counts.keys().map(|(s, _)| *s).max().unwrap_or(0);
@@ -6602,10 +6617,10 @@ fn plot_e6_hereditary_adaptation(
         &c_heredity,
         &c_random,
         &heat_counts,
-        &final_occ_heredity,
-        &final_occ_random,
-        &final_target_dist_heredity,
-        &final_target_dist_random,
+        &final_anchor_ji_heredity,
+        &final_anchor_ji_random,
+        &final_pairwise_ji_heredity,
+        &final_pairwise_ji_random,
     )?;
 
     // ── C1: Independent consonance evaluation (JI ratio-complexity metric) ──
@@ -6861,29 +6876,19 @@ fn e6_consonant_occupation(freqs: &[f32], anchor_hz: f32, window_st: f32) -> f32
     }
 }
 
-fn e6_mean_target_distance_ct(freqs_hz: &[f32], anchor_hz: f32) -> f32 {
-    let mut dists_ct: Vec<f32> = Vec::new();
+fn e6_anchor_ji_mass(freqs_hz: &[f32], anchor_hz: f32) -> f32 {
+    let mut scores: Vec<f32> = Vec::new();
     for &freq in freqs_hz {
         if !freq.is_finite() || freq <= 0.0 {
             continue;
         }
-        let st_mod = (12.0 * (freq / anchor_hz).log2()).rem_euclid(12.0);
-        let d_st = E2_CONSONANT_STEPS
-            .iter()
-            .map(|target| {
-                let t_mod = target.rem_euclid(12.0);
-                let d = (st_mod - t_mod).abs();
-                d.min(12.0 - d)
-            })
-            .fold(f32::INFINITY, f32::min);
-        if d_st.is_finite() {
-            dists_ct.push(d_st * 100.0);
-        }
+        let interval_st = 12.0 * (freq / anchor_hz).log2();
+        scores.push(ji_interval_consonance(interval_st));
     }
-    if dists_ct.is_empty() {
+    if scores.is_empty() {
         0.0
     } else {
-        dists_ct.iter().sum::<f32>() / dists_ct.len() as f32
+        scores.iter().sum::<f32>() / scores.len() as f32
     }
 }
 
@@ -6982,10 +6987,10 @@ fn render_e6_figure(
     c_heredity: &[(f32, f32, f32)],
     c_random: &[(f32, f32, f32)],
     heat_counts: &HashMap<(usize, i32), f32>,
-    final_occ_heredity: &[f32],
-    final_occ_random: &[f32],
-    final_target_dist_heredity: &[f32],
-    final_target_dist_random: &[f32],
+    final_anchor_ji_heredity: &[f32],
+    final_anchor_ji_random: &[f32],
+    final_pairwise_ji_heredity: &[f32],
+    final_pairwise_ji_random: &[f32],
 ) -> Result<(), Box<dyn Error>> {
     let root = bitmap_root(out_path, (3720, 935)).into_drawing_area();
     root.fill(&WHITE)?;
@@ -7005,10 +7010,10 @@ fn render_e6_figure(
     draw_e6_heatmap_panel(&left_panels[1], heat_counts)?;
     draw_e6_final_metric_panel(
         &right_panels[0],
-        "C. Consonant occupancy",
-        "occupancy",
-        final_occ_heredity,
-        final_occ_random,
+        "C. Anchor JI mass",
+        "JI mass",
+        final_anchor_ji_heredity,
+        final_anchor_ji_random,
         0.0,
         Some(1.0),
         64,
@@ -7018,12 +7023,12 @@ fn render_e6_figure(
     )?;
     draw_e6_final_metric_panel(
         &right_panels[1],
-        "D. Target dist.",
-        "ct",
-        final_target_dist_heredity,
-        final_target_dist_random,
+        "D. Pairwise JI score",
+        "JI_score",
+        final_pairwise_ji_heredity,
+        final_pairwise_ji_random,
         0.0,
-        None,
+        Some(0.25),
         64,
         48,
         50,
