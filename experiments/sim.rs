@@ -1,5 +1,4 @@
 use conchordal::core::consonance_kernel::{ConsonanceKernel, ConsonanceRepresentationParams};
-use conchordal::core::erb::hz_to_erb;
 use conchordal::core::harmonicity_kernel::{HarmonicityKernel, HarmonicityParams};
 use conchordal::core::landscape::{
     Landscape, LandscapeParams, LandscapeUpdate, RoughnessScalarMode,
@@ -12,8 +11,8 @@ use conchordal::core::timebase::Timebase;
 use conchordal::life::articulation_core::{
     AnyArticulationCore, ArticulationState, kuramoto_phase_step,
 };
-use conchordal::life::control::{AgentControl, PitchCoreKind, PitchMode};
-use conchordal::life::individual::SoundBody;
+use conchordal::life::control::{AgentControl, LeaveSelfOutMode, PitchCoreKind, PitchMode};
+use conchordal::life::individual::{PitchHillClimbPitchCore, SoundBody};
 use conchordal::life::lifecycle::LifecycleConfig;
 use conchordal::life::metabolism_policy::MetabolismPolicy;
 use conchordal::life::population::Population;
@@ -48,10 +47,11 @@ const E3_THETA_FREQ_HZ: f32 = 1.0;
 const E3_METABOLISM_RATE: f32 = 0.5;
 const E2_MATCH_CROWDING_WEIGHT: f32 = 0.15;
 const E4_MATCH_SIGMA_CENTS: f32 = 15.0;
-/// Hereditary spawn radius: offspring placed within ±INHERIT_RADIUS_LOG2 of parent pitch.
-/// ±50 ct (half semitone) gives ConsonanceDensity room to find a consonant position
-/// while keeping offspring in the parent's niche.
-const E6_INHERIT_RADIUS_LOG2: f32 = 15.0 / 1200.0;
+const E2_E6_HILL_NEIGHBOR_STEP_CENTS: f32 = 25.0;
+const E2_E6_HILL_EXPLORATION: f32 = 0.0;
+const E2_E6_HILL_PERSISTENCE: f32 = 0.5;
+const E2_E6_HILL_MOVE_COST_COEFF: f32 = 0.5;
+const E2_E6_HILL_IMPROVEMENT_THRESHOLD: f32 = 0.02;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct E4RuntimeOverrides {
@@ -129,7 +129,6 @@ pub struct E6RunConfig {
     pub pop_size: usize,
     pub first_k: usize,
     pub condition: E6Condition,
-    pub mutation_sigma: f32,
     pub snapshot_interval: usize,
     pub landscape_weight: f32,
     pub shuffle_landscape: bool,
@@ -233,6 +232,55 @@ impl E3LifeState {
         self.pending_birth = true;
         self.was_alive = false;
     }
+}
+
+pub fn configure_shared_hillclimb_control(control: &mut AgentControl, landscape_weight: f32) {
+    control.pitch.mode = PitchMode::Free;
+    control.pitch.core_kind = PitchCoreKind::HillClimb;
+    control.pitch.landscape_weight = landscape_weight;
+    control.pitch.gravity = 0.0;
+    control.pitch.neighbor_step_cents = Some(E2_E6_HILL_NEIGHBOR_STEP_CENTS);
+    control.pitch.exploration = E2_E6_HILL_EXPLORATION;
+    control.pitch.persistence = E2_E6_HILL_PERSISTENCE;
+    control.pitch.crowding_strength = E2_MATCH_CROWDING_WEIGHT;
+    control.pitch.crowding_sigma_cents = E4_MATCH_SIGMA_CENTS;
+    control.pitch.crowding_sigma_from_roughness = false;
+    control.pitch.leave_self_out = true;
+    control.pitch.leave_self_out_mode = LeaveSelfOutMode::ApproxHarmonics;
+    control.pitch.anneal_temp = 0.0;
+    control.pitch.move_cost_coeff = E2_E6_HILL_MOVE_COST_COEFF;
+    control.pitch.improvement_threshold = E2_E6_HILL_IMPROVEMENT_THRESHOLD;
+    control.pitch.global_peak_count = 0;
+    control.pitch.use_ratio_candidates = false;
+    control.pitch.ratio_candidate_count = 0;
+}
+
+pub fn configure_shared_hillclimb_core(core: &mut PitchHillClimbPitchCore, landscape_weight: f32) {
+    core.set_exploration(E2_E6_HILL_EXPLORATION);
+    core.set_persistence(E2_E6_HILL_PERSISTENCE);
+    core.set_move_cost_coeff(E2_E6_HILL_MOVE_COST_COEFF);
+    core.set_improvement_threshold(E2_E6_HILL_IMPROVEMENT_THRESHOLD);
+    core.set_leave_self_out(true);
+    core.set_leave_self_out_mode(LeaveSelfOutMode::ApproxHarmonics);
+    core.set_crowding(E2_MATCH_CROWDING_WEIGHT, E4_MATCH_SIGMA_CENTS, false);
+    core.set_landscape_weight(landscape_weight);
+    core.set_global_peaks(0, 0.0);
+    core.set_ratio_candidates(false, 0);
+}
+
+fn apply_e6_shuffle_permutation(landscape: &mut Landscape, perm: &[usize]) {
+    let apply = |v: &[f32]| -> Vec<f32> { perm.iter().map(|&i| v[i]).collect() };
+    landscape.harmonicity = apply(&landscape.harmonicity);
+    landscape.harmonicity_path_a = apply(&landscape.harmonicity_path_a);
+    landscape.harmonicity_path_b = apply(&landscape.harmonicity_path_b);
+    landscape.harmonicity01 = apply(&landscape.harmonicity01);
+    landscape.roughness = apply(&landscape.roughness);
+    landscape.roughness01 = apply(&landscape.roughness01);
+    landscape.consonance_field_score = apply(&landscape.consonance_field_score);
+    landscape.consonance_field_level = apply(&landscape.consonance_field_level);
+    landscape.consonance_field_energy = apply(&landscape.consonance_field_energy);
+    landscape.consonance_density_mass = apply(&landscape.consonance_density_mass);
+    landscape.consonance_density_pmf = apply(&landscape.consonance_density_pmf);
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -558,18 +606,16 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
     );
     landscape.rhythm = init_rhythms(E3_THETA_FREQ_HZ);
 
-    if cfg.shuffle_landscape {
+    let shuffle_perm: Option<Vec<usize>> = if cfg.shuffle_landscape {
         let mut rng_shuffle = SmallRng::seed_from_u64(cfg.seed ^ 0x5E6F_E6E6);
         let n = landscape.consonance_field_level.len();
         let mut perm: Vec<usize> = (0..n).collect();
         perm.shuffle(&mut rng_shuffle);
-        let apply = |v: &[f32]| -> Vec<f32> { perm.iter().map(|&i| v[i]).collect() };
-        landscape.consonance_field_score = apply(&landscape.consonance_field_score);
-        landscape.consonance_field_level = apply(&landscape.consonance_field_level);
-        landscape.consonance_field_energy = apply(&landscape.consonance_field_energy);
-        landscape.consonance_density_mass = apply(&landscape.consonance_density_mass);
-        landscape.consonance_density_pmf = apply(&landscape.consonance_density_pmf);
-    }
+        apply_e6_shuffle_permutation(&mut landscape, &perm);
+        Some(perm)
+    } else {
+        None
+    };
 
     let mut pop = Population::new(Timebase {
         fs: E3_FS,
@@ -620,6 +666,9 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
             update_e4_landscape_from_population(
                 &space, &params, &pop, &mut landscape, partials, E4_ENV_PARTIAL_DECAY_DEFAULT,
             );
+            if let Some(ref perm) = shuffle_perm {
+                apply_e6_shuffle_permutation(&mut landscape, perm);
+            }
         }
         pop.advance(E3_HOP, E3_FS, step as u64, dt, &landscape);
 
@@ -772,24 +821,18 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                     } else {
                         let parent_idx = rng.random_range(0..alive_parents.len());
                         let parent_freq = alive_parents[parent_idx];
-                        let parent_landscape = build_e6_parent_conditioned_landscape(
+                        let mut parent_landscape = build_e6_parent_harmonicity_landscape(
                             &space,
                             &params,
-                            anchor_hz,
                             parent_freq,
                             partials,
                             E4_ENV_PARTIAL_DECAY_DEFAULT,
                         );
-                        // Sample offspring position from parent's harmonicity profile (±1 oct)
-                        let parent_log2 = parent_freq.log2();
-                        let sample_min_log2 = (parent_log2 - 1.0).max(min_spawn.log2());
-                        let sample_max_log2 = (parent_log2 + 1.0).min(max_spawn.log2());
-                        let offspring_freq = sample_from_harmonicity(
-                            &parent_landscape,
-                            sample_min_log2,
-                            sample_max_log2,
-                            &mut rng,
-                        );
+                        if let Some(ref perm) = shuffle_perm {
+                            apply_e6_shuffle_permutation(&mut parent_landscape, perm);
+                        }
+                        let offspring_freq =
+                            sample_from_parent_harmonicity(&parent_landscape, parent_freq, &mut rng);
                         let spawn_freq = offspring_freq.clamp(min_spawn, max_spawn);
                         pop.apply_action(
                             Action::Spawn {
@@ -1722,10 +1765,9 @@ fn compute_roughness_for_landscape(
     landscape.recompute_consonance(params);
 }
 
-fn build_e6_parent_conditioned_landscape(
+fn build_e6_parent_harmonicity_landscape(
     space: &Log2Space,
     params: &LandscapeParams,
-    anchor_hz: f32,
     parent_freq_hz: f32,
     env_partials: u32,
     env_partial_decay: f32,
@@ -1733,46 +1775,44 @@ fn build_e6_parent_conditioned_landscape(
     build_density_landscape_from_freqs(
         space,
         params,
-        &[anchor_hz, parent_freq_hz],
+        &[parent_freq_hz],
         env_partials,
         env_partial_decay,
     )
 }
 
-/// Sample a frequency from the landscape's harmonicity01 profile, weighted proportionally.
-/// Returns a frequency in Hz. Falls back to uniform if all weights are zero.
-fn sample_from_harmonicity(
-    landscape: &Landscape,
-    min_log2: f32,
-    max_log2: f32,
-    rng: &mut impl Rng,
-) -> f32 {
+/// Sample from the parent's harmonicity profile within the open interval (-1 oct, +1 oct),
+/// excluding unison with the parent. Falls back to uniform under the same constraints.
+fn sample_from_parent_harmonicity(landscape: &Landscape, parent_freq_hz: f32, rng: &mut impl Rng) -> f32 {
     let space = &landscape.space;
     let n = space.n_bins();
+    let parent_log2 = parent_freq_hz.max(1.0).log2();
     if n == 0 || landscape.harmonicity01.len() != n {
-        return 2.0f32.powf((min_log2 + max_log2) * 0.5);
+        return parent_freq_hz;
     }
-    // Collect bins within range and their H weights
+
+    let parent_idx = space
+        .index_of_log2(parent_log2)
+        .unwrap_or_else(|| space.nearest_index(parent_freq_hz));
     let mut indices = Vec::new();
     let mut weights = Vec::new();
     for i in 0..n {
         let log2 = space.centers_log2[i];
-        if log2 >= min_log2 && log2 <= max_log2 {
-            let w = landscape.harmonicity01[i].max(0.0);
-            indices.push(i);
-            weights.push(w);
+        let delta_oct = log2 - parent_log2;
+        if delta_oct <= -1.0 || delta_oct >= 1.0 || i == parent_idx {
+            continue;
         }
+        let w = landscape.harmonicity01[i].max(0.0);
+        indices.push(i);
+        weights.push(w);
     }
     if indices.is_empty() {
-        return 2.0f32.powf((min_log2 + max_log2) * 0.5);
+        return sample_uniform_parent_interval(space, parent_log2, parent_idx, rng);
     }
     let total: f32 = weights.iter().sum();
     if total <= 0.0 {
-        // Uniform fallback
-        let pick = rng.random_range(0..indices.len());
-        return space.centers_hz[indices[pick]];
+        return sample_uniform_parent_interval(space, parent_log2, parent_idx, rng);
     }
-    // Weighted sampling
     let r: f32 = rng.random::<f32>() * total;
     let mut cumulative = 0.0f32;
     for (j, &w) in weights.iter().enumerate() {
@@ -1784,11 +1824,30 @@ fn sample_from_harmonicity(
     space.centers_hz[*indices.last().unwrap()]
 }
 
-fn crowding_sigma_erb_from_hz(freq_hz: f32, sigma_cents: f32) -> f32 {
-    let sigma_log2 = (sigma_cents.max(1e-3)) / 1200.0;
-    let base_hz = freq_hz.max(1e-6);
-    let plus_hz = base_hz * 2.0f32.powf(sigma_log2);
-    (hz_to_erb(plus_hz) - hz_to_erb(base_hz)).abs().max(1e-6)
+fn sample_uniform_parent_interval(
+    space: &Log2Space,
+    parent_log2: f32,
+    parent_idx: usize,
+    rng: &mut impl Rng,
+) -> f32 {
+    let indices: Vec<usize> = space
+        .centers_log2
+        .iter()
+        .enumerate()
+        .filter_map(|(i, &log2)| {
+            let delta_oct = log2 - parent_log2;
+            if delta_oct <= -1.0 || delta_oct >= 1.0 || i == parent_idx {
+                None
+            } else {
+                Some(i)
+            }
+        })
+        .collect();
+    if indices.is_empty() {
+        return parent_log2.exp2();
+    }
+    let pick = rng.random_range(0..indices.len());
+    space.centers_hz[indices[pick]]
 }
 
 fn init_e4_rhythms(cfg: &E4SimConfig) -> NeuralRhythms {
@@ -1927,33 +1986,14 @@ fn init_rhythms(theta_freq_hz: f32) -> NeuralRhythms {
     }
 }
 
-fn sample_normal_zero_mean<R: Rng + ?Sized>(rng: &mut R, sigma: f32) -> f32 {
-    if !sigma.is_finite() || sigma <= 0.0 {
-        return 0.0;
-    }
-    let u1 = rng.random::<f32>().clamp(f32::MIN_POSITIVE, 1.0);
-    let u2 = rng.random::<f32>();
-    let z0 = (-2.0 * u1.ln()).sqrt() * (std::f32::consts::TAU * u2).cos();
-    z0 * sigma
-}
-
 /// Spawn spec for E6: HillClimb with configurable landscape_weight.
 /// When landscape_weight=0 agents move via density-based repulsion only,
 /// isolating hereditary selection as the sole source of consonance improvement.
 fn e6_spawn_spec(anchor_hz: f32, landscape_weight: f32) -> SpawnSpec {
     let mut control = AgentControl::default();
-    control.pitch.mode = PitchMode::Free;
-    control.pitch.core_kind = PitchCoreKind::HillClimb;
+    configure_shared_hillclimb_control(&mut control, landscape_weight);
     control.pitch.freq = anchor_hz.max(1.0);
     control.pitch.range_oct = E3_RANGE_OCT;
-    control.pitch.landscape_weight = landscape_weight;
-    control.pitch.gravity = 0.0; // no tessitura pull
-    control.pitch.exploration = 0.5;
-    control.pitch.persistence = 0.5;
-    control.pitch.crowding_strength = E2_MATCH_CROWDING_WEIGHT;
-    control.pitch.crowding_sigma_cents = E4_MATCH_SIGMA_CENTS;
-    control.pitch.crowding_sigma_from_roughness = false;
-    control.pitch.sigma_cents = Some(E4_MATCH_SIGMA_CENTS);
     // perceptual repulsion: enabled=true (default), novelty_bias=1.0 (default)
     control.phonation.spec = PhonationSpec::default();
 
@@ -2369,11 +2409,40 @@ mod tests {
     fn e6_spawn_spec_uses_e2_crowding_and_e4_sigma() {
         let spec = e6_spawn_spec(E4_ANCHOR_HZ, 0.5);
         let pitch = spec.control.pitch;
-        assert_eq!(pitch.core_kind, PitchCoreKind::PeakSampler);
+        assert_eq!(pitch.core_kind, PitchCoreKind::HillClimb);
+        assert_eq!(pitch.neighbor_step_cents, Some(E2_E6_HILL_NEIGHBOR_STEP_CENTS));
+        assert!((pitch.exploration - E2_E6_HILL_EXPLORATION).abs() <= 1e-6);
+        assert!((pitch.persistence - E2_E6_HILL_PERSISTENCE).abs() <= 1e-6);
+        assert!((pitch.move_cost_coeff - E2_E6_HILL_MOVE_COST_COEFF).abs() <= 1e-6);
+        assert!((pitch.improvement_threshold - E2_E6_HILL_IMPROVEMENT_THRESHOLD).abs() <= 1e-6);
         assert!((pitch.crowding_strength - E2_MATCH_CROWDING_WEIGHT).abs() <= 1e-6);
         assert!((pitch.crowding_sigma_cents - E4_MATCH_SIGMA_CENTS).abs() <= 1e-6);
         assert!(!pitch.crowding_sigma_from_roughness);
-        assert_eq!(pitch.sigma_cents, Some(E4_MATCH_SIGMA_CENTS));
+        assert!(pitch.leave_self_out);
+        assert_eq!(pitch.leave_self_out_mode, LeaveSelfOutMode::ApproxHarmonics);
+        assert_eq!(pitch.global_peak_count, 0);
+        assert_eq!(pitch.ratio_candidate_count, 0);
+    }
+
+    #[test]
+    fn parent_harmonicity_sampler_excludes_unison_and_exact_octaves() {
+        let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
+        let params = make_landscape_params(&space, E3_FS, 1.0);
+        let parent_freq = 220.0f32;
+        let landscape = build_e6_parent_harmonicity_landscape(
+            &space,
+            &params,
+            parent_freq,
+            E4_ENV_PARTIALS_DEFAULT,
+            E4_ENV_PARTIAL_DECAY_DEFAULT,
+        );
+        let mut rng = SmallRng::seed_from_u64(0xE6AA_55CC);
+        for _ in 0..128 {
+            let freq = sample_from_parent_harmonicity(&landscape, parent_freq, &mut rng);
+            let delta_oct = (freq / parent_freq).log2();
+            assert!(delta_oct > -1.0 && delta_oct < 1.0, "sample escaped open octave interval");
+            assert!(delta_oct.abs() > 1e-6, "unison must be excluded");
+        }
     }
 
     #[test]

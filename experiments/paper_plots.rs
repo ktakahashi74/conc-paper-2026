@@ -15,7 +15,8 @@ use plotters::prelude::*;
 
 use crate::sim::{
     E3Condition, E3DeathRecord, E3RunConfig, E4_ANCHOR_HZ, E4RuntimeOverrides, E4TailSamples,
-    E6AgentSnapshot, E6Condition, E6PitchSnapshot, E6RunConfig, E6RunResult, e3_policy_params,
+    E6AgentSnapshot, E6Condition, E6PitchSnapshot, E6RunConfig, E6RunResult,
+    configure_shared_hillclimb_core, e3_policy_params,
     e3_reference_landscape, e3_reference_landscape_with_partials, e4_paper_meta,
     run_e3_collect_deaths, run_e4_condition_tail_samples, run_e4_condition_tail_samples_with_wr,
     run_e4_mirror_schedule_samples, run_e6, set_e4_runtime_overrides,
@@ -31,8 +32,7 @@ use conchordal::core::roughness_kernel::{
     KernelParams, RoughnessKernel, crowding_runtime_delta_erb, erb_grid, eval_kernel_delta_erb,
 };
 use conchordal::life::articulation_core::kuramoto_phase_step;
-use conchordal::life::adaptation::{AdaptationConfig, AdaptationContext, FeaturesNow};
-use conchordal::life::individual::{PitchCore, PitchHillClimbPitchCore, TargetProposal};
+use conchordal::life::individual::PitchHillClimbPitchCore;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -61,8 +61,6 @@ const E2_C_LEVEL_THETA: f32 = 0.0;
 const E2_ACCEPT_ENABLED: bool = true;
 const E2_ACCEPT_T0: f32 = 0.05;
 const E2_ACCEPT_TAU_STEPS: f32 = 30.0;
-const E2_PROPOSAL_GLOBAL_PEAKS: usize = 0;
-const E2_PROPOSAL_GLOBAL_MIN_SEP_CENTS: f32 = 20.0;
 const E2_ACCEPT_RESET_ON_PHASE: bool = true;
 const E2_SCORE_IMPROVE_EPS: f32 = 1e-4;
 const E2_ANTI_BACKTRACK_ENABLED: bool = true;
@@ -362,7 +360,6 @@ const E6_FIRST_K: usize = 20;
 const E6_POP_SIZE: usize = 32;
 const E6_MIN_DEATHS: usize = 4000;
 const E6_STEPS_CAP: usize = 50_000;
-const E6_MUTATION_SIGMA: f32 = 0.003;
 const E6_HILL_LANDSCAPE_WEIGHT: f32 = 1.0;
 const E6_SNAPSHOT_INTERVAL: usize = 100;
 const E6_FIG_X_MAX: f32 = 50_000.0;
@@ -4213,7 +4210,7 @@ fn run_e2_once_cfg(
         let positions_before_update = agent_indices.clone();
         let stats = match condition {
             E2Condition::Baseline => {
-                update_e2_sweep_builtin_scoring(
+                update_e2_sweep_pitch_core_proposal(
                     E2_UPDATE_SCHEDULE,
                     &mut agent_indices,
                     &positions_before_update,
@@ -4222,8 +4219,25 @@ fn run_e2_once_cfg(
                     landscape
                         .as_ref()
                         .expect("proposal landscape missing for baseline"),
+                    &workspace,
+                    &env_scan,
+                    &density_scan,
+                    &du_scan,
+                    &erb_scan,
                     &log2_ratio_scan,
+                    min_idx,
+                    max_idx,
+                    score_sign,
+                    E2_CROWDING_WEIGHT,
+                    &kernel_params,
+                    temperature,
                     sweep,
+                    block_backtrack,
+                    if block_backtrack {
+                        Some(backtrack_targets.as_slice())
+                    } else {
+                        None
+                    },
                     &mut rng,
                 )
             }
@@ -6402,7 +6416,6 @@ fn plot_e6_hereditary_adaptation(
                         pop_size: E6_POP_SIZE,
                         first_k: E6_FIRST_K,
                         condition,
-                        mutation_sigma: E6_MUTATION_SIGMA,
                         snapshot_interval: E6_SNAPSHOT_INTERVAL,
                         landscape_weight: 0.0,
                         shuffle_landscape: false,
@@ -7452,7 +7465,6 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
                                 pop_size: E6_POP_SIZE,
                                 first_k: E6_FIRST_K,
                                 condition: cond.condition,
-                                mutation_sigma: E6_MUTATION_SIGMA,
                                 snapshot_interval: E6_SNAPSHOT_INTERVAL,
                                 landscape_weight: cond.landscape_weight,
                                 shuffle_landscape: cond.shuffle_landscape,
@@ -7750,7 +7762,6 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
                         pop_size: E6_POP_SIZE,
                         first_k: E6_FIRST_K,
                         condition,
-                        mutation_sigma: E6_MUTATION_SIGMA,
                         snapshot_interval: E6_SNAPSHOT_INTERVAL,
                         landscape_weight: lw,
                         shuffle_landscape: false,
@@ -29915,7 +29926,6 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
                 pop_size: AUDIO_E6_POP_SIZE,
                 first_k: E6_FIRST_K,
                 condition: cond.condition,
-                mutation_sigma: E6_MUTATION_SIGMA,
                 snapshot_interval: E6_SNAPSHOT_INTERVAL,
                 landscape_weight: cond.landscape_weight,
                 shuffle_landscape: false,
@@ -30423,162 +30433,15 @@ fn build_e2_pitch_cores(
         let mut core = PitchHillClimbPitchCore::new(
             step_semitones * 100.0,
             space.centers_hz[idx].log2(),
-            0.1,
             0.0,
+            0.02,
             0.0,
-            0.0,
+            0.5,
         );
-        core.set_global_peaks(E2_PROPOSAL_GLOBAL_PEAKS, E2_PROPOSAL_GLOBAL_MIN_SEP_CENTS);
-        core.set_ratio_candidates(false, 0);
-        core.set_move_cost_coeff(0.0);
-        core.set_improvement_threshold(0.0);
-        core.set_leave_self_out(true);
-        core.set_crowding(E2_CROWDING_WEIGHT, 60.0, true);
-        core.set_landscape_weight(1.0);
+        configure_shared_hillclimb_core(&mut core, 1.0);
         pitch_cores.push(core);
     }
     pitch_cores
-}
-
-fn e2_propose_target_builtin(
-    pitch_core: &mut PitchHillClimbPitchCore,
-    landscape: &Landscape,
-    current_pitch_log2: f32,
-    neighbor_pitch_log2: &[f32],
-    rng: &mut impl Rng,
-) -> TargetProposal {
-    let adaptation =
-        AdaptationContext::from_config(&AdaptationConfig::default(), landscape.space.n_bins());
-    let features = FeaturesNow::from_subjective_intensity(&landscape.subjective_intensity);
-    pitch_core.propose_target(
-        current_pitch_log2,
-        current_pitch_log2,
-        2.0f32.powf(current_pitch_log2),
-        0.0, // integration_window (no move cost)
-        landscape,
-        &adaptation,
-        &features,
-        neighbor_pitch_log2,
-        rng,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn update_e2_sweep_builtin_scoring(
-    schedule: E2UpdateSchedule,
-    indices: &mut [usize],
-    prev_indices: &[usize],
-    pitch_cores: &mut [PitchHillClimbPitchCore],
-    space: &Log2Space,
-    landscape: &Landscape,
-    log2_ratio_scan: &[f32],
-    sweep: usize,
-    rng: &mut StdRng,
-) -> UpdateStats {
-    if indices.is_empty() {
-        return UpdateStats {
-            mean_c_score_current_loo: 0.0,
-            mean_c_score_chosen_loo: 0.0,
-            mean_score: 0.0,
-            mean_crowding: 0.0,
-            moved_frac: 0.0,
-            accepted_worse_frac: 0.0,
-            attempted_update_frac: 0.0,
-            moved_given_attempt_frac: 0.0,
-            mean_abs_delta_semitones: 0.0,
-            mean_abs_delta_semitones_moved: 0.0,
-        };
-    }
-
-    debug_assert_eq!(indices.len(), pitch_cores.len());
-    let mut order: Vec<usize> = (0..indices.len()).collect();
-    if matches!(schedule, E2UpdateSchedule::RandomSingle) {
-        order.shuffle(rng);
-    }
-    let u_move_by_agent: Vec<f32> = if matches!(schedule, E2UpdateSchedule::Lazy) {
-        (0..indices.len()).map(|_| rng.random::<f32>()).collect()
-    } else {
-        vec![0.0; indices.len()]
-    };
-
-    let mut abs_delta_sum = 0.0f32;
-    let mut abs_delta_moved_sum = 0.0f32;
-    let mut attempt_count = 0usize;
-    let mut moved_count = 0usize;
-
-    for &agent_i in &order {
-        let update_allowed = match schedule {
-            E2UpdateSchedule::Checkerboard => (agent_i + sweep).is_multiple_of(2),
-            E2UpdateSchedule::Lazy => u_move_by_agent[agent_i] < E2_LAZY_MOVE_PROB.clamp(0.0, 1.0),
-            E2UpdateSchedule::RandomSingle => true,
-        };
-        if !update_allowed {
-            continue;
-        }
-        attempt_count += 1;
-
-        let agent_idx = prev_indices[agent_i];
-        let current_pitch_log2 = space.centers_hz[agent_idx].log2();
-
-        let neighbor_pitch_log2: Vec<f32> = prev_indices
-            .iter()
-            .enumerate()
-            .filter_map(|(j, &idx)| {
-                if j == agent_i {
-                    None
-                } else {
-                    Some(space.centers_hz[idx].log2())
-                }
-            })
-            .collect();
-
-        let proposal = e2_propose_target_builtin(
-            &mut pitch_cores[agent_i],
-            landscape,
-            current_pitch_log2,
-            &neighbor_pitch_log2,
-            rng,
-        );
-
-        let proposed_idx = space
-            .index_of_log2(proposal.target_pitch_log2)
-            .unwrap_or_else(|| space.nearest_index(2.0_f32.powf(proposal.target_pitch_log2)));
-
-        if proposed_idx != agent_idx {
-            indices[agent_i] = proposed_idx;
-            moved_count += 1;
-            let delta_semitones =
-                12.0 * (log2_ratio_scan[proposed_idx] - log2_ratio_scan[agent_idx]);
-            abs_delta_sum += delta_semitones.abs();
-            abs_delta_moved_sum += delta_semitones.abs();
-        } else {
-            let delta_semitones =
-                12.0 * (log2_ratio_scan[proposed_idx] - log2_ratio_scan[agent_idx]);
-            abs_delta_sum += delta_semitones.abs();
-        }
-    }
-
-    let n = indices.len() as f32;
-    UpdateStats {
-        mean_c_score_current_loo: 0.0,
-        mean_c_score_chosen_loo: 0.0,
-        mean_score: 0.0,
-        mean_crowding: 0.0,
-        moved_frac: moved_count as f32 / n,
-        accepted_worse_frac: 0.0,
-        attempted_update_frac: attempt_count as f32 / n,
-        moved_given_attempt_frac: if attempt_count > 0 {
-            moved_count as f32 / attempt_count as f32
-        } else {
-            0.0
-        },
-        mean_abs_delta_semitones: abs_delta_sum / n,
-        mean_abs_delta_semitones_moved: if moved_count > 0 {
-            abs_delta_moved_sum / moved_count as f32
-        } else {
-            0.0
-        },
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
