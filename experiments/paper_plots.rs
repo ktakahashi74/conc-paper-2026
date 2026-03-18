@@ -23723,6 +23723,8 @@ fn draw_e2_timeseries_controls_panel(
         .configure_mesh()
         .x_desc("step")
         .y_desc("mean LOO C_score")
+        .x_labels(9)
+        .x_label_formatter(&|v| format!("{}", v.round() as i64))
         .label_style(("sans-serif", 28).into_font())
         .axis_desc_style(("sans-serif", 28).into_font())
         .draw()?;
@@ -23855,6 +23857,8 @@ fn draw_e2_timeseries_pair_panel(
         .configure_mesh()
         .x_desc("step")
         .y_desc(y_desc)
+        .x_labels(9)
+        .x_label_formatter(&|v| format!("{}", v.round() as i64))
         .label_style(("sans-serif", 20).into_font())
         .axis_desc_style(("sans-serif", 24).into_font())
         .draw()?;
@@ -23958,6 +23962,8 @@ fn draw_trajectory_panel(
         .configure_mesh()
         .x_desc("step")
         .y_desc("cents")
+        .x_labels(9)
+        .x_label_formatter(&|v| format!("{}", v.round() as i64))
         .y_labels(5)
         .y_label_formatter(&|v| format!("{}", *v as i32))
         .label_style(("sans-serif", 20).into_font())
@@ -29638,8 +29644,6 @@ const AUDIO_E6_STEP_SEC: f32 = 0.24;
 const AUDIO_E6_POP_SIZE: usize = 6;
 /// How many E6 snapshots to replay per segment (last N of run)
 const AUDIO_E6_TAIL_SNAPSHOTS: usize = 45;
-const AUDIO_E6_FIXED_DRONE_HZ: f32 = E4_ANCHOR_HZ;
-const AUDIO_E6_FIXED_DRONE_AMP: f32 = 0.035;
 const AUDIO_E6_AGENT_AMP: f32 = 0.012;
 const AUDIO_E6_AGENT_PARTIALS: usize = 3;
 const AUDIO_E6_AGENT_BRIGHTNESS: f32 = 0.15;
@@ -29648,13 +29652,6 @@ const AUDIO_E6_AGENT_ATTACK_SEC: f32 = 0.04;
 const AUDIO_E6_AGENT_DECAY_SEC: f32 = 0.35;
 const AUDIO_E6_AGENT_SUSTAIN_LEVEL: f32 = 0.50;
 const AUDIO_E6_AGENT_RELEASE_SEC: f32 = 0.20;
-const AUDIO_E6_ANCHOR_PARTIALS: usize = 4;
-const AUDIO_E6_ANCHOR_BRIGHTNESS: f32 = 0.24;
-const AUDIO_E6_ANCHOR_SUSTAIN_DRIVE: f32 = 0.001;
-const AUDIO_E6_ANCHOR_ATTACK_SEC: f32 = 0.04;
-const AUDIO_E6_ANCHOR_DECAY_SEC: f32 = 0.35;
-const AUDIO_E6_ANCHOR_SUSTAIN_LEVEL: f32 = 0.50;
-const AUDIO_E6_ANCHOR_RELEASE_SEC: f32 = 0.5;
 
 /// Header for generated Rhai replay scripts.
 fn rhai_replay_header(title: &str, detail: &str) -> String {
@@ -29846,23 +29843,6 @@ fn rhai_e6_segment(
         s.push_str("    wait(1.0);\n});\n");
         return s;
     }
-    s.push_str(
-        &format!(
-            "    let e6_anchor = derive(harmonic)\n        .brain(\"drone\")\n        .pitch_mode(\"lock\")\n        .amp({:.3})\n        .modes(harmonic_modes().count({}))\n        .brightness({:.3})\n        .sustain_drive({:.3})\n        .pitch_smooth(0.01)\n        .adsr({:.3}, {:.3}, {:.3}, {:.3});\n",
-            AUDIO_E6_FIXED_DRONE_AMP,
-            AUDIO_E6_ANCHOR_PARTIALS,
-            AUDIO_E6_ANCHOR_BRIGHTNESS,
-            AUDIO_E6_ANCHOR_SUSTAIN_DRIVE,
-            AUDIO_E6_ANCHOR_ATTACK_SEC,
-            AUDIO_E6_ANCHOR_DECAY_SEC,
-            AUDIO_E6_ANCHOR_SUSTAIN_LEVEL,
-            AUDIO_E6_ANCHOR_RELEASE_SEC
-        ),
-    );
-    s.push_str(&format!(
-        "    let anchor = create(e6_anchor, 1).freq({:.2}).amp({:.3});\n",
-        AUDIO_E6_FIXED_DRONE_HZ, AUDIO_E6_FIXED_DRONE_AMP
-    ));
     s.push_str(&format!(
         "    let e6_voice = derive(harmonic)\n        .brain(\"drone\")\n        .pitch_mode(\"lock\")\n        .amp({:.3})\n        .modes(harmonic_modes().count({}))\n        .brightness({:.3})\n        .sustain_drive({:.3})\n        .pitch_smooth(0.08)\n        .adsr({:.3}, {:.3}, {:.3}, {:.3});\n",
         AUDIO_E6_AGENT_AMP,
@@ -29925,10 +29905,9 @@ fn rhai_e6_segment(
         active_freqs = current_freqs;
     }
 
-    let final_release_wait = AUDIO_E6_AGENT_RELEASE_SEC.max(AUDIO_E6_ANCHOR_RELEASE_SEC);
+    let final_release_wait = AUDIO_E6_AGENT_RELEASE_SEC;
     s.push_str(&format!("    wait({step_sec:.3});\n"));
     s.push_str("    // terminal_release\n");
-    s.push_str("    release(anchor);\n");
     for life_id in active_freqs.keys() {
         s.push_str(&format!("    release(l{life_id});\n"));
     }
@@ -30376,7 +30355,6 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             "// per-life agent replay from a {}-agent population, tail {} snapshots per segment\n\
              // snapshot_interval={} steps, replay_step_sec={:.3}\n\
              // each life uses harmonic ADSR atk={:.2}s dec={:.2}s sus={:.2} rel={:.2}s\n\
-             // fixed sine drone at {:.1} Hz for listening reference\n\
              //\n\
              // 8 segments: 4 conditions x 2 seeds, ordered from most integrated to random within each seed\n\
              //   both      : heredity + landscape_weight={:.1}\n\
@@ -30394,7 +30372,6 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             AUDIO_E6_AGENT_DECAY_SEC,
             AUDIO_E6_AGENT_SUSTAIN_LEVEL,
             AUDIO_E6_AGENT_RELEASE_SEC,
-            AUDIO_E6_FIXED_DRONE_HZ,
             E6_HILL_LANDSCAPE_WEIGHT,
             E6_HILL_LANDSCAPE_WEIGHT,
             E6_SEEDS[0],

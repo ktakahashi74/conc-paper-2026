@@ -1,4 +1,5 @@
 use conchordal::core::consonance_kernel::{ConsonanceKernel, ConsonanceRepresentationParams};
+use conchordal::core::erb::hz_to_erb;
 use conchordal::core::harmonicity_kernel::{HarmonicityKernel, HarmonicityParams};
 use conchordal::core::landscape::{
     Landscape, LandscapeParams, LandscapeUpdate, RoughnessScalarMode,
@@ -843,6 +844,7 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                         let offspring_freq = sample_from_parent_harmonicity(
                             &parent_landscape,
                             parent_freq,
+                            spec.control.pitch.crowding_sigma_cents,
                             &mut rng,
                         );
                         let spawn_freq = offspring_freq.clamp(min_spawn, max_spawn);
@@ -1800,77 +1802,87 @@ fn build_e6_parent_harmonicity_landscape(
     )
 }
 
-/// Sample from the parent's harmonicity profile within the open interval (-1 oct, +1 oct),
-/// excluding unison with the parent. Falls back to uniform under the same constraints.
+const E6_HEREDITY_PARENT_WINDOW_SIGMA_OCT: f32 = 0.30;
+
+fn parent_window_and_notch_weights(
+    space: &Log2Space,
+    parent_freq_hz: f32,
+    crowding_sigma_cents: f32,
+) -> Vec<f32> {
+    let parent_hz = parent_freq_hz.max(1e-6);
+    let parent_log2 = parent_hz.log2();
+    let parent_erb = hz_to_erb(parent_hz);
+    let window_sigma_oct = E6_HEREDITY_PARENT_WINDOW_SIGMA_OCT.max(1e-6);
+    let notch_sigma_erb = crowding_sigma_erb_from_hz(parent_hz, crowding_sigma_cents).max(1e-6);
+    space
+        .centers_hz
+        .iter()
+        .zip(space.centers_log2.iter())
+        .map(|(&candidate_hz, &candidate_log2)| {
+            let delta_oct = candidate_log2 - parent_log2;
+            let window = (-0.5 * (delta_oct / window_sigma_oct).powi(2)).exp();
+            let delta_erb = hz_to_erb(candidate_hz.max(1e-6)) - parent_erb;
+            let notch = 1.0 - (-0.5 * (delta_erb / notch_sigma_erb).powi(2)).exp();
+            window * notch.max(0.0)
+        })
+        .collect()
+}
+
+fn sample_from_weight_scan(
+    space: &Log2Space,
+    weights: &[f32],
+    rng: &mut impl Rng,
+    fallback_hz: f32,
+) -> f32 {
+    if weights.len() != space.n_bins() || weights.is_empty() {
+        return fallback_hz;
+    }
+    let total: f32 = weights.iter().copied().filter(|w| w.is_finite()).sum();
+    if total <= 0.0 {
+        return fallback_hz;
+    }
+    let target = rng.random::<f32>() * total;
+    let mut cumulative = 0.0f32;
+    for (idx, &weight) in weights.iter().enumerate() {
+        let w = weight.max(0.0);
+        cumulative += w;
+        if target <= cumulative {
+            return space.centers_hz[idx];
+        }
+    }
+    space.centers_hz[space.n_bins() - 1]
+}
+
+/// Sample from the parent's harmonicity profile, localized by a parent-centered Gaussian
+/// and a parent-specific crowding notch. Falls back to the same local window without H weights.
 fn sample_from_parent_harmonicity(
     landscape: &Landscape,
     parent_freq_hz: f32,
+    crowding_sigma_cents: f32,
     rng: &mut impl Rng,
 ) -> f32 {
     let space = &landscape.space;
     let n = space.n_bins();
-    let parent_log2 = parent_freq_hz.max(1.0).log2();
     if n == 0 || landscape.harmonicity01.len() != n {
         return parent_freq_hz;
     }
 
-    let parent_idx = space
-        .index_of_log2(parent_log2)
-        .unwrap_or_else(|| space.nearest_index(parent_freq_hz));
-    let mut indices = Vec::new();
-    let mut weights = Vec::new();
-    for i in 0..n {
-        let log2 = space.centers_log2[i];
-        let delta_oct = log2 - parent_log2;
-        if delta_oct <= -1.0 || delta_oct >= 1.0 || i == parent_idx {
-            continue;
-        }
-        let w = landscape.harmonicity01[i].max(0.0);
-        indices.push(i);
-        weights.push(w);
+    let local_weights =
+        parent_window_and_notch_weights(space, parent_freq_hz, crowding_sigma_cents);
+    let mut weights = Vec::with_capacity(n);
+    for (idx, &local_weight) in local_weights.iter().enumerate() {
+        let h = landscape.harmonicity01[idx].max(0.0);
+        weights.push(h * local_weight);
     }
-    if indices.is_empty() {
-        return sample_uniform_parent_interval(space, parent_log2, parent_idx, rng);
-    }
-    let total: f32 = weights.iter().sum();
-    if total <= 0.0 {
-        return sample_uniform_parent_interval(space, parent_log2, parent_idx, rng);
-    }
-    let r: f32 = rng.random::<f32>() * total;
-    let mut cumulative = 0.0f32;
-    for (j, &w) in weights.iter().enumerate() {
-        cumulative += w;
-        if r <= cumulative {
-            return space.centers_hz[indices[j]];
-        }
-    }
-    space.centers_hz[*indices.last().unwrap()]
+    let fallback = sample_from_weight_scan(space, &local_weights, rng, parent_freq_hz);
+    sample_from_weight_scan(space, &weights, rng, fallback)
 }
 
-fn sample_uniform_parent_interval(
-    space: &Log2Space,
-    parent_log2: f32,
-    parent_idx: usize,
-    rng: &mut impl Rng,
-) -> f32 {
-    let indices: Vec<usize> = space
-        .centers_log2
-        .iter()
-        .enumerate()
-        .filter_map(|(i, &log2)| {
-            let delta_oct = log2 - parent_log2;
-            if delta_oct <= -1.0 || delta_oct >= 1.0 || i == parent_idx {
-                None
-            } else {
-                Some(i)
-            }
-        })
-        .collect();
-    if indices.is_empty() {
-        return parent_log2.exp2();
-    }
-    let pick = rng.random_range(0..indices.len());
-    space.centers_hz[indices[pick]]
+fn crowding_sigma_erb_from_hz(freq_hz: f32, sigma_cents: f32) -> f32 {
+    let sigma_log2 = (sigma_cents.max(1e-3)) / 1200.0;
+    let base_hz = freq_hz.max(1e-6);
+    let plus_hz = base_hz * 2.0f32.powf(sigma_log2);
+    (hz_to_erb(plus_hz) - hz_to_erb(base_hz)).abs().max(1e-6)
 }
 
 fn init_e4_rhythms(cfg: &E4SimConfig) -> NeuralRhythms {
@@ -2017,7 +2029,6 @@ fn e6_spawn_spec(anchor_hz: f32, landscape_weight: f32) -> SpawnSpec {
     configure_shared_hillclimb_control(&mut control, landscape_weight);
     control.pitch.freq = anchor_hz.max(1.0);
     control.pitch.range_oct = E3_RANGE_OCT;
-    // perceptual repulsion: enabled=true (default), novelty_bias=1.0 (default)
     control.phonation.spec = PhonationSpec::default();
 
     let lifecycle = e3_lifecycle(E3Condition::Baseline);
@@ -2449,27 +2460,47 @@ mod tests {
     }
 
     #[test]
-    fn parent_harmonicity_sampler_excludes_unison_and_exact_octaves() {
+    fn parent_harmonicity_sampler_uses_local_window_and_parent_notch() {
         let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
         let params = make_landscape_params(&space, E3_FS, 1.0);
         let parent_freq = 220.0f32;
-        let landscape = build_e6_parent_harmonicity_landscape(
+        let mut landscape = build_e6_parent_harmonicity_landscape(
             &space,
             &params,
             parent_freq,
             E4_ENV_PARTIALS_DEFAULT,
             E4_ENV_PARTIAL_DECAY_DEFAULT,
         );
+        landscape.harmonicity01.fill(1.0);
+        let weights = parent_window_and_notch_weights(&space, parent_freq, E4_MATCH_SIGMA_CENTS);
+        let parent_idx = space.nearest_index(parent_freq);
+        let notch_escape_idx = space.nearest_index(parent_freq * 2.0f32.powf(0.03));
+        let near_idx = space.nearest_index(parent_freq * 2.0f32.powf(0.10));
+        let far_idx = space.nearest_index(parent_freq * 2.0f32.powf(0.80));
+        assert!(
+            weights[parent_idx] < weights[notch_escape_idx],
+            "parent notch should suppress the immediate parent vicinity"
+        );
+        assert!(
+            weights[near_idx] > weights[far_idx],
+            "gaussian window should prefer nearer bins over far bins"
+        );
         let mut rng = SmallRng::seed_from_u64(0xE6AA_55CC);
+        let mut mean_abs_delta_oct = 0.0f32;
         for _ in 0..128 {
-            let freq = sample_from_parent_harmonicity(&landscape, parent_freq, &mut rng);
-            let delta_oct = (freq / parent_freq).log2();
-            assert!(
-                delta_oct > -1.0 && delta_oct < 1.0,
-                "sample escaped open octave interval"
+            let freq = sample_from_parent_harmonicity(
+                &landscape,
+                parent_freq,
+                E4_MATCH_SIGMA_CENTS,
+                &mut rng,
             );
-            assert!(delta_oct.abs() > 1e-6, "unison must be excluded");
+            mean_abs_delta_oct += (freq / parent_freq).log2().abs();
         }
+        mean_abs_delta_oct /= 128.0;
+        assert!(
+            mean_abs_delta_oct < 0.40,
+            "gaussian window should keep hereditary respawns local on average"
+        );
     }
 
     #[test]
