@@ -1337,6 +1337,10 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
         postprocess_integration_wav_default()?;
         return Ok(());
     }
+    if args.iter().any(|arg| arg == "--postprocess-polyphony") {
+        postprocess_polyphony_wav_default()?;
+        return Ok(());
+    }
 
     let e4_hist_enabled = parse_e4_hist(&args).map_err(io::Error::other)?;
     let e4_kernel_gate_enabled = parse_e4_kernel_gate(&args).map_err(io::Error::other)?;
@@ -1895,7 +1899,6 @@ fn plot_e2_emergent_harmony(
     let nohill_ci95_c_level = std_series_to_ci95(&nohill_stats.std_c_level, nohill_stats.n);
     let norep_ci95_c_level = std_series_to_ci95(&norep_stats.std_c_level, norep_stats.n);
     let baseline_ci95_c = std_series_to_ci95(&baseline_stats.std_c_score_loo, baseline_stats.n);
-    let nohill_ci95_c = std_series_to_ci95(&nohill_stats.std_c_score_loo, nohill_stats.n);
     let baseline_ci95_g_scene = std_series_to_ci95(&baseline_stats.std_g_scene, baseline_stats.n);
     let nohill_ci95_g_scene = std_series_to_ci95(&nohill_stats.std_g_scene, nohill_stats.n);
 
@@ -2500,13 +2503,48 @@ fn plot_e2_emergent_harmony(
     render_diversity_summary_plot(&diversity_plot_path, &diversity_rows_vec)?;
     let diversity_ci95_plot_path = out_dir.join("paper_e2_diversity_summary_ci95.svg");
     render_diversity_summary_ci95_plot(&diversity_ci95_plot_path, &diversity_rows_vec)?;
+    let fixed_drone = e2_fixed_drone(space, anchor_hz);
+    let (_, du_scan) = erb_grid(space);
+    let workspace = build_consonance_workspace(space);
+    let baseline_panel_a_runs: Vec<Vec<f32>> = baseline_runs
+        .iter()
+        .map(|run| {
+            compute_e2_trajectory_mean_c_score_loo(
+                space,
+                &workspace,
+                &du_scan,
+                fixed_drone.idx,
+                anchor_hz,
+                &run.trajectory_semitones,
+            )
+        })
+        .collect();
+    let nohill_panel_a_runs: Vec<Vec<f32>> = nohill_runs
+        .iter()
+        .map(|run| {
+            compute_e2_trajectory_mean_c_score_loo(
+                space,
+                &workspace,
+                &du_scan,
+                fixed_drone.idx,
+                anchor_hz,
+                &run.trajectory_semitones,
+            )
+        })
+        .collect();
+    let (baseline_panel_a_mean, baseline_panel_a_ci95) =
+        mean_ci95_series(baseline_panel_a_runs.iter().collect::<Vec<_>>());
+    let (nohill_panel_a_mean, nohill_panel_a_ci95) =
+        mean_ci95_series(nohill_panel_a_runs.iter().collect::<Vec<_>>());
     let figure1_path = out_dir.join("paper_e2_figure_e2_1.svg");
     render_e2_figure1(
         &figure1_path,
+        &baseline_panel_a_mean,
+        &baseline_panel_a_ci95,
+        &nohill_panel_a_mean,
+        &nohill_panel_a_ci95,
         &baseline_stats,
         &nohill_stats,
-        &baseline_ci95_c,
-        &nohill_ci95_c,
         &baseline_ci95_g_scene,
         &nohill_ci95_g_scene,
         &diversity_rows_vec,
@@ -3358,22 +3396,9 @@ fn plot_e2_emergent_harmony(
 
     // ── Terrain controls + coefficient sweep (supplementary) ──
     if !quick {
-        eprintln!("  Running terrain controls + coefficient sweep (parallel)...");
-        let (tc_result, cs_result) = std::thread::scope(|scope| {
-            let tc_handle = scope.spawn(|| {
-                plot_e2_terrain_controls(out_dir, space, anchor_hz, &baseline_runs)
-                    .map_err(|e| e.to_string())
-            });
-            let cs_handle = scope.spawn(|| {
-                plot_e2_coefficient_sweep(out_dir, space, anchor_hz).map_err(|e| e.to_string())
-            });
-            (
-                tc_handle.join().expect("terrain controls thread panicked"),
-                cs_handle.join().expect("coefficient sweep thread panicked"),
-            )
-        });
-        tc_result.map_err(|s| -> Box<dyn Error> { s.into() })?;
-        cs_result.map_err(|s| -> Box<dyn Error> { s.into() })?;
+        eprintln!("  Running terrain controls + coefficient sweep (flat parallel jobs)...");
+        plot_e2_terrain_controls(out_dir, space, anchor_hz, &baseline_runs)?;
+        plot_e2_coefficient_sweep(out_dir, space, anchor_hz)?;
     }
 
     Ok(())
@@ -3571,7 +3596,7 @@ fn plot_e2_terrain_controls(
         base_c_s,
     );
 
-    // Run all 4 misalignment shifts in parallel
+    // Run all 4 misalignment shifts in a bounded flat job pool.
     struct MisResult {
         cents: f32,
         shift: i32,
@@ -3580,49 +3605,46 @@ fn plot_e2_terrain_controls(
         ent_v: Vec<f32>,
         c_v: Vec<f32>,
     }
-    let mis_results: Vec<MisResult> = std::thread::scope(|scope| {
-        let handles: Vec<_> = misalign_cents
-            .iter()
-            .zip(shifts.iter())
-            .map(|(&cents, &shift)| {
-                scope.spawn(move || {
-                    eprintln!(
-                        "    Misalignment Δ={} cents (shift={} bins)...",
-                        cents, shift
-                    );
-                    let (mis_runs, _) = e2_seed_sweep(
-                        space,
-                        anchor_hz,
-                        E2Condition::Baseline,
-                        E2_STEP_SEMITONES,
-                        phase_mode,
-                        None,
-                        shift,
-                    );
-                    let mis_div: Vec<DiversityRow> = diversity_rows("misaligned", &mis_runs);
-                    let bins_v: Vec<f32> = mis_div
-                        .iter()
-                        .map(|r| r.metrics.unique_bins as f32)
-                        .collect();
-                    let nn_v: Vec<f32> = mis_div.iter().map(|r| r.metrics.nn_mean).collect();
-                    let ent_v = entropy_from_runs_tc(&mis_runs);
-                    let c_v = post_mean_c_tc(&mis_runs, half, burn);
-                    MisResult {
-                        cents,
-                        shift,
-                        bins_v,
-                        nn_v,
-                        ent_v,
-                        c_v,
-                    }
-                })
-            })
-            .collect();
-        handles
-            .into_iter()
-            .map(|h| h.join().expect("misalignment thread panicked"))
-            .collect()
-    });
+    let misalignment_jobs: Vec<(f32, i32)> = misalign_cents
+        .iter()
+        .copied()
+        .zip(shifts.iter().copied())
+        .collect();
+    let mis_results: Vec<MisResult> =
+        parallel_map_ordered(&misalignment_jobs, None, |&(cents, shift)| {
+            eprintln!(
+                "    Misalignment Δ={} cents (shift={} bins)...",
+                cents, shift
+            );
+            let (mis_runs, _) = e2_seed_sweep_with_threads(
+                space,
+                anchor_hz,
+                E2Condition::Baseline,
+                E2_STEP_SEMITONES,
+                phase_mode,
+                None,
+                shift,
+                E2_N_AGENTS,
+                2.0,
+                Some(1),
+            );
+            let mis_div: Vec<DiversityRow> = diversity_rows("misaligned", &mis_runs);
+            let bins_v: Vec<f32> = mis_div
+                .iter()
+                .map(|r| r.metrics.unique_bins as f32)
+                .collect();
+            let nn_v: Vec<f32> = mis_div.iter().map(|r| r.metrics.nn_mean).collect();
+            let ent_v = entropy_from_runs_tc(&mis_runs);
+            let c_v = post_mean_c_tc(&mis_runs, half, burn);
+            MisResult {
+                cents,
+                shift,
+                bins_v,
+                nn_v,
+                ent_v,
+                c_v,
+            }
+        });
 
     let mut all_mis_bins: Vec<f32> = Vec::new();
     let mut all_mis_nns: Vec<f32> = Vec::new();
@@ -3732,7 +3754,7 @@ fn plot_e2_coefficient_sweep(
          b\tc\tunique_bins_m\tunique_bins_s\tnn_mean_m\tnn_mean_s\tentropy_m\tentropy_s\tc_score_m\tc_score_s\n",
     );
 
-    // Run all 16 (b,c) combos in parallel
+    // Run all 16 (b,c) combos in a bounded flat job pool.
     let combos: Vec<(f32, f32)> = b_values
         .iter()
         .flat_map(|&b| c_values.iter().map(move |&c| (b, c)))
@@ -3749,67 +3771,58 @@ fn plot_e2_coefficient_sweep(
         c_m: f32,
         c_s: f32,
     }
-    let results: Vec<CoeffResult> = std::thread::scope(|scope| {
-        let handles: Vec<_> = combos
+    let results: Vec<CoeffResult> = parallel_map_ordered(&combos, None, |&(b, c)| {
+        eprintln!("    Coefficient sweep b={:.2}, c={:.2}...", b, c);
+        let kernel = ConsonanceKernel {
+            a: 1.0,
+            b,
+            c,
+            d: 0.0,
+        };
+        let (runs, _) = e2_seed_sweep_with_threads(
+            space,
+            anchor_hz,
+            E2Condition::Baseline,
+            E2_STEP_SEMITONES,
+            phase_mode,
+            Some(kernel),
+            0,
+            E2_N_AGENTS,
+            2.0,
+            Some(1),
+        );
+        let div: Vec<DiversityRow> = diversity_rows("sweep", &runs);
+        let bins_v: Vec<f32> = div.iter().map(|r| r.metrics.unique_bins as f32).collect();
+        let nn_v: Vec<f32> = div.iter().map(|r| r.metrics.nn_mean).collect();
+        let ent_v = entropy_from_runs_cs(&runs);
+        let c_scores: Vec<f32> = runs
             .iter()
-            .map(|&(b, c)| {
-                scope.spawn(move || {
-                    eprintln!("    Coefficient sweep b={:.2}, c={:.2}...", b, c);
-                    let kernel = ConsonanceKernel {
-                        a: 1.0,
-                        b,
-                        c,
-                        d: 0.0,
-                    };
-                    let (runs, _) = e2_seed_sweep(
-                        space,
-                        anchor_hz,
-                        E2Condition::Baseline,
-                        E2_STEP_SEMITONES,
-                        phase_mode,
-                        Some(kernel),
-                        0,
-                    );
-                    let div: Vec<DiversityRow> = diversity_rows("sweep", &runs);
-                    let bins_v: Vec<f32> =
-                        div.iter().map(|r| r.metrics.unique_bins as f32).collect();
-                    let nn_v: Vec<f32> = div.iter().map(|r| r.metrics.nn_mean).collect();
-                    let ent_v = entropy_from_runs_cs(&runs);
-                    let c_scores: Vec<f32> = runs
-                        .iter()
-                        .map(|r| {
-                            let from = half + burn;
-                            let slice = &r.mean_c_score_chosen_loo_series[from..];
-                            if slice.is_empty() {
-                                0.0
-                            } else {
-                                slice.iter().sum::<f32>() / slice.len() as f32
-                            }
-                        })
-                        .collect();
-                    let (bm, bs) = mean_std_scalar(&bins_v);
-                    let (nm, ns) = mean_std_scalar(&nn_v);
-                    let (em, es) = mean_std_scalar(&ent_v);
-                    let (cm, cs) = mean_std_scalar(&c_scores);
-                    CoeffResult {
-                        b,
-                        c,
-                        bins_m: bm,
-                        bins_s: bs,
-                        nn_m: nm,
-                        nn_s: ns,
-                        ent_m: em,
-                        ent_s: es,
-                        c_m: cm,
-                        c_s: cs,
-                    }
-                })
+            .map(|r| {
+                let from = half + burn;
+                let slice = &r.mean_c_score_chosen_loo_series[from..];
+                if slice.is_empty() {
+                    0.0
+                } else {
+                    slice.iter().sum::<f32>() / slice.len() as f32
+                }
             })
             .collect();
-        handles
-            .into_iter()
-            .map(|h| h.join().expect("coeff sweep thread panicked"))
-            .collect()
+        let (bm, bs) = mean_std_scalar(&bins_v);
+        let (nm, ns) = mean_std_scalar(&nn_v);
+        let (em, es) = mean_std_scalar(&ent_v);
+        let (cm, cs) = mean_std_scalar(&c_scores);
+        CoeffResult {
+            b,
+            c,
+            bins_m: bm,
+            bins_s: bs,
+            nn_m: nm,
+            nn_s: ns,
+            ent_m: em,
+            ent_s: es,
+            c_m: cm,
+            c_s: cs,
+        }
     });
     for cr in &results {
         report.push_str(&format!(
@@ -3854,31 +3867,6 @@ fn e2_trajectory_phase_switch_step(phase_mode: E2PhaseMode, n_agents: usize) -> 
     phase_mode
         .switch_step()
         .map(|step| step.saturating_mul(e2_microsteps_per_sweep(n_agents)))
-}
-
-fn e2_upsample_sweep_series_to_microsteps(series: &[f32], n_agents: usize) -> Vec<f32> {
-    if series.is_empty() {
-        return Vec::new();
-    }
-    let microsteps = e2_microsteps_per_sweep(n_agents);
-    if microsteps <= 1 {
-        return series.to_vec();
-    }
-    let mut out = Vec::with_capacity(1 + series.len().saturating_mul(microsteps));
-    let initial = series[0];
-    out.push(initial);
-    for _ in 0..microsteps {
-        out.push(initial);
-    }
-    for window in series.windows(2) {
-        let start = window[0];
-        let end = window[1];
-        for step in 1..=microsteps {
-            let t = step as f32 / microsteps as f32;
-            out.push(start + (end - start) * t);
-        }
-    }
-    out
 }
 
 fn e2_caption_suffix(phase_mode: E2PhaseMode) -> String {
@@ -4754,6 +4742,58 @@ fn e2_seed_sweep_with_threads_for_seeds(
             n,
         },
     )
+}
+
+fn parallel_map_ordered<T, R, F>(
+    items: &[T],
+    max_worker_threads: Option<usize>,
+    map_fn: F,
+) -> Vec<R>
+where
+    T: Sync,
+    R: Send,
+    F: Fn(&T) -> R + Sync,
+{
+    if items.is_empty() {
+        return Vec::new();
+    }
+    let max_threads = max_worker_threads.unwrap_or_else(|| {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+    });
+    let worker_count = max_threads.min(items.len()).max(1);
+    if worker_count <= 1 || items.len() <= 1 {
+        return items.iter().map(map_fn).collect();
+    }
+
+    let next = AtomicUsize::new(0);
+    let results = Mutex::new({
+        let mut results = Vec::with_capacity(items.len());
+        results.resize_with(items.len(), || None);
+        results
+    });
+    std::thread::scope(|scope| {
+        for _ in 0..worker_count {
+            scope.spawn(|| {
+                loop {
+                    let idx = next.fetch_add(1, Ordering::Relaxed);
+                    if idx >= items.len() {
+                        break;
+                    }
+                    let result = map_fn(&items[idx]);
+                    let mut guard = results.lock().expect("results lock poisoned");
+                    guard[idx] = Some(result);
+                }
+            });
+        }
+    });
+    results
+        .into_inner()
+        .expect("results lock poisoned")
+        .into_iter()
+        .map(|result| result.expect("missing parallel result"))
+        .collect()
 }
 
 fn e2_kbins_sweep_csv(space: &Log2Space, anchor_hz: f32, phase_mode: E2PhaseMode) -> String {
@@ -20291,6 +20331,13 @@ fn mean_std_series(series_list: Vec<&Vec<f32>>) -> (Vec<f32>, Vec<f32>) {
     (mean, std)
 }
 
+fn mean_ci95_series(series_list: Vec<&Vec<f32>>) -> (Vec<f32>, Vec<f32>) {
+    let n = series_list.len();
+    let (mean, std) = mean_std_series(series_list);
+    let ci95 = std_series_to_ci95(&std, n);
+    (mean, ci95)
+}
+
 fn series_pairs(series: &[f32]) -> Vec<(f32, f32)> {
     series
         .iter()
@@ -24429,10 +24476,12 @@ fn render_anchor_hist_post_folded(
 #[allow(clippy::too_many_arguments)]
 fn render_e2_figure1(
     out_path: &Path,
+    baseline_panel_a_mean: &[f32],
+    baseline_panel_a_ci95: &[f32],
+    nohill_panel_a_mean: &[f32],
+    nohill_panel_a_ci95: &[f32],
     baseline_stats: &E2SweepStats,
     nohill_stats: &E2SweepStats,
-    baseline_ci95_c: &[f32],
-    nohill_ci95_c: &[f32],
     baseline_ci95_g_scene: &[f32],
     nohill_ci95_g_scene: &[f32],
     diversity_rows: &[DiversityRow],
@@ -24446,18 +24495,11 @@ fn render_e2_figure1(
     let (wide, panel_d) = content.split_horizontally(1440);
     let panels = wide.split_evenly((1, 3));
     let traj_n_agents = trajectories.len().max(1);
-    let c_baseline_micro =
-        e2_upsample_sweep_series_to_microsteps(&baseline_stats.mean_c_score_loo, traj_n_agents);
-    let c_nohill_micro =
-        e2_upsample_sweep_series_to_microsteps(&nohill_stats.mean_c_score_loo, traj_n_agents);
-    let c_baseline_ci95_micro =
-        e2_upsample_sweep_series_to_microsteps(baseline_ci95_c, traj_n_agents);
-    let c_nohill_ci95_micro = e2_upsample_sweep_series_to_microsteps(nohill_ci95_c, traj_n_agents);
-    let c_len = c_baseline_micro
+    let c_len = baseline_panel_a_mean
         .len()
-        .min(c_baseline_ci95_micro.len())
-        .min(c_nohill_micro.len())
-        .min(c_nohill_ci95_micro.len());
+        .min(baseline_panel_a_ci95.len())
+        .min(nohill_panel_a_mean.len())
+        .min(nohill_panel_a_ci95.len());
     let traj_burn_in = e2_trajectory_burn_in_step(traj_n_agents);
     let traj_phase_switch = e2_trajectory_phase_switch_step(phase_mode, traj_n_agents);
 
@@ -24465,10 +24507,10 @@ fn render_e2_figure1(
         &panels[0],
         "A. Mean LOO C_score",
         "mean LOO C_score",
-        &c_baseline_micro,
-        &c_baseline_ci95_micro,
-        &c_nohill_micro,
-        &c_nohill_ci95_micro,
+        baseline_panel_a_mean,
+        baseline_panel_a_ci95,
+        nohill_panel_a_mean,
+        nohill_panel_a_ci95,
         traj_burn_in,
         traj_phase_switch,
         0,
@@ -24490,8 +24532,8 @@ fn render_e2_figure1(
         baseline_ci95_g_scene,
         &nohill_stats.mean_g_scene,
         nohill_ci95_g_scene,
-        E2_BURN_IN,
-        phase_mode.switch_step(),
+        traj_burn_in,
+        traj_phase_switch,
         0,
         g_len.saturating_sub(1),
         true,
@@ -27138,7 +27180,7 @@ mod tests {
             },
         ];
         let refs: Vec<&E6PitchSnapshot> = snaps.iter().collect();
-        let rhai = rhai_e6_segment("test", &refs, 0.12);
+        let rhai = rhai_e6_segment("test", &refs, 0.12, None);
         assert!(rhai.contains("let l10 = create(e6_voice, 1).freq(220.00).amp("));
         assert!(rhai.contains("let l10 = l10.freq(233.08);"));
         assert!(rhai.contains("release(l10);"));
@@ -29585,15 +29627,17 @@ const AUDIO_GAP_SEC: f32 = 1.0;
 const AUDIO_QUICKLISTEN_GAP_SEC: f32 = AUDIO_GAP_SEC + 1.0;
 const AUDIO_QUICKLISTEN_FADE_SEC: f32 = 1.0;
 const AUDIO_INTEGRATION_FADE_SEC: f32 = 0.2;
+const AUDIO_E2_POLYPHONY_TARGET_SEGMENT_SEC: f32 = 8.0;
 const AUDIO_N_SELECT_E2: usize = 8;
 const AUDIO_E2_AGENT_AMP: f32 = 0.10;
 const AUDIO_E2_AGENT_ATTACK_SEC: f32 = 0.30;
 const AUDIO_E2_AGENT_DECAY_SEC: f32 = 0.35;
 const AUDIO_E2_AGENT_SUSTAIN_LEVEL: f32 = 0.50;
 const AUDIO_E2_AGENT_RELEASE_SEC: f32 = 0.8;
-const AUDIO_E6_POP_SIZE: usize = E6_POP_SIZE;
+const AUDIO_E6_STEP_SEC: f32 = 0.24;
+const AUDIO_E6_POP_SIZE: usize = 6;
 /// How many E6 snapshots to replay per segment (last N of run)
-const AUDIO_E6_TAIL_SNAPSHOTS: usize = 90;
+const AUDIO_E6_TAIL_SNAPSHOTS: usize = 45;
 const AUDIO_E6_FIXED_DRONE_HZ: f32 = E4_ANCHOR_HZ;
 const AUDIO_E6_FIXED_DRONE_AMP: f32 = 0.035;
 const AUDIO_E6_AGENT_AMP: f32 = 0.012;
@@ -29735,11 +29779,54 @@ fn rhai_e2_segment(
     s
 }
 
-fn e6_audio_agents_at_snapshot(snapshot: &E6PitchSnapshot) -> Vec<&E6AgentSnapshot> {
+fn downsample_e2_trajectory_for_audio(
+    trajectory_semitones: &[Vec<f32>],
+    max_steps: usize,
+) -> Vec<Vec<f32>> {
+    if trajectory_semitones.is_empty() || max_steps == 0 {
+        return trajectory_semitones.to_vec();
+    }
+    let n_steps = trajectory_semitones[0].len();
+    if n_steps <= max_steps || max_steps <= 1 {
+        return trajectory_semitones.to_vec();
+    }
+
+    let mut sampled_indices = Vec::with_capacity(max_steps);
+    for out_idx in 0..max_steps {
+        let t = out_idx as f32 / (max_steps - 1) as f32;
+        let src_idx = (t * (n_steps - 1) as f32).round() as usize;
+        sampled_indices.push(src_idx.min(n_steps - 1));
+    }
+
+    trajectory_semitones
+        .iter()
+        .map(|trace| {
+            sampled_indices
+                .iter()
+                .map(|&idx| {
+                    trace
+                        .get(idx)
+                        .copied()
+                        .unwrap_or(*trace.last().unwrap_or(&f32::NAN))
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn e6_audio_agents_at_snapshot<'a>(
+    snapshot: &'a E6PitchSnapshot,
+    selected_agent_ids: Option<&std::collections::BTreeSet<usize>>,
+) -> Vec<&'a E6AgentSnapshot> {
     let mut agents: Vec<&E6AgentSnapshot> = snapshot
         .agents
         .iter()
         .filter(|agent| agent.freq_hz.is_finite() && agent.freq_hz > 20.0)
+        .filter(|agent| {
+            selected_agent_ids
+                .map(|ids| ids.contains(&agent.agent_id))
+                .unwrap_or(true)
+        })
         .collect();
     agents.sort_by_key(|agent| (agent.agent_id, agent.life_id));
     agents
@@ -29747,7 +29834,12 @@ fn e6_audio_agents_at_snapshot(snapshot: &E6PitchSnapshot) -> Vec<&E6AgentSnapsh
 
 /// Emit Rhai scene for an E6 segment as per-life sustained voices.
 /// Each life gets a fresh attack/decay on birth, sustains while alive, and releases on death.
-fn rhai_e6_segment(scene_name: &str, snapshots: &[&E6PitchSnapshot], step_sec: f32) -> String {
+fn rhai_e6_segment(
+    scene_name: &str,
+    snapshots: &[&E6PitchSnapshot],
+    step_sec: f32,
+    selected_agent_ids: Option<&std::collections::BTreeSet<usize>>,
+) -> String {
     let mut s = format!("scene(\"{scene_name}\", || {{\n");
 
     if snapshots.is_empty() {
@@ -29772,7 +29864,7 @@ fn rhai_e6_segment(scene_name: &str, snapshots: &[&E6PitchSnapshot], step_sec: f
         AUDIO_E6_FIXED_DRONE_HZ, AUDIO_E6_FIXED_DRONE_AMP
     ));
     s.push_str(&format!(
-        "    let e6_voice = derive(harmonic)\n        .brain(\"drone\")\n        .pitch_mode(\"lock\")\n        .amp({:.3})\n        .modes(harmonic_modes().count({}))\n        .brightness({:.3})\n        .sustain_drive({:.3})\n        .pitch_smooth(0.03)\n        .adsr({:.3}, {:.3}, {:.3}, {:.3});\n",
+        "    let e6_voice = derive(harmonic)\n        .brain(\"drone\")\n        .pitch_mode(\"lock\")\n        .amp({:.3})\n        .modes(harmonic_modes().count({}))\n        .brightness({:.3})\n        .sustain_drive({:.3})\n        .pitch_smooth(0.08)\n        .adsr({:.3}, {:.3}, {:.3}, {:.3});\n",
         AUDIO_E6_AGENT_AMP,
         AUDIO_E6_AGENT_PARTIALS,
         AUDIO_E6_AGENT_BRIGHTNESS,
@@ -29783,7 +29875,7 @@ fn rhai_e6_segment(scene_name: &str, snapshots: &[&E6PitchSnapshot], step_sec: f
         AUDIO_E6_AGENT_RELEASE_SEC
     ));
 
-    let initial_agents = e6_audio_agents_at_snapshot(snapshots[0]);
+    let initial_agents = e6_audio_agents_at_snapshot(snapshots[0], selected_agent_ids);
     let mut active_freqs: std::collections::BTreeMap<u64, f32> = std::collections::BTreeMap::new();
     for agent in initial_agents {
         active_freqs.insert(agent.life_id, agent.freq_hz);
@@ -29795,7 +29887,7 @@ fn rhai_e6_segment(scene_name: &str, snapshots: &[&E6PitchSnapshot], step_sec: f
     s.push_str("    flush();\n");
 
     for snap in snapshots.iter().skip(1) {
-        let agents = e6_audio_agents_at_snapshot(snap);
+        let agents = e6_audio_agents_at_snapshot(snap, selected_agent_ids);
         let mut current_freqs: std::collections::BTreeMap<u64, f32> =
             std::collections::BTreeMap::new();
         let mut any_changed = false;
@@ -30036,6 +30128,48 @@ fn apply_segment_fades_i16(
     Ok(())
 }
 
+fn peak_normalize_i16(wav_path: &Path, target_peak_dbfs: f32) -> io::Result<()> {
+    let mut reader = hound::WavReader::open(wav_path).map_err(io::Error::other)?;
+    let spec = reader.spec();
+    if spec.channels != 1 || spec.sample_rate == 0 || spec.bits_per_sample != 16 {
+        return Err(io::Error::other(format!(
+            "unsupported integration WAV format: channels={}, rate={}, bits={}",
+            spec.channels, spec.sample_rate, spec.bits_per_sample
+        )));
+    }
+    let mut samples: Vec<i16> = reader
+        .samples::<i16>()
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(io::Error::other)?;
+    drop(reader);
+
+    let peak = samples
+        .iter()
+        .map(|s| i32::from(*s).unsigned_abs() as f32)
+        .fold(0.0_f32, f32::max);
+    if peak <= 0.0 {
+        return Ok(());
+    }
+
+    let target_peak = 32767.0 * 10.0_f32.powf(target_peak_dbfs / 20.0);
+    let gain = target_peak / peak;
+    if !gain.is_finite() || (gain - 1.0).abs() < 1e-4 {
+        return Ok(());
+    }
+
+    for sample in &mut samples {
+        let scaled = (*sample as f32) * gain;
+        *sample = scaled.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+    }
+
+    let mut writer = hound::WavWriter::create(wav_path, spec).map_err(io::Error::other)?;
+    for sample in samples {
+        writer.write_sample(sample).map_err(io::Error::other)?;
+    }
+    writer.finalize().map_err(io::Error::other)?;
+    Ok(())
+}
+
 fn postprocess_named_wav_default(wav_stem: &str, fade_sec: f32) -> io::Result<()> {
     let (wav_path, rhai_path, manifest_path) = resolve_audio_postprocess_paths(wav_stem);
     let windows = parse_rhai_scene_windows(&rhai_path)?;
@@ -30055,7 +30189,31 @@ fn postprocess_quicklisten_wav_default() -> io::Result<()> {
 }
 
 fn postprocess_integration_wav_default() -> io::Result<()> {
-    postprocess_named_wav_default("20_integration", AUDIO_INTEGRATION_FADE_SEC)
+    let wav_stem = "20_integration";
+    let (wav_path, rhai_path, manifest_path) = resolve_audio_postprocess_paths(wav_stem);
+    let windows = parse_rhai_scene_windows(&rhai_path)?;
+    let wav_name = format!("{wav_stem}.wav");
+    rewrite_audio_manifest(&manifest_path, &wav_name, &windows)?;
+    apply_segment_fades_i16(&wav_path, &windows, AUDIO_INTEGRATION_FADE_SEC)?;
+    peak_normalize_i16(&wav_path, -6.0)?;
+    eprintln!(
+        "postprocessed {wav_name}: {} segments, {:.1}s fades, peak-normalized to -6 dBFS",
+        windows.len(),
+        AUDIO_INTEGRATION_FADE_SEC
+    );
+    Ok(())
+}
+
+fn postprocess_polyphony_wav_default() -> io::Result<()> {
+    let (wav_path, rhai_path, manifest_path) = resolve_audio_postprocess_paths("10_exp1_polyphony");
+    let windows = parse_rhai_scene_windows(&rhai_path)?;
+    rewrite_audio_manifest(&manifest_path, "10_exp1_polyphony.wav", &windows)?;
+    eprintln!(
+        "updated manifest for 10_exp1_polyphony.wav: {} segments",
+        windows.len()
+    );
+    let _ = wav_path;
+    Ok(())
 }
 
 /// Generate all audio supplement Rhai scripts from simulation data.
@@ -30081,7 +30239,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         (E2_SEEDS[10], E2Condition::NoHillClimb, "seed10_nohill"),
         (E2_SEEDS[10], E2Condition::NoCrowding, "seed10_norep"),
     ];
-    let e2_polyphony_segment_indices: &[usize] = &[0, 2, 3, 5];
+    let e2_polyphony_segment_indices: &[usize] = &[0, 1, 3, 4];
 
     eprintln!("  [audio-rhai] Running E2 simulations...");
     let e2_runs: Vec<E2Run> = e2_segments
@@ -30103,12 +30261,17 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
 
     // ── 10_exp1_polyphony.rhai ──
     {
+        let polyphony_max_steps =
+            ((AUDIO_E2_POLYPHONY_TARGET_SEGMENT_SEC - AUDIO_E2_AGENT_RELEASE_SEC) / AUDIO_STEP_SEC)
+                .floor()
+                .max(2.0) as usize;
         let detail = format!(
             "// {} adaptive agents (selected from {}) + 1 fixed drone at {:.1} Hz, {} sweeps, step={} st\n\
              // Phase switch at step {} (dissonance -> consonance)\n\
+             // audio replay downsampled to at most {} updates per segment (~{:.1}s each)\n\
              //\n\
              // 4 segments: 2 conditions x 2 seeds\n\
-             //   local-search / no-rep for seed 0 and seed 10\n\
+             //   local-search / no-hill for seed 0 and seed 10\n\
              //   E2_SEEDS[0]  = 0x{:X} = {}\n\
              //   E2_SEEDS[10] = 0x{:X} = {}",
             AUDIO_N_SELECT_E2,
@@ -30117,21 +30280,27 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             E2_SWEEPS,
             E2_STEP_SEMITONES,
             E2_PHASE_SWITCH_STEP,
+            polyphony_max_steps,
+            AUDIO_E2_POLYPHONY_TARGET_SEGMENT_SEC,
             E2_SEEDS[0],
             E2_SEEDS[0],
             E2_SEEDS[10],
             E2_SEEDS[10],
         );
         let mut rhai = rhai_replay_header(
-            "10_exp1_polyphony.rhai -- E2: Hill-climbing + crowding replay",
+            "10_exp1_polyphony.rhai -- E2: Baseline vs no-hill replay",
             &detail,
         );
         for (scene_idx, &seg_idx) in e2_polyphony_segment_indices.iter().enumerate() {
             let (_, _, label) = e2_segments[seg_idx];
             let scene = format!("s{}_replay_{label}", scene_idx + 1);
+            let trajectory = downsample_e2_trajectory_for_audio(
+                &e2_runs[seg_idx].trajectory_semitones,
+                polyphony_max_steps,
+            );
             rhai.push_str(&rhai_e2_segment(
                 &scene,
-                &e2_runs[seg_idx].trajectory_semitones,
+                &trajectory,
                 anchor_hz,
                 &e2_selected,
                 Some(e2_runs[seg_idx].fixed_drone_hz),
@@ -30205,7 +30374,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
     {
         let detail = format!(
             "// per-life agent replay from a {}-agent population, tail {} snapshots per segment\n\
-             // snapshot_interval={} steps, step_sec={:.3}\n\
+             // snapshot_interval={} steps, replay_step_sec={:.3}\n\
              // each life uses harmonic ADSR atk={:.2}s dec={:.2}s sus={:.2} rel={:.2}s\n\
              // fixed sine drone at {:.1} Hz for listening reference\n\
              //\n\
@@ -30220,7 +30389,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             AUDIO_E6_POP_SIZE,
             AUDIO_E6_TAIL_SNAPSHOTS,
             E6_SNAPSHOT_INTERVAL,
-            AUDIO_STEP_SEC,
+            AUDIO_E6_STEP_SEC,
             AUDIO_E6_AGENT_ATTACK_SEC,
             AUDIO_E6_AGENT_DECAY_SEC,
             AUDIO_E6_AGENT_SUSTAIN_LEVEL,
@@ -30254,7 +30423,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
             let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
             let scene = format!("s{}_{label}", i + 1);
-            rhai.push_str(&rhai_e6_segment(&scene, &tail, AUDIO_STEP_SEC));
+            rhai.push_str(&rhai_e6_segment(&scene, &tail, AUDIO_E6_STEP_SEC, None));
             if i + 1 < integration_order.len() {
                 rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
             }
@@ -30295,7 +30464,12 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         let snaps = &e6_both_seed0.snapshots;
         let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
         let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
-        rhai.push_str(&rhai_e6_segment("ql2_e6_both", &tail, AUDIO_STEP_SEC));
+        rhai.push_str(&rhai_e6_segment(
+            "ql2_e6_both",
+            &tail,
+            AUDIO_E6_STEP_SEC,
+            None,
+        ));
         rhai.push_str(&format!("wait({AUDIO_QUICKLISTEN_GAP_SEC:.1});\n\n"));
 
         // Segment 3: E2 nohill seed0 (index 1)
@@ -30314,7 +30488,12 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         let snaps = &e6_neither_seed0.snapshots;
         let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
         let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
-        rhai.push_str(&rhai_e6_segment("ql4_e6_neither", &tail, AUDIO_STEP_SEC));
+        rhai.push_str(&rhai_e6_segment(
+            "ql4_e6_neither",
+            &tail,
+            AUDIO_E6_STEP_SEC,
+            None,
+        ));
 
         write_with_log(out_dir.join("00_quicklisten.rhai"), rhai)?;
     }
@@ -30795,6 +30974,52 @@ fn compute_e2_trajectory_c_levels(
         }
     }
     trajectory_c_level
+}
+
+fn compute_e2_trajectory_mean_c_score_loo(
+    space: &Log2Space,
+    workspace: &ConsonanceWorkspace,
+    du_scan: &[f32],
+    fixed_drone_idx: usize,
+    anchor_hz: f32,
+    trajectory_semitones: &[Vec<f32>],
+) -> Vec<f32> {
+    if trajectory_semitones.is_empty() {
+        return Vec::new();
+    }
+    let n_agents = trajectory_semitones.len();
+    let n_steps = trajectory_semitones[0].len();
+    let mut mean_c_score = Vec::with_capacity(n_steps);
+    let mut env_loo = Vec::new();
+    let mut density_loo = Vec::new();
+    for step in 0..n_steps {
+        let mut indices = Vec::with_capacity(n_agents);
+        for trace in trajectory_semitones {
+            let st = trace.get(step).copied().unwrap_or(f32::NAN);
+            let freq_hz = anchor_hz * 2.0_f32.powf(st / 12.0);
+            indices.push(space.nearest_index(freq_hz));
+        }
+        let (env_scan, density_scan) = build_env_scans_with_fixed_sources(
+            space,
+            std::slice::from_ref(&fixed_drone_idx),
+            &indices,
+            du_scan,
+        );
+        let (current_mean, _) = mean_c_score_loo_pair_at_indices_with_prev_reused(
+            space,
+            workspace,
+            &env_scan,
+            &density_scan,
+            du_scan,
+            &indices,
+            &indices,
+            &indices,
+            &mut env_loo,
+            &mut density_loo,
+        );
+        mean_c_score.push(current_mean);
+    }
+    mean_c_score
 }
 
 #[allow(clippy::too_many_arguments)]

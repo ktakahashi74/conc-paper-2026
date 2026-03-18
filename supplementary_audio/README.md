@@ -10,8 +10,8 @@ Qualitative audio demonstrations accompanying the paper
 | File | Role | Duration | Description |
 |------|------|----------|-------------|
 | `00_quicklisten.wav` | Orientation | ~41 s | Curated montage: best-case emergence vs. ablation controls |
-| `10_exp1_polyphony.wav` | Evidence (E2) | ~53 s | Local-search + repulsion → emergent polyphony |
-| `20_integration.wav` | Evidence (E6) | ~55 s | Heredity × hill-climbing → integration |
+| `10_exp1_polyphony.wav` | Evidence (E2) | ~35 s | Current E2 replay montage: baseline vs. no-hill across seed 0 and seed 10 |
+| `20_integration.wav` | Evidence (E6) | ~97 s | Current E6 integration montage: parent-only heredity vs. hill-climb conditions |
 | `30_e3_shared.wav`, `30_e3_scrambled.wav`, `30_e3_off.wav` | Evidence (main E3) | ~8 s each | Agent-only render of shared temporal scaffold vs. scrambled/off controls |
 
 ### 00_quicklisten — Orientation montage
@@ -34,27 +34,31 @@ Two conditions × two seeds (index 0, 10). Each segment ~8 s:
 | Condition | landscape_weight | repulsion |
 |-----------|-----------------|-----------|
 | local-search | 1.0 | 0.15 @ 72 cents |
-| no-rep | 1.0 | off |
+| no-hill | 0.0 | 0.15 @ 72 cents |
 
-**Expected:** local-search converges to consonant intervals; no-rep collapses
-toward unison.
+**Expected:** baseline preserves the current hill-climb + crowding regime;
+no-hill removes local search while keeping the same crowding field.
 
 ### 20_integration — Experiment 6 (E6)
 
-Four conditions × two seeds (index 0, 10). Each segment ~6 s. Within each seed,
-segments are ordered from most integrated to random:
+Four conditions × two seeds (index 0, 10). Each segment ~11 s. Within each seed,
+segments are ordered from most integrated to random. The replay uses a dedicated
+6-agent audio simulation with slower pitch updates so roughness and crowding
+remain consistent with the heard population:
 
 | Condition | respawn | landscape_weight |
 |-----------|---------|-----------------|
-| both | hereditary (σ=0.003 oct) | 0.5 |
-| H-only | hereditary (σ=0.003 oct) | 0.0 |
-| hill-only | random | 0.5 |
+| both | parent-only H heredity | 1.0 |
+| H-only | parent-only H heredity | 0.0 |
+| hill-only | random | 1.0 |
 | neither | random | 0.0 |
 
-The E6 supplementary render uses the same 5-agent sparse regime as the
-current experiment plus a fixed 220 Hz sine drone as a pitch reference.
+The E6 supplementary render uses parent-only harmonicity for hereditary respawn
+and the same shared hill-climb profile, replayed as a 6-agent per-life montage
+with a fixed 220 Hz sine drone as a pitch reference.
 
-**Expected:** "both" achieves the highest consonance score.
+**Expected:** "both" achieves the highest consonance score, with H-only above
+the random respawn controls.
 
 ### 30_exp3_temporal_scaffold — Experiment 3 (main paper)
 

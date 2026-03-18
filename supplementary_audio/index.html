@@ -59,38 +59,38 @@
 
 <div class="track">
   <h2>10 &mdash; Emergent Polyphony (Experiment 2)</h2>
-  <p class="meta">~53 s &middot; Local-search + repulsion &rarr; emergent polyphony</p>
+  <p class="meta">~35 s &middot; baseline vs. no-hill, seed 0 and seed 10</p>
   <p>Two conditions &times; two seeds (index 0, 10). Each segment ~8 s.</p>
   <table>
     <tr><th>Condition</th><th>landscape_weight</th><th>repulsion</th></tr>
     <tr><td>local-search</td><td>1.0</td><td>0.15 @ 72 cents</td></tr>
-    <tr><td>no-rep</td><td>1.0</td><td>off</td></tr>
+    <tr><td>no-hill</td><td>0.0</td><td>0.15 @ 72 cents</td></tr>
   </table>
-  <p>local-search converges to consonant intervals; no-rep collapses toward unison.</p>
-  <p><strong>Periodic pitch alternation (seed 10).</strong>
-     In seed 10, some agents alternate stably between two consonant pitches
-     on successive sweeps rather than converging to a fixed point&mdash;a
-     spontaneous limit cycle reminiscent of a discrete time crystal.</p>
+  <p>baseline preserves the current hill-climb + crowding regime; no-hill removes
+     local search while keeping the same crowding field and seed schedule.</p>
   <audio controls preload="none">
-    <source src="audio/10_exp1_polyphony.wav" type="audio/wav">
+    <source src="audio/10_exp1_polyphony.wav?v=20260318-1" type="audio/wav">
   </audio>
 </div>
 
 <div class="track">
   <h2>20 &mdash; Integration (Experiment 6)</h2>
-  <p class="meta">~55 s &middot; Heredity &times; hill-climbing &rarr; integration</p>
-  <p>Four conditions &times; two seeds (index 0, 10). Each segment ~6 s.
-     Ordered from most integrated to random within each seed.</p>
+  <p class="meta">Current E6 integration montage &middot; heredity vs. hill-climb conditions</p>
+  <p>Four conditions &times; two seeds (index 0, 10). Each segment ~11 s.
+     Replayed from a 6-agent audio simulation with slower pitch updates, ordered
+     from most integrated to random within each seed.</p>
   <table>
     <tr><th>Condition</th><th>respawn</th><th>landscape_weight</th></tr>
-    <tr><td>both</td><td>hereditary (&sigma;=0.003 oct)</td><td>0.5</td></tr>
-    <tr><td>H-only</td><td>hereditary (&sigma;=0.003 oct)</td><td>0.0</td></tr>
-    <tr><td>hill-only</td><td>random</td><td>0.5</td></tr>
+    <tr><td>both</td><td>parent-only H heredity</td><td>1.0</td></tr>
+    <tr><td>H-only</td><td>parent-only H heredity</td><td>0.0</td></tr>
+    <tr><td>hill-only</td><td>random</td><td>1.0</td></tr>
     <tr><td>neither</td><td>random</td><td>0.0</td></tr>
   </table>
-  <p>"both" achieves the highest consonance score.</p>
+  <p>The current E6 audio replay uses parent-only harmonicity for hereditary respawn,
+     the same shared hill-climb profile, and a 6-agent listening regime so roughness
+     and crowding remain internally consistent.</p>
   <audio controls preload="none">
-    <source src="audio/20_integration.wav" type="audio/wav">
+    <source src="audio/20_integration.wav?v=20260318-4" type="audio/wav">
   </audio>
 </div>
 

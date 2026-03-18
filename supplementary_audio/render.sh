@@ -21,6 +21,8 @@ for rhai in scenarios/*.rhai; do
   $RENDER "$rhai" --output "audio/${name}.wav"
   if [ "$name" = "00_quicklisten" ]; then
     (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-quicklisten)
+  elif [ "$name" = "10_exp1_polyphony" ]; then
+    (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-polyphony)
   elif [ "$name" = "20_integration" ]; then
     (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-integration)
   fi
