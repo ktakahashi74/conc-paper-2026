@@ -46,8 +46,8 @@ const PAL_CD: RGBColor = RGBColor(62, 111, 182); // #3E6FB6 cobalt blue
 
 const SPACE_BINS_PER_OCT: u32 = 400;
 
-const E2_SWEEPS: usize = 50;
-const E2_BURN_IN: usize = 10;
+const E2_SWEEPS: usize = 8;
+const E2_BURN_IN: usize = 2;
 const E2_ANCHOR_SHIFT_STEP: usize = usize::MAX;
 const E2_ANCHOR_SHIFT_RATIO: f32 = 0.5;
 const E2_STEP_SEMITONES: f32 = 0.25;
@@ -62,7 +62,7 @@ const E2_C_LEVEL_BETA: f32 = 2.0;
 const E2_C_LEVEL_THETA: f32 = 0.0;
 const E2_ACCEPT_ENABLED: bool = true;
 const E2_ACCEPT_T0: f32 = 0.05;
-const E2_ACCEPT_TAU_STEPS: f32 = 30.0;
+const E2_ACCEPT_TAU_STEPS: f32 = 4.8;
 const E2_ACCEPT_RESET_ON_PHASE: bool = true;
 const E2_SCORE_IMPROVE_EPS: f32 = 1e-4;
 const E2_ANTI_BACKTRACK_ENABLED: bool = true;
@@ -2018,6 +2018,7 @@ fn plot_e2_emergent_harmony(
         &baseline_g_scene,
         &nohill_g_scene,
         phase_mode,
+        baseline_run.n_agents,
     )?;
 
     let mean_plot_path = out_dir.join("paper_e2_mean_c_level_over_time.svg");
@@ -2177,7 +2178,7 @@ fn plot_e2_emergent_harmony(
         e2_summary_csv(&baseline_runs),
     )?;
 
-    let flutter_segments = e2_flutter_segments(phase_mode);
+    let flutter_segments = e2_flutter_segments(phase_mode, baseline_run.n_agents);
     let mut flutter_csv = String::from(
         "segment,start_step,end_step,pingpong_rate_moves,reversal_rate_moves,move_rate_stepwise,mean_abs_delta_moved,step_count,moved_step_count,move_count,pingpong_count_moves,reversal_count_moves\n",
     );
@@ -3841,6 +3842,45 @@ fn e2_post_step_for(steps: usize) -> usize {
     steps.saturating_sub(1)
 }
 
+fn e2_microsteps_per_sweep(n_agents: usize) -> usize {
+    n_agents.max(1)
+}
+
+fn e2_trajectory_burn_in_step(n_agents: usize) -> usize {
+    E2_BURN_IN.saturating_mul(e2_microsteps_per_sweep(n_agents))
+}
+
+fn e2_trajectory_phase_switch_step(phase_mode: E2PhaseMode, n_agents: usize) -> Option<usize> {
+    phase_mode
+        .switch_step()
+        .map(|step| step.saturating_mul(e2_microsteps_per_sweep(n_agents)))
+}
+
+fn e2_upsample_sweep_series_to_microsteps(series: &[f32], n_agents: usize) -> Vec<f32> {
+    if series.is_empty() {
+        return Vec::new();
+    }
+    let microsteps = e2_microsteps_per_sweep(n_agents);
+    if microsteps <= 1 {
+        return series.to_vec();
+    }
+    let mut out = Vec::with_capacity(1 + series.len().saturating_mul(microsteps));
+    let initial = series[0];
+    out.push(initial);
+    for _ in 0..microsteps {
+        out.push(initial);
+    }
+    for window in series.windows(2) {
+        let start = window[0];
+        let end = window[1];
+        for step in 1..=microsteps {
+            let t = step as f32 / microsteps as f32;
+            out.push(start + (end - start) * t);
+        }
+    }
+    out
+}
+
 fn e2_caption_suffix(phase_mode: E2PhaseMode) -> String {
     let base = if e2_anchor_shift_enabled() {
         format!("burn-in={E2_BURN_IN}, shift@{E2_ANCHOR_SHIFT_STEP}")
@@ -4086,11 +4126,9 @@ fn run_e2_once_cfg(
     let mut r_state01_mean_sum = 0.0f32;
     let mut r_state01_mean_count = 0u32;
 
+    let trajectory_steps_cap = 1 + E2_SWEEPS.saturating_mul(e2_microsteps_per_sweep(n_agents));
     let mut trajectory_semitones = (0..n_agents)
-        .map(|_| Vec::with_capacity(E2_SWEEPS))
-        .collect::<Vec<_>>();
-    let mut trajectory_c_level = (0..n_agents)
-        .map(|_| Vec::with_capacity(E2_SWEEPS))
+        .map(|_| Vec::with_capacity(trajectory_steps_cap))
         .collect::<Vec<_>>();
     let mut backtrack_targets = agent_indices.clone();
     let use_proposal = matches!(
@@ -4198,10 +4236,12 @@ fn run_e2_once_cfg(
         mean_c_series.push(mean_c);
         mean_c_level_series.push(mean_c_level);
 
-        for (agent_id, &idx) in agent_indices.iter().enumerate() {
-            let semitone = 12.0 * log2_ratio_scan[idx];
-            trajectory_semitones[agent_id].push(semitone);
-            trajectory_c_level[agent_id].push(c_level_scan[idx]);
+        if sweep == 0 {
+            record_e2_trajectory_snapshot(
+                &mut trajectory_semitones,
+                &agent_indices,
+                &log2_ratio_scan,
+            );
         }
 
         if sweep >= E2_BURN_IN {
@@ -4246,6 +4286,7 @@ fn run_e2_once_cfg(
                 } else {
                     None
                 },
+                Some(trajectory_semitones.as_mut_slice()),
                 &mut rng,
             ),
             E2Condition::NoCrowding => {
@@ -4275,6 +4316,7 @@ fn run_e2_once_cfg(
                         } else {
                             None
                         },
+                        Some(trajectory_semitones.as_mut_slice()),
                         &mut rng,
                     )
                 } else {
@@ -4306,6 +4348,7 @@ fn run_e2_once_cfg(
                         } else {
                             None
                         },
+                        Some(trajectory_semitones.as_mut_slice()),
                         &mut rng,
                     )
                 }
@@ -4328,6 +4371,7 @@ fn run_e2_once_cfg(
                 E2_CROWDING_WEIGHT,
                 &kernel_params,
                 sweep,
+                Some(trajectory_semitones.as_mut_slice()),
                 &mut rng,
             ),
             E2Condition::ShuffledLandscape => {
@@ -4355,6 +4399,7 @@ fn run_e2_once_cfg(
                         } else {
                             None
                         },
+                        Some(trajectory_semitones.as_mut_slice()),
                         &mut rng,
                     )
                 } else {
@@ -4383,6 +4428,7 @@ fn run_e2_once_cfg(
                         } else {
                             None
                         },
+                        Some(trajectory_semitones.as_mut_slice()),
                         &mut rng,
                     )
                 }
@@ -4460,6 +4506,14 @@ fn run_e2_once_cfg(
     } else {
         0.0
     };
+    let trajectory_c_level = compute_e2_trajectory_c_levels(
+        space,
+        &workspace,
+        &du_scan,
+        fixed_drone.idx,
+        anchor_hz_current,
+        &trajectory_semitones,
+    );
 
     E2Run {
         seed,
@@ -7734,6 +7788,89 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
             ("6 partials (default)", 6),
             ("10 partials", 10),
         ];
+        let topo_conds = [
+            ("H", E6Condition::Heredity, 0.0f32),
+            ("HH", E6Condition::Heredity, E6_HILL_LANDSCAPE_WEIGHT),
+            ("R", E6Condition::Random, 0.0f32),
+            ("RH", E6Condition::Random, E6_HILL_LANDSCAPE_WEIGHT),
+        ];
+        struct TopologyCondResult {
+            topo_idx: usize,
+            cond_idx: usize,
+            finals: Vec<f32>,
+        }
+        let topo_jobs: Vec<(usize, &str, u32, usize, &str, E6Condition, f32)> = partials_settings
+            .iter()
+            .enumerate()
+            .flat_map(|(topo_idx, &(tlabel, n_partials))| {
+                topo_conds
+                    .iter()
+                    .enumerate()
+                    .map(move |(cond_idx, &(clabel, condition, lw))| {
+                        (
+                            topo_idx, tlabel, n_partials, cond_idx, clabel, condition, lw,
+                        )
+                    })
+            })
+            .collect();
+        let topo_results: Vec<TopologyCondResult> = std::thread::scope(|scope| {
+            let handles: Vec<_> = topo_jobs
+                .iter()
+                .map(
+                    |&(topo_idx, tlabel, n_partials, cond_idx, clabel, condition, lw)| {
+                        scope.spawn(move || {
+                            eprintln!("    Topology: {tlabel} / {clabel}");
+                            let eval_landscape =
+                                e3_reference_landscape_with_partials(anchor_hz, n_partials);
+                            let finals: Vec<f32> = E6_SEEDS
+                                .iter()
+                                .map(|&seed| {
+                                    let cfg = E6RunConfig {
+                                        seed,
+                                        steps_cap: E6_STEPS_CAP,
+                                        min_deaths: E6_MIN_DEATHS,
+                                        pop_size: E6_POP_SIZE,
+                                        first_k: E6_FIRST_K,
+                                        condition,
+                                        snapshot_interval: E6_SNAPSHOT_INTERVAL,
+                                        landscape_weight: lw,
+                                        shuffle_landscape: false,
+                                        env_partials: Some(n_partials),
+                                    };
+                                    let result = run_e6(&cfg);
+                                    result
+                                        .snapshots
+                                        .last()
+                                        .map(|s| {
+                                            let pt = e6_snapshot_point(
+                                                &s.freqs_hz,
+                                                anchor_hz,
+                                                &eval_landscape,
+                                            );
+                                            pt.mean_c_score
+                                        })
+                                        .unwrap_or(0.0)
+                                })
+                                .collect();
+                            TopologyCondResult {
+                                topo_idx,
+                                cond_idx,
+                                finals,
+                            }
+                        })
+                    },
+                )
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().expect("topology worker thread panicked"))
+                .collect()
+        });
+        let mut topo_finals: Vec<Vec<Vec<f32>>> =
+            vec![vec![Vec::new(); topo_conds.len()]; partials_settings.len()];
+        for result in topo_results {
+            topo_finals[result.topo_idx][result.cond_idx] = result.finals;
+        }
         let mut topo_report = String::from(
             "Topology Generalization — E6 Integration\n\
              =========================================\n\
@@ -7741,45 +7878,8 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
              Varying number of environment partials (changes harmonicity structure)\n\n\
              Topology                        H       HH      R       RH      Contrast  CI95          p\n",
         );
-        for (tlabel, n_partials) in &partials_settings {
-            eprintln!("    Topology: {}", tlabel);
-            // Build evaluation landscape matching this topology
-            let eval_landscape = e3_reference_landscape_with_partials(anchor_hz, *n_partials);
-            let topo_conds = [
-                (E6Condition::Heredity, 0.0f32),
-                (E6Condition::Heredity, E6_HILL_LANDSCAPE_WEIGHT),
-                (E6Condition::Random, 0.0f32),
-                (E6Condition::Random, E6_HILL_LANDSCAPE_WEIGHT),
-            ];
-            let mut tc_finals: Vec<Vec<f32>> = Vec::new();
-            for &(condition, lw) in &topo_conds {
-                let mut seed_vals: Vec<f32> = Vec::new();
-                for &seed in &E6_SEEDS {
-                    let cfg = E6RunConfig {
-                        seed,
-                        steps_cap: E6_STEPS_CAP,
-                        min_deaths: E6_MIN_DEATHS,
-                        pop_size: E6_POP_SIZE,
-                        first_k: E6_FIRST_K,
-                        condition,
-                        snapshot_interval: E6_SNAPSHOT_INTERVAL,
-                        landscape_weight: lw,
-                        shuffle_landscape: false,
-                        env_partials: Some(*n_partials),
-                    };
-                    let result = run_e6(&cfg);
-                    let final_c = result
-                        .snapshots
-                        .last()
-                        .map(|s| {
-                            let pt = e6_snapshot_point(&s.freqs_hz, anchor_hz, &eval_landscape);
-                            pt.mean_c_score
-                        })
-                        .unwrap_or(0.0);
-                    seed_vals.push(final_c);
-                }
-                tc_finals.push(seed_vals);
-            }
+        for (topo_idx, (tlabel, _n_partials)) in partials_settings.iter().enumerate() {
+            let tc_finals = &topo_finals[topo_idx];
             let n = E6_SEEDS.len();
             let tm = |i: usize| tc_finals[i].iter().sum::<f32>() / n as f32;
             let contrasts: Vec<f32> = tc_finals[0]
@@ -19026,6 +19126,7 @@ fn update_e2_sweep_scored_loo(
     sweep: usize,
     block_backtrack: bool,
     backtrack_targets: Option<&[usize]>,
+    mut trajectory_semitones: Option<&mut [Vec<f32>]>,
     rng: &mut StdRng,
 ) -> UpdateStats {
     if indices.is_empty() {
@@ -19108,6 +19209,9 @@ fn update_e2_sweep_scored_loo(
         }
         if stats.accepted_worse {
             accepted_worse_count += 1;
+        }
+        if let Some(trace) = trajectory_semitones.as_deref_mut() {
+            record_e2_trajectory_snapshot(trace, indices, log2_ratio_scan);
         }
         if stats.abs_delta_semitones.is_finite() {
             abs_delta_sum += stats.abs_delta_semitones;
@@ -19194,6 +19298,7 @@ fn update_e2_sweep_prescored(
     sweep: usize,
     block_backtrack: bool,
     backtrack_targets: Option<&[usize]>,
+    mut trajectory_semitones: Option<&mut [Vec<f32>]>,
     rng: &mut StdRng,
 ) -> UpdateStats {
     if indices.is_empty() {
@@ -19332,6 +19437,10 @@ fn update_e2_sweep_prescored(
         let abs_delta_moved = if moved { abs_delta } else { 0.0 };
         let c_score_chosen = prescored_c_score_scan[chosen_idx];
 
+        if let Some(trace) = trajectory_semitones.as_deref_mut() {
+            record_e2_trajectory_snapshot(trace, indices, log2_ratio_scan);
+        }
+
         if moved {
             moved_count += 1;
         }
@@ -19420,6 +19529,7 @@ fn update_e2_sweep_nohill(
     crowding_weight: f32,
     kernel_params: &KernelParams,
     sweep: usize,
+    mut trajectory_semitones: Option<&mut [Vec<f32>]>,
     rng: &mut StdRng,
 ) -> UpdateStats {
     if indices.is_empty() {
@@ -19519,6 +19629,9 @@ fn update_e2_sweep_nohill(
         }
         if next_idx != current_idx {
             moved_count += 1;
+        }
+        if let Some(trace) = trajectory_semitones.as_deref_mut() {
+            record_e2_trajectory_snapshot(trace, indices, log2_ratio_scan);
         }
         if c_score_current.is_finite() {
             c_score_current_sum += c_score_current;
@@ -20439,20 +20552,25 @@ fn flutter_metrics_for_trajectories(
     }
 }
 
-fn e2_flutter_segments(phase_mode: E2PhaseMode) -> Vec<(&'static str, usize, usize)> {
-    if let Some(switch_step) = phase_mode.switch_step() {
+fn e2_flutter_segments(
+    phase_mode: E2PhaseMode,
+    n_agents: usize,
+) -> Vec<(&'static str, usize, usize)> {
+    let burn_in = e2_trajectory_burn_in_step(n_agents);
+    let total_steps = E2_SWEEPS.saturating_mul(e2_microsteps_per_sweep(n_agents));
+    if let Some(switch_step) = e2_trajectory_phase_switch_step(phase_mode, n_agents) {
         let pre_end = switch_step.saturating_sub(1);
         let post_start = switch_step;
         let mut segments = Vec::new();
-        if pre_end >= E2_BURN_IN {
-            segments.push(("pre", E2_BURN_IN, pre_end));
+        if pre_end >= burn_in {
+            segments.push(("pre", burn_in, pre_end));
         }
-        if post_start < E2_SWEEPS {
-            segments.push(("post", post_start, E2_SWEEPS.saturating_sub(1)));
+        if post_start <= total_steps {
+            segments.push(("post", post_start, total_steps));
         }
         segments
     } else {
-        vec![("all", E2_BURN_IN, E2_SWEEPS.saturating_sub(1))]
+        vec![("all", burn_in, total_steps)]
     }
 }
 
@@ -24327,25 +24445,34 @@ fn render_e2_figure1(
     let (content, _) = content.split_horizontally(1710);
     let (wide, panel_d) = content.split_horizontally(1440);
     let panels = wide.split_evenly((1, 3));
-
-    let len = baseline_stats
-        .mean_c_score_loo
+    let traj_n_agents = trajectories.len().max(1);
+    let c_baseline_micro =
+        e2_upsample_sweep_series_to_microsteps(&baseline_stats.mean_c_score_loo, traj_n_agents);
+    let c_nohill_micro =
+        e2_upsample_sweep_series_to_microsteps(&nohill_stats.mean_c_score_loo, traj_n_agents);
+    let c_baseline_ci95_micro =
+        e2_upsample_sweep_series_to_microsteps(baseline_ci95_c, traj_n_agents);
+    let c_nohill_ci95_micro = e2_upsample_sweep_series_to_microsteps(nohill_ci95_c, traj_n_agents);
+    let c_len = c_baseline_micro
         .len()
-        .min(baseline_stats.std_c_score_loo.len())
-        .min(nohill_stats.mean_c_score_loo.len())
-        .min(nohill_stats.std_c_score_loo.len());
+        .min(c_baseline_ci95_micro.len())
+        .min(c_nohill_micro.len())
+        .min(c_nohill_ci95_micro.len());
+    let traj_burn_in = e2_trajectory_burn_in_step(traj_n_agents);
+    let traj_phase_switch = e2_trajectory_phase_switch_step(phase_mode, traj_n_agents);
+
     draw_e2_timeseries_pair_panel(
         &panels[0],
         "A. Mean LOO C_score",
         "mean LOO C_score",
-        &baseline_stats.mean_c_score_loo,
-        baseline_ci95_c,
-        &nohill_stats.mean_c_score_loo,
-        nohill_ci95_c,
-        E2_BURN_IN,
-        phase_mode.switch_step(),
+        &c_baseline_micro,
+        &c_baseline_ci95_micro,
+        &c_nohill_micro,
+        &c_nohill_ci95_micro,
+        traj_burn_in,
+        traj_phase_switch,
         0,
-        len.saturating_sub(1),
+        c_len.saturating_sub(1),
         true,
         Some((0.0, 1.0)),
     )?;
@@ -24374,8 +24501,8 @@ fn render_e2_figure1(
         &panels[2],
         "C. Local-search trajectories",
         trajectories,
-        E2_BURN_IN,
-        phase_mode.switch_step(),
+        traj_burn_in,
+        traj_phase_switch,
     )?;
     draw_diversity_metric_panel_impl_for_conditions(
         &panel_d,
@@ -28429,6 +28556,7 @@ mod tests {
             0,
             false,
             None,
+            None,
             &mut rng,
         );
         let expected_moved = stats.attempted_update_frac * stats.moved_given_attempt_frac;
@@ -28480,6 +28608,7 @@ mod tests {
             0.05,
             0,
             false,
+            None,
             None,
             &mut rng,
         );
@@ -29326,6 +29455,7 @@ fn render_e2_scene_g_pair_plot(
     baseline: &[E2SceneGPoint],
     nohill: &[E2SceneGPoint],
     phase_mode: E2PhaseMode,
+    n_agents: usize,
 ) -> Result<(), Box<dyn Error>> {
     if baseline.is_empty() || nohill.is_empty() {
         return Ok(());
@@ -29362,14 +29492,18 @@ fn render_e2_scene_g_pair_plot(
         .axis_desc_style(("sans-serif", 28).into_font())
         .draw()?;
 
-    if let Some((burn_x0, burn_x1)) = e2_burn_band_x(E2_BURN_IN, phase_mode.switch_step(), 0, x_max)
-    {
+    if let Some((burn_x0, burn_x1)) = e2_burn_band_x(
+        e2_trajectory_burn_in_step(n_agents),
+        e2_trajectory_phase_switch_step(phase_mode, n_agents),
+        0,
+        x_max,
+    ) {
         chart.draw_series(std::iter::once(Rectangle::new(
             [(burn_x0, y_min), (burn_x1, y_max)],
             RGBColor(180, 180, 180).mix(0.15).filled(),
         )))?;
     }
-    if let Some(step) = phase_mode.switch_step()
+    if let Some(step) = e2_trajectory_phase_switch_step(phase_mode, n_agents)
         && step <= x_max
     {
         chart.draw_series(std::iter::once(PathElement::new(
@@ -30612,6 +30746,57 @@ fn e2_scene_apply_move(
     density_total[to_idx] += 1.0 / du_scan[to_idx].max(1e-12);
 }
 
+fn record_e2_trajectory_snapshot(
+    trajectory_semitones: &mut [Vec<f32>],
+    indices: &[usize],
+    log2_ratio_scan: &[f32],
+) {
+    for (agent_id, &idx) in indices.iter().enumerate() {
+        let semitone = 12.0 * log2_ratio_scan[idx];
+        if let Some(trace) = trajectory_semitones.get_mut(agent_id) {
+            trace.push(semitone);
+        }
+    }
+}
+
+fn compute_e2_trajectory_c_levels(
+    space: &Log2Space,
+    workspace: &ConsonanceWorkspace,
+    du_scan: &[f32],
+    fixed_drone_idx: usize,
+    anchor_hz: f32,
+    trajectory_semitones: &[Vec<f32>],
+) -> Vec<Vec<f32>> {
+    if trajectory_semitones.is_empty() {
+        return Vec::new();
+    }
+    let n_agents = trajectory_semitones.len();
+    let n_steps = trajectory_semitones[0].len();
+    let mut trajectory_c_level = (0..n_agents)
+        .map(|_| Vec::with_capacity(n_steps))
+        .collect::<Vec<_>>();
+    for step in 0..n_steps {
+        let mut indices = Vec::with_capacity(n_agents);
+        for trace in trajectory_semitones {
+            let st = trace.get(step).copied().unwrap_or(f32::NAN);
+            let freq_hz = anchor_hz * 2.0_f32.powf(st / 12.0);
+            indices.push(space.nearest_index(freq_hz));
+        }
+        let (env_scan, density_scan) = build_env_scans_with_fixed_sources(
+            space,
+            std::slice::from_ref(&fixed_drone_idx),
+            &indices,
+            du_scan,
+        );
+        let (_, c_level_scan, _, _) =
+            compute_c_score_level_scans(space, workspace, &env_scan, &density_scan, du_scan);
+        for (agent_id, &idx) in indices.iter().enumerate() {
+            trajectory_c_level[agent_id].push(c_level_scan[idx]);
+        }
+    }
+    trajectory_c_level
+}
+
 #[allow(clippy::too_many_arguments)]
 fn update_e2_sweep_pitch_core_proposal(
     schedule: E2UpdateSchedule,
@@ -30635,6 +30820,7 @@ fn update_e2_sweep_pitch_core_proposal(
     sweep: usize,
     block_backtrack: bool,
     backtrack_targets: Option<&[usize]>,
+    mut trajectory_semitones: Option<&mut [Vec<f32>]>,
     rng: &mut StdRng,
 ) -> UpdateStats {
     if indices.is_empty() {
@@ -30815,6 +31001,10 @@ fn update_e2_sweep_pitch_core_proposal(
         let abs_delta_moved = if moved { abs_delta } else { 0.0 };
         let c_score_chosen = loo_c_score_scan[chosen_idx];
 
+        if let Some(trace) = trajectory_semitones.as_deref_mut() {
+            record_e2_trajectory_snapshot(trace, indices, log2_ratio_scan);
+        }
+
         if moved {
             moved_count += 1;
         }
@@ -30900,6 +31090,7 @@ fn update_e2_sweep_pitch_core_proposal_prescored(
     sweep: usize,
     block_backtrack: bool,
     backtrack_targets: Option<&[usize]>,
+    mut trajectory_semitones: Option<&mut [Vec<f32>]>,
     rng: &mut StdRng,
 ) -> UpdateStats {
     if indices.is_empty() {
@@ -31057,6 +31248,10 @@ fn update_e2_sweep_pitch_core_proposal_prescored(
         let abs_delta_moved = if moved { abs_delta } else { 0.0 };
         let c_score_chosen = prescored_c_score_scan[chosen_idx];
 
+        if let Some(trace) = trajectory_semitones.as_deref_mut() {
+            record_e2_trajectory_snapshot(trace, indices, log2_ratio_scan);
+        }
+
         if moved {
             moved_count += 1;
         }
@@ -31177,11 +31372,9 @@ fn run_e2_once_proposal_cfg(
     let mut r_state01_max = f32::NEG_INFINITY;
     let mut r_state01_mean_sum = 0.0f32;
     let mut r_state01_mean_count = 0u32;
+    let trajectory_steps_cap = 1 + E2_SWEEPS.saturating_mul(e2_microsteps_per_sweep(n_agents));
     let mut trajectory_semitones = (0..n_agents)
-        .map(|_| Vec::with_capacity(E2_SWEEPS))
-        .collect::<Vec<_>>();
-    let mut trajectory_c_level = (0..n_agents)
-        .map(|_| Vec::with_capacity(E2_SWEEPS))
+        .map(|_| Vec::with_capacity(trajectory_steps_cap))
         .collect::<Vec<_>>();
     let mut backtrack_targets = agent_indices.clone();
     let phase_switch_step = phase_mode.switch_step();
@@ -31220,10 +31413,12 @@ fn run_e2_once_proposal_cfg(
         mean_c_series.push(mean_c);
         mean_c_level_series.push(mean_c_level);
 
-        for (agent_id, &idx) in agent_indices.iter().enumerate() {
-            let semitone = 12.0 * log2_ratio_scan[idx];
-            trajectory_semitones[agent_id].push(semitone);
-            trajectory_c_level[agent_id].push(c_level_scan[idx]);
+        if sweep == 0 {
+            record_e2_trajectory_snapshot(
+                &mut trajectory_semitones,
+                &agent_indices,
+                &log2_ratio_scan,
+            );
         }
         if sweep >= E2_BURN_IN {
             let target = if sweep < E2_PHASE_SWITCH_STEP {
@@ -31263,6 +31458,7 @@ fn run_e2_once_proposal_cfg(
                 } else {
                     None
                 },
+                Some(trajectory_semitones.as_mut_slice()),
                 &mut rng,
             )
         } else {
@@ -31292,6 +31488,7 @@ fn run_e2_once_proposal_cfg(
                 } else {
                     None
                 },
+                Some(trajectory_semitones.as_mut_slice()),
                 &mut rng,
             )
         };
@@ -31323,6 +31520,14 @@ fn run_e2_once_proposal_cfg(
         .map(|&st| anchor_hz_current * 2.0_f32.powf(st / 12.0))
         .collect();
     let final_log2_ratios: Vec<f32> = final_semitones.iter().map(|&st| st / 12.0).collect();
+    let trajectory_c_level = compute_e2_trajectory_c_levels(
+        space,
+        &workspace,
+        &du_scan,
+        fixed_drone.idx,
+        anchor_hz_current,
+        &trajectory_semitones,
+    );
 
     E2Run {
         seed,

@@ -664,10 +664,9 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
         .clamp(space.fmin, space.fmax)
         .max((anchor_hz * 2.0f32.powf(-half)).clamp(space.fmin, space.fmax));
 
-    const LANDSCAPE_REFRESH_INTERVAL: usize = 100;
     for step in 0..cfg.steps_cap {
-        // Periodically recompute landscape from all alive agents (includes roughness)
-        if step > 0 && step % LANDSCAPE_REFRESH_INTERVAL == 0 {
+        // Recompute landscape from all alive agents on every update (includes roughness).
+        if step > 0 {
             update_e4_landscape_from_population(
                 &space,
                 &params,
