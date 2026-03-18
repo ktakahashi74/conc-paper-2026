@@ -16,15 +16,17 @@ use plotters::prelude::*;
 use crate::sim::{
     E3Condition, E3DeathRecord, E3RunConfig, E4_ANCHOR_HZ, E4RuntimeOverrides, E4TailSamples,
     E6AgentSnapshot, E6Condition, E6PitchSnapshot, E6RunConfig, E6RunResult,
-    configure_shared_hillclimb_core, e3_policy_params,
-    e3_reference_landscape, e3_reference_landscape_with_partials, e4_paper_meta,
-    run_e3_collect_deaths, run_e4_condition_tail_samples, run_e4_condition_tail_samples_with_wr,
-    run_e4_mirror_schedule_samples, run_e6, set_e4_runtime_overrides,
+    configure_shared_hillclimb_core, e3_policy_params, e3_reference_landscape,
+    e3_reference_landscape_with_partials, e4_paper_meta, run_e3_collect_deaths,
+    run_e4_condition_tail_samples, run_e4_condition_tail_samples_with_wr,
+    run_e4_mirror_schedule_samples, run_e6, set_e4_runtime_overrides, shared_hill_move_cost_coeff,
 };
 use conchordal::core::consonance_kernel::{ConsonanceKernel, ConsonanceRepresentationParams};
 use conchordal::core::erb::hz_to_erb;
 use conchordal::core::harmonicity_kernel::{HarmonicityKernel, HarmonicityParams};
-use conchordal::core::landscape::{Landscape, LandscapeParams, PitchObjectiveMode, RoughnessScalarMode};
+use conchordal::core::landscape::{
+    Landscape, LandscapeParams, PitchObjectiveMode, RoughnessScalarMode,
+};
 use conchordal::core::log2space::{Log2Space, sample_scan_linear_log2};
 use conchordal::core::phase::wrap_pm_pi;
 use conchordal::core::psycho_state;
@@ -170,9 +172,10 @@ enum E2UpdateSchedule {
     Checkerboard,
     Lazy,
     RandomSingle,
+    SequentialRotate,
 }
 
-const E2_UPDATE_SCHEDULE: E2UpdateSchedule = E2UpdateSchedule::Checkerboard;
+const E2_UPDATE_SCHEDULE: E2UpdateSchedule = E2UpdateSchedule::SequentialRotate;
 
 const E4_TAIL_WINDOW_STEPS: u32 = 400;
 #[allow(dead_code)]
@@ -1318,23 +1321,11 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
         let cfg_off = crate::sim::E3AudioConfig::default_off();
         let scenario_dir = PathBuf::from("supplementary_audio/scenarios");
         let audio_dir = PathBuf::from("supplementary_audio/audio");
-        crate::sim::generate_e3_rhai(
-            &cfg_shared,
-            &scenario_dir.join("30_e3_shared.rhai"),
-        )?;
+        crate::sim::generate_e3_rhai(&cfg_shared, &scenario_dir.join("30_e3_shared.rhai"))?;
         crate::sim::render_e3_audio(&cfg_shared, &audio_dir.join("30_e3_shared.wav"))?;
-        crate::sim::generate_e3_rhai(
-            &cfg_scrambled,
-            &scenario_dir.join("30_e3_scrambled.rhai"),
-        )?;
-        crate::sim::render_e3_audio(
-            &cfg_scrambled,
-            &audio_dir.join("30_e3_scrambled.wav"),
-        )?;
-        crate::sim::generate_e3_rhai(
-            &cfg_off,
-            &scenario_dir.join("30_e3_off.rhai"),
-        )?;
+        crate::sim::generate_e3_rhai(&cfg_scrambled, &scenario_dir.join("30_e3_scrambled.rhai"))?;
+        crate::sim::render_e3_audio(&cfg_scrambled, &audio_dir.join("30_e3_scrambled.wav"))?;
+        crate::sim::generate_e3_rhai(&cfg_off, &scenario_dir.join("30_e3_off.rhai"))?;
         crate::sim::render_e3_audio(&cfg_off, &audio_dir.join("30_e3_off.wav"))?;
         return Ok(());
     }
@@ -3913,8 +3904,28 @@ fn e2_should_attempt_update(agent_id: usize, step: usize, u_move: f32) -> bool {
     match E2_UPDATE_SCHEDULE {
         E2UpdateSchedule::Checkerboard => (agent_id + step).is_multiple_of(2),
         E2UpdateSchedule::Lazy => u_move < E2_LAZY_MOVE_PROB.clamp(0.0, 1.0),
-        E2UpdateSchedule::RandomSingle => true,
+        E2UpdateSchedule::RandomSingle | E2UpdateSchedule::SequentialRotate => true,
     }
+}
+
+fn build_e2_update_order(
+    schedule: E2UpdateSchedule,
+    len: usize,
+    step: usize,
+    rng: &mut StdRng,
+) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..len).collect();
+    match schedule {
+        E2UpdateSchedule::RandomSingle => order.shuffle(rng),
+        E2UpdateSchedule::SequentialRotate => {
+            if !order.is_empty() {
+                let start = step % order.len();
+                order.rotate_left(start);
+            }
+        }
+        E2UpdateSchedule::Checkerboard | E2UpdateSchedule::Lazy => {}
+    }
+    order
 }
 
 fn e2_should_block_backtrack(phase_mode: E2PhaseMode, step: usize) -> bool {
@@ -4091,8 +4102,6 @@ fn run_e2_once_cfg(
     } else {
         Vec::new()
     };
-    let mut nohill_env_loo = Vec::new();
-    let mut nohill_density_loo = Vec::new();
 
     // Fixed permutation for ShuffledLandscape (generated once per run).
     let shuffle_perm: Vec<usize> = if matches!(condition, E2Condition::ShuffledLandscape) {
@@ -4209,38 +4218,36 @@ fn run_e2_once_cfg(
         let block_backtrack = e2_should_block_backtrack(phase_mode, sweep);
         let positions_before_update = agent_indices.clone();
         let stats = match condition {
-            E2Condition::Baseline => {
-                update_e2_sweep_pitch_core_proposal(
-                    E2_UPDATE_SCHEDULE,
-                    &mut agent_indices,
-                    &positions_before_update,
-                    &mut pitch_cores,
-                    space,
-                    landscape
-                        .as_ref()
-                        .expect("proposal landscape missing for baseline"),
-                    &workspace,
-                    &env_scan,
-                    &density_scan,
-                    &du_scan,
-                    &erb_scan,
-                    &log2_ratio_scan,
-                    min_idx,
-                    max_idx,
-                    score_sign,
-                    E2_CROWDING_WEIGHT,
-                    &kernel_params,
-                    temperature,
-                    sweep,
-                    block_backtrack,
-                    if block_backtrack {
-                        Some(backtrack_targets.as_slice())
-                    } else {
-                        None
-                    },
-                    &mut rng,
-                )
-            }
+            E2Condition::Baseline => update_e2_sweep_pitch_core_proposal(
+                E2_UPDATE_SCHEDULE,
+                &mut agent_indices,
+                &positions_before_update,
+                &mut pitch_cores,
+                space,
+                landscape
+                    .as_ref()
+                    .expect("proposal landscape missing for baseline"),
+                &workspace,
+                &env_scan,
+                &density_scan,
+                &du_scan,
+                &erb_scan,
+                &log2_ratio_scan,
+                min_idx,
+                max_idx,
+                score_sign,
+                E2_CROWDING_WEIGHT,
+                &kernel_params,
+                temperature,
+                sweep,
+                block_backtrack,
+                if block_backtrack {
+                    Some(backtrack_targets.as_slice())
+                } else {
+                    None
+                },
+                &mut rng,
+            ),
             E2Condition::NoCrowding => {
                 if score_sign < 0.0 {
                     update_e2_sweep_scored_loo(
@@ -4303,49 +4310,26 @@ fn run_e2_once_cfg(
                     )
                 }
             }
-            E2Condition::NoHillClimb => {
-                let (moved, attempts, abs_delta_sum, abs_delta_moved_sum) = update_e2_sweep_nohill(
-                    E2_UPDATE_SCHEDULE,
-                    &mut agent_indices,
-                    &positions_before_update,
-                    &log2_ratio_scan,
-                    min_idx,
-                    max_idx,
-                    k_bins,
-                    sweep,
-                    &mut rng,
-                );
-                let mut stats = score_stats_at_indices_loo_reused(
-                    space,
-                    &workspace,
-                    &env_scan,
-                    &density_scan,
-                    &du_scan,
-                    &erb_scan,
-                    &positions_before_update,
-                    &positions_before_update,
-                    &agent_indices,
-                    score_sign,
-                    E2_CROWDING_WEIGHT,
-                    &kernel_params,
-                    &mut nohill_env_loo,
-                    &mut nohill_density_loo,
-                );
-                if !agent_indices.is_empty() {
-                    stats.moved_frac = moved as f32 / agent_indices.len() as f32;
-                    stats.mean_abs_delta_semitones = abs_delta_sum / agent_indices.len() as f32;
-                    stats.attempted_update_frac = attempts as f32 / agent_indices.len() as f32;
-                    stats.moved_given_attempt_frac = if attempts > 0 {
-                        moved as f32 / attempts as f32
-                    } else {
-                        0.0
-                    };
-                }
-                if moved > 0 {
-                    stats.mean_abs_delta_semitones_moved = abs_delta_moved_sum / moved as f32;
-                }
-                stats
-            }
+            E2Condition::NoHillClimb => update_e2_sweep_nohill(
+                E2_UPDATE_SCHEDULE,
+                &mut agent_indices,
+                &positions_before_update,
+                space,
+                &workspace,
+                &env_scan,
+                &density_scan,
+                &du_scan,
+                &erb_scan,
+                &log2_ratio_scan,
+                min_idx,
+                max_idx,
+                k_bins,
+                score_sign,
+                E2_CROWDING_WEIGHT,
+                &kernel_params,
+                sweep,
+                &mut rng,
+            ),
             E2Condition::ShuffledLandscape => {
                 let shuffled_scores: Vec<f32> =
                     shuffle_perm.iter().map(|&i| c_score_scan[i]).collect();
@@ -5942,7 +5926,11 @@ fn simulate_e7_temporal_scaffold(seed: u64, condition: E7Condition) -> E7Result 
 }
 
 fn plot_e7_temporal_scaffold(out_dir: &Path) -> Result<(), Box<dyn Error>> {
-    let conditions = [E7Condition::Shared, E7Condition::Scrambled, E7Condition::Off];
+    let conditions = [
+        E7Condition::Shared,
+        E7Condition::Scrambled,
+        E7Condition::Off,
+    ];
     let mut all_results: Vec<E7Result> = Vec::new();
     for &cond in &conditions {
         for &seed in &E7_SEEDS {
@@ -5950,7 +5938,8 @@ fn plot_e7_temporal_scaffold(out_dir: &Path) -> Result<(), Box<dyn Error>> {
         }
     }
 
-    let mut summary_csv = String::from("condition,seed,vector_strength,group_plv_final,onset_count\n");
+    let mut summary_csv =
+        String::from("condition,seed,vector_strength,group_plv_final,onset_count\n");
     for res in &all_results {
         let final_plv = res
             .group_plv_series
@@ -5987,7 +5976,8 @@ fn plot_e7_temporal_scaffold(out_dir: &Path) -> Result<(), Box<dyn Error>> {
                     let center = first[bin_idx].0;
                     let vals: Vec<f32> = seed_hists.iter().map(|hist| hist[bin_idx].1).collect();
                     let mean = vals.iter().copied().sum::<f32>() / vals.len() as f32;
-                    let var = vals.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / vals.len() as f32;
+                    let var =
+                        vals.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / vals.len() as f32;
                     let ci95 = 1.96 * var.sqrt() / (vals.len() as f32).sqrt();
                     bins.push((center, mean, ci95));
                 }
@@ -6009,7 +5999,10 @@ fn plot_e7_temporal_scaffold(out_dir: &Path) -> Result<(), Box<dyn Error>> {
             ));
         }
     }
-    write_with_log(out_dir.join("paper_e7_phase_hist_summary.csv"), &phase_hist_csv)?;
+    write_with_log(
+        out_dir.join("paper_e7_phase_hist_summary.csv"),
+        &phase_hist_csv,
+    )?;
 
     let rep_seed = pick_e7_representative_seed(&all_results)
         .unwrap_or(E7_SEEDS[E7_REPRESENTATIVE_SEED_IDX.min(E7_SEEDS.len() - 1)]);
@@ -6523,7 +6516,6 @@ fn plot_e6_hereditary_adaptation(
                     }
                     entry.push(bin);
                 }
-
             }
         }
 
@@ -7340,7 +7332,10 @@ where
             color.filled(),
         )))?;
         chart.draw_series(std::iter::once(PathElement::new(
-            vec![(center, (mean - ci).max(0.0)), (center, (mean + ci).min(y_hi))],
+            vec![
+                (center, (mean - ci).max(0.0)),
+                (center, (mean + ci).min(y_hi)),
+            ],
             BLACK.stroke_width(2),
         )))?;
     }
@@ -7905,11 +7900,10 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
             color.mix(0.15).filled(),
         )))?;
 
-        chart
-            .draw_series(LineSeries::new(
-                series.iter().map(|(x, mean, _)| (*x, *mean)),
-                color.stroke_width(2),
-            ))?;
+        chart.draw_series(LineSeries::new(
+            series.iter().map(|(x, mean, _)| (*x, *mean)),
+            color.stroke_width(2),
+        ))?;
     }
 
     draw_e6_integration_endpoint_panel(
@@ -7980,8 +7974,8 @@ struct E5DeltaSeries {
 
 struct E5SigmoidFit {
     base: f32,      // y at x → -∞
-    amplitude: f32,  // y at x → +∞ is base + amplitude
-    steepness: f32,  // slope of sigmoid (c50 fixed at 0)
+    amplitude: f32, // y at x → +∞ is base + amplitude
+    steepness: f32, // slope of sigmoid (c50 fixed at 0)
 }
 
 #[derive(Clone, Copy)]
@@ -8045,7 +8039,12 @@ fn e5_stratified_pitches(
             // Fallback: find candidate closest to stratum midpoint (in raw C_field)
             let (hz, c) = *candidates
                 .iter()
-                .min_by(|a, b| (a.1 - mid_val).abs().partial_cmp(&(b.1 - mid_val).abs()).unwrap())
+                .min_by(|a, b| {
+                    (a.1 - mid_val)
+                        .abs()
+                        .partial_cmp(&(b.1 - mid_val).abs())
+                        .unwrap()
+                })
                 .unwrap();
             pitches.push(hz);
             consonances.push(c);
@@ -8447,7 +8446,11 @@ fn fit_e5_sigmoid(points: &[(f32, f32)]) -> Option<E5SigmoidFit> {
         }
         if sse < best_sse {
             best_sse = sse;
-            best = Some(E5SigmoidFit { base, amplitude, steepness: s });
+            best = Some(E5SigmoidFit {
+                base,
+                amplitude,
+                steepness: s,
+            });
         }
     }
 
@@ -18868,12 +18871,10 @@ fn metropolis_accept(delta: f32, temperature: f32, u01: f32) -> (bool, bool) {
 fn update_one_agent_scored_loo(
     agent_i: usize,
     indices: &mut [usize],
-    prev_indices: &[usize],
-    prev_erb: &[f32],
+    env_current: &mut [f32],
+    density_current: &mut [f32],
     space: &Log2Space,
     workspace: &ConsonanceWorkspace,
-    env_total: &[f32],
-    density_total: &[f32],
     du_scan: &[f32],
     erb_scan: &[f32],
     log2_ratio_scan: &[f32],
@@ -18891,20 +18892,21 @@ fn update_one_agent_scored_loo(
     env_loo: &mut [f32],
     density_loo: &mut [f32],
 ) -> OneUpdateStats {
-    let agent_idx = prev_indices[agent_i];
-    env_loo.copy_from_slice(env_total);
-    density_loo.copy_from_slice(density_total);
+    let agent_idx = indices[agent_i];
+    env_loo.copy_from_slice(env_current);
+    density_loo.copy_from_slice(density_current);
     env_loo[agent_idx] = (env_loo[agent_idx] - 1.0).max(0.0);
     let denom = du_scan[agent_idx].max(1e-12);
     density_loo[agent_idx] = (density_loo[agent_idx] - 1.0 / denom).max(0.0);
     let (c_score_scan, _, _, _) =
         compute_c_score_level_scans(space, workspace, env_loo, density_loo, du_scan);
 
+    let current_erb_vals: Vec<f32> = indices.iter().map(|&idx| erb_scan[idx]).collect();
     let current_erb = erb_scan[agent_idx];
     let skip_penalty = crowding_weight <= 0.0;
     let mut current_crowding = 0.0f32;
     if !skip_penalty {
-        for (j, &other_erb) in prev_erb.iter().enumerate() {
+        for (j, &other_erb) in current_erb_vals.iter().enumerate() {
             if j == agent_i {
                 continue;
             }
@@ -18935,7 +18937,7 @@ fn update_one_agent_scored_loo(
             let cand_erb = erb_scan[cand];
             let mut crowding = 0.0f32;
             if !skip_penalty {
-                for (j, &other_erb) in prev_erb.iter().enumerate() {
+                for (j, &other_erb) in current_erb_vals.iter().enumerate() {
                     if j == agent_i {
                         continue;
                     }
@@ -18980,7 +18982,10 @@ fn update_one_agent_scored_loo(
         (agent_idx, current_score, current_crowding, false)
     };
 
-    indices[agent_i] = chosen_idx;
+    if chosen_idx != agent_idx {
+        e2_scene_apply_move(env_current, density_current, du_scan, agent_idx, chosen_idx);
+        indices[agent_i] = chosen_idx;
+    }
     let moved = chosen_idx != agent_idx;
     let delta_semitones = 12.0 * (log2_ratio_scan[chosen_idx] - log2_ratio_scan[agent_idx]);
     let abs_delta = delta_semitones.abs();
@@ -19003,7 +19008,7 @@ fn update_one_agent_scored_loo(
 fn update_e2_sweep_scored_loo(
     schedule: E2UpdateSchedule,
     indices: &mut [usize],
-    prev_indices: &[usize],
+    _prev_indices: &[usize],
     space: &Log2Space,
     workspace: &ConsonanceWorkspace,
     env_total: &[f32],
@@ -19040,17 +19045,15 @@ fn update_e2_sweep_scored_loo(
     space.assert_scan_len_named(env_total, "env_total");
     space.assert_scan_len_named(density_total, "density_total");
     space.assert_scan_len_named(du_scan, "du_scan");
-    let mut order: Vec<usize> = (0..indices.len()).collect();
-    if matches!(schedule, E2UpdateSchedule::RandomSingle) {
-        order.shuffle(rng);
-    }
+    let order = build_e2_update_order(schedule, indices.len(), sweep, rng);
     let u01_by_agent: Vec<f32> = (0..indices.len()).map(|_| rng.random::<f32>()).collect();
     let u_move_by_agent: Vec<f32> = if matches!(schedule, E2UpdateSchedule::Lazy) {
         (0..indices.len()).map(|_| rng.random::<f32>()).collect()
     } else {
         vec![0.0; indices.len()]
     };
-    let prev_erb: Vec<f32> = prev_indices.iter().map(|&idx| erb_scan[idx]).collect();
+    let mut env_current = env_total.to_vec();
+    let mut density_current = density_total.to_vec();
     let mut env_loo = vec![0.0f32; env_total.len()];
     let mut density_loo = vec![0.0f32; density_total.len()];
     let mut c_score_current_sum = 0.0f32;
@@ -19071,7 +19074,7 @@ fn update_e2_sweep_scored_loo(
         let update_allowed = match schedule {
             E2UpdateSchedule::Checkerboard => (agent_i + sweep).is_multiple_of(2),
             E2UpdateSchedule::Lazy => u_move_by_agent[agent_i] < E2_LAZY_MOVE_PROB.clamp(0.0, 1.0),
-            E2UpdateSchedule::RandomSingle => true,
+            E2UpdateSchedule::RandomSingle | E2UpdateSchedule::SequentialRotate => true,
         };
         if update_allowed {
             attempt_count += 1;
@@ -19079,12 +19082,10 @@ fn update_e2_sweep_scored_loo(
         let stats = update_one_agent_scored_loo(
             agent_i,
             indices,
-            prev_indices,
-            &prev_erb,
+            &mut env_current,
+            &mut density_current,
             space,
             workspace,
-            env_total,
-            density_total,
             du_scan,
             erb_scan,
             log2_ratio_scan,
@@ -19179,7 +19180,7 @@ fn update_e2_sweep_scored_loo(
 fn update_e2_sweep_prescored(
     schedule: E2UpdateSchedule,
     indices: &mut [usize],
-    prev_indices: &[usize],
+    _prev_indices: &[usize],
     prescored_c_score_scan: &[f32],
     erb_scan: &[f32],
     log2_ratio_scan: &[f32],
@@ -19210,17 +19211,13 @@ fn update_e2_sweep_prescored(
         };
     }
     let skip_penalty = crowding_weight <= 0.0;
-    let mut order: Vec<usize> = (0..indices.len()).collect();
-    if matches!(schedule, E2UpdateSchedule::RandomSingle) {
-        order.shuffle(rng);
-    }
+    let order = build_e2_update_order(schedule, indices.len(), sweep, rng);
     let u01_by_agent: Vec<f32> = (0..indices.len()).map(|_| rng.random::<f32>()).collect();
     let u_move_by_agent: Vec<f32> = if matches!(schedule, E2UpdateSchedule::Lazy) {
         (0..indices.len()).map(|_| rng.random::<f32>()).collect()
     } else {
         vec![0.0; indices.len()]
     };
-    let prev_erb: Vec<f32> = prev_indices.iter().map(|&idx| erb_scan[idx]).collect();
     let mut c_score_current_sum = 0.0f32;
     let mut c_score_current_count = 0u32;
     let mut c_score_chosen_sum = 0.0f32;
@@ -19239,16 +19236,17 @@ fn update_e2_sweep_prescored(
         let update_allowed = match schedule {
             E2UpdateSchedule::Checkerboard => (agent_i + sweep).is_multiple_of(2),
             E2UpdateSchedule::Lazy => u_move_by_agent[agent_i] < E2_LAZY_MOVE_PROB.clamp(0.0, 1.0),
-            E2UpdateSchedule::RandomSingle => true,
+            E2UpdateSchedule::RandomSingle | E2UpdateSchedule::SequentialRotate => true,
         };
         if update_allowed {
             attempt_count += 1;
         }
-        let agent_idx = prev_indices[agent_i];
+        let agent_idx = indices[agent_i];
+        let current_erb_vals: Vec<f32> = indices.iter().map(|&idx| erb_scan[idx]).collect();
         let current_erb = erb_scan[agent_idx];
         let mut current_crowding = 0.0f32;
         if !skip_penalty {
-            for (j, &other_erb) in prev_erb.iter().enumerate() {
+            for (j, &other_erb) in current_erb_vals.iter().enumerate() {
                 if j == agent_i {
                     continue;
                 }
@@ -19281,7 +19279,7 @@ fn update_e2_sweep_prescored(
                 let cand_erb = erb_scan[cand];
                 let mut crowding = 0.0f32;
                 if !skip_penalty {
-                    for (j, &other_erb) in prev_erb.iter().enumerate() {
+                    for (j, &other_erb) in current_erb_vals.iter().enumerate() {
                         if j == agent_i {
                             continue;
                         }
@@ -19407,47 +19405,137 @@ fn update_e2_sweep_prescored(
 fn update_e2_sweep_nohill(
     schedule: E2UpdateSchedule,
     indices: &mut [usize],
-    prev_indices: &[usize],
+    _prev_indices: &[usize],
+    space: &Log2Space,
+    workspace: &ConsonanceWorkspace,
+    env_total: &[f32],
+    density_total: &[f32],
+    du_scan: &[f32],
+    erb_scan: &[f32],
     log2_ratio_scan: &[f32],
     min_idx: usize,
     max_idx: usize,
     k: i32,
+    score_sign: f32,
+    crowding_weight: f32,
+    kernel_params: &KernelParams,
     sweep: usize,
     rng: &mut StdRng,
-) -> (usize, usize, f32, f32) {
+) -> UpdateStats {
     if indices.is_empty() {
-        return (0, 0, 0.0, 0.0);
+        return UpdateStats {
+            mean_c_score_current_loo: 0.0,
+            mean_c_score_chosen_loo: 0.0,
+            mean_score: 0.0,
+            mean_crowding: 0.0,
+            moved_frac: 0.0,
+            accepted_worse_frac: 0.0,
+            attempted_update_frac: 0.0,
+            moved_given_attempt_frac: 0.0,
+            mean_abs_delta_semitones: 0.0,
+            mean_abs_delta_semitones_moved: 0.0,
+        };
     }
-    let mut order: Vec<usize> = (0..indices.len()).collect();
-    if matches!(schedule, E2UpdateSchedule::RandomSingle) {
-        order.shuffle(rng);
-    }
+    let order = build_e2_update_order(schedule, indices.len(), sweep, rng);
     let u_move_by_agent: Vec<f32> = if matches!(schedule, E2UpdateSchedule::Lazy) {
         (0..indices.len()).map(|_| rng.random::<f32>()).collect()
     } else {
         vec![0.0; indices.len()]
     };
+    let mut env_current = env_total.to_vec();
+    let mut density_current = density_total.to_vec();
+    let mut env_loo = vec![0.0f32; env_total.len()];
+    let mut density_loo = vec![0.0f32; density_total.len()];
     let mut attempt_count = 0usize;
     let mut moved_count = 0usize;
+    let mut c_score_current_sum = 0.0f32;
+    let mut c_score_current_count = 0u32;
+    let mut c_score_chosen_sum = 0.0f32;
+    let mut c_score_chosen_count = 0u32;
+    let mut score_sum = 0.0f32;
+    let mut score_count = 0u32;
+    let mut crowding_sum = 0.0f32;
+    let mut crowding_count = 0u32;
     let mut abs_delta_sum = 0.0f32;
     let mut abs_delta_moved_sum = 0.0f32;
     for &agent_i in &order {
         let update_allowed = match schedule {
             E2UpdateSchedule::Checkerboard => (agent_i + sweep).is_multiple_of(2),
             E2UpdateSchedule::Lazy => u_move_by_agent[agent_i] < E2_LAZY_MOVE_PROB.clamp(0.0, 1.0),
-            E2UpdateSchedule::RandomSingle => true,
+            E2UpdateSchedule::RandomSingle | E2UpdateSchedule::SequentialRotate => true,
         };
-        let current_idx = prev_indices[agent_i];
-        let next_idx = if update_allowed {
+        let current_idx = indices[agent_i];
+        env_loo.copy_from_slice(&env_current);
+        density_loo.copy_from_slice(&density_current);
+        env_loo[current_idx] = (env_loo[current_idx] - 1.0).max(0.0);
+        let denom = du_scan[current_idx].max(1e-12);
+        density_loo[current_idx] = (density_loo[current_idx] - 1.0 / denom).max(0.0);
+        let (c_score_scan, _, _, _) =
+            compute_c_score_level_scans(space, workspace, &env_loo, &density_loo, du_scan);
+        let current_erb_vals: Vec<f32> = indices.iter().map(|&idx| erb_scan[idx]).collect();
+        let current_erb = erb_scan[current_idx];
+        let mut current_crowding = 0.0f32;
+        if crowding_weight > 0.0 {
+            for (j, &other_erb) in current_erb_vals.iter().enumerate() {
+                if j == agent_i {
+                    continue;
+                }
+                current_crowding +=
+                    crowding_runtime_delta_erb(kernel_params, current_erb - other_erb);
+            }
+        }
+        let c_score_current = c_score_scan[current_idx];
+        let current_score = score_sign * c_score_current - crowding_weight * current_crowding;
+        let (next_idx, chosen_score, chosen_crowding) = if update_allowed {
             attempt_count += 1;
             let step = rng.random_range(-k..=k);
-            (current_idx as i32 + step).clamp(min_idx as i32, max_idx as i32) as usize
+            let next_idx =
+                (current_idx as i32 + step).clamp(min_idx as i32, max_idx as i32) as usize;
+            let next_erb = erb_scan[next_idx];
+            let mut next_crowding = 0.0f32;
+            if crowding_weight > 0.0 {
+                for (j, &other_erb) in current_erb_vals.iter().enumerate() {
+                    if j == agent_i {
+                        continue;
+                    }
+                    next_crowding +=
+                        crowding_runtime_delta_erb(kernel_params, next_erb - other_erb);
+                }
+            }
+            let next_score = score_sign * c_score_scan[next_idx] - crowding_weight * next_crowding;
+            (next_idx, next_score, next_crowding)
         } else {
-            current_idx
+            (current_idx, current_score, current_crowding)
         };
-        indices[agent_i] = next_idx;
+        if next_idx != current_idx {
+            e2_scene_apply_move(
+                &mut env_current,
+                &mut density_current,
+                du_scan,
+                current_idx,
+                next_idx,
+            );
+            indices[agent_i] = next_idx;
+        }
         if next_idx != current_idx {
             moved_count += 1;
+        }
+        if c_score_current.is_finite() {
+            c_score_current_sum += c_score_current;
+            c_score_current_count += 1;
+        }
+        let c_score_chosen = c_score_scan[next_idx];
+        if c_score_chosen.is_finite() {
+            c_score_chosen_sum += c_score_chosen;
+            c_score_chosen_count += 1;
+        }
+        if chosen_score.is_finite() {
+            score_sum += chosen_score;
+            score_count += 1;
+        }
+        if chosen_crowding.is_finite() {
+            crowding_sum += chosen_crowding;
+            crowding_count += 1;
         }
         let delta_semitones = 12.0 * (log2_ratio_scan[next_idx] - log2_ratio_scan[current_idx]);
         let abs_delta = delta_semitones.abs();
@@ -19458,12 +19546,43 @@ fn update_e2_sweep_nohill(
             }
         }
     }
-    (
-        moved_count,
-        attempt_count,
-        abs_delta_sum,
-        abs_delta_moved_sum,
-    )
+    let n = indices.len() as f32;
+    UpdateStats {
+        mean_c_score_current_loo: if c_score_current_count > 0 {
+            c_score_current_sum / c_score_current_count as f32
+        } else {
+            0.0
+        },
+        mean_c_score_chosen_loo: if c_score_chosen_count > 0 {
+            c_score_chosen_sum / c_score_chosen_count as f32
+        } else {
+            0.0
+        },
+        mean_score: if score_count > 0 {
+            score_sum / score_count as f32
+        } else {
+            0.0
+        },
+        mean_crowding: if crowding_count > 0 {
+            crowding_sum / crowding_count as f32
+        } else {
+            0.0
+        },
+        moved_frac: moved_count as f32 / n,
+        accepted_worse_frac: 0.0,
+        attempted_update_frac: attempt_count as f32 / n,
+        moved_given_attempt_frac: if attempt_count > 0 {
+            moved_count as f32 / attempt_count as f32
+        } else {
+            0.0
+        },
+        mean_abs_delta_semitones: abs_delta_sum / n,
+        mean_abs_delta_semitones_moved: if moved_count > 0 {
+            abs_delta_moved_sum / moved_count as f32
+        } else {
+            0.0
+        },
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -19507,22 +19626,16 @@ fn update_agent_indices_scored_stats_with_order_loo(
     space.assert_scan_len_named(env_total, "env_total");
     space.assert_scan_len_named(density_total, "density_total");
     space.assert_scan_len_named(du_scan, "du_scan");
-    let skip_penalty = crowding_weight <= 0.0;
-    let prev_indices = indices.to_vec();
-    let prev_erb: Vec<f32> = prev_indices.iter().map(|&idx| erb_scan[idx]).collect();
-    let u01_by_agent: Vec<f32> = (0..prev_indices.len())
-        .map(|_| rng.random::<f32>())
-        .collect();
+    let u01_by_agent: Vec<f32> = (0..indices.len()).map(|_| rng.random::<f32>()).collect();
     let u_move_by_agent: Vec<f32> = if matches!(E2_UPDATE_SCHEDULE, E2UpdateSchedule::Lazy) {
-        (0..prev_indices.len())
-            .map(|_| rng.random::<f32>())
-            .collect()
+        (0..indices.len()).map(|_| rng.random::<f32>()).collect()
     } else {
-        vec![0.0; prev_indices.len()]
+        vec![0.0; indices.len()]
     };
     let mut env_loo = vec![0.0f32; env_total.len()];
     let mut density_loo = vec![0.0f32; density_total.len()];
-    let mut next_indices = prev_indices.clone();
+    let mut env_current = env_total.to_vec();
+    let mut density_current = density_total.to_vec();
     let mut c_score_current_sum = 0.0f32;
     let mut c_score_current_count = 0u32;
     let mut c_score_chosen_sum = 0.0f32;
@@ -19539,23 +19652,24 @@ fn update_agent_indices_scored_stats_with_order_loo(
     let mut count = 0usize;
 
     for &agent_i in order {
-        if agent_i >= prev_indices.len() {
+        if agent_i >= indices.len() {
             continue;
         }
-        let agent_idx = prev_indices[agent_i];
-        env_loo.copy_from_slice(env_total);
-        density_loo.copy_from_slice(density_total);
+        let agent_idx = indices[agent_i];
+        env_loo.copy_from_slice(&env_current);
+        density_loo.copy_from_slice(&density_current);
         env_loo[agent_idx] = (env_loo[agent_idx] - 1.0).max(0.0);
         let denom = du_scan[agent_idx].max(1e-12);
         density_loo[agent_idx] = (density_loo[agent_idx] - 1.0 / denom).max(0.0);
         let (c_score_scan, _, _, _) =
             compute_c_score_level_scans(space, workspace, &env_loo, &density_loo, du_scan);
 
-        let current_idx = prev_indices[agent_i];
+        let current_idx = indices[agent_i];
+        let current_erb_vals: Vec<f32> = indices.iter().map(|&idx| erb_scan[idx]).collect();
         let current_erb = erb_scan[current_idx];
         let mut current_crowding = 0.0f32;
-        if !skip_penalty {
-            for (j, &other_erb) in prev_erb.iter().enumerate() {
+        if crowding_weight > 0.0 {
+            for (j, &other_erb) in current_erb_vals.iter().enumerate() {
                 if j == agent_i {
                     continue;
                 }
@@ -19592,8 +19706,8 @@ fn update_agent_indices_scored_stats_with_order_loo(
                 }
                 let cand_erb = erb_scan[cand];
                 let mut crowding = 0.0f32;
-                if !skip_penalty {
-                    for (j, &other_erb) in prev_erb.iter().enumerate() {
+                if crowding_weight > 0.0 {
+                    for (j, &other_erb) in current_erb_vals.iter().enumerate() {
                         if j == agent_i {
                             continue;
                         }
@@ -19638,7 +19752,16 @@ fn update_agent_indices_scored_stats_with_order_loo(
             (current_idx, current_score, current_crowding, false)
         };
 
-        next_indices[agent_i] = chosen_idx;
+        if chosen_idx != current_idx {
+            e2_scene_apply_move(
+                &mut env_current,
+                &mut density_current,
+                du_scan,
+                current_idx,
+                chosen_idx,
+            );
+            indices[agent_i] = chosen_idx;
+        }
         if chosen_idx != current_idx {
             moved_count += 1;
         }
@@ -19669,7 +19792,6 @@ fn update_agent_indices_scored_stats_with_order_loo(
         count += 1;
     }
 
-    indices.copy_from_slice(&next_indices);
     if count == 0 {
         return UpdateStats {
             mean_c_score_current_loo: 0.0,
@@ -19802,6 +19924,7 @@ fn score_stats_at_indices(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 fn score_stats_at_indices_loo_reused(
     space: &Log2Space,
     workspace: &ConsonanceWorkspace,
@@ -20471,6 +20594,7 @@ fn e2_meta_text(
         E2UpdateSchedule::Checkerboard => "checkerboard",
         E2UpdateSchedule::Lazy => "lazy",
         E2UpdateSchedule::RandomSingle => "random_single",
+        E2UpdateSchedule::SequentialRotate => "sequential_rotate",
     };
     out.push_str(&format!("E2_UPDATE_SCHEDULE={}\n", update_schedule));
     out.push_str(&format!("E2_LAZY_MOVE_PROB={:.3}\n", E2_LAZY_MOVE_PROB));
@@ -28869,7 +28993,10 @@ mod tests {
         let res = simulate_e7_temporal_scaffold(E7_SEEDS[0], E7Condition::Shared);
         assert_eq!(res.group_plv_series.len(), E7_STEPS);
         assert!(res.vector_strength.is_finite());
-        assert!(!res.onset_events.is_empty(), "shared condition should emit onsets");
+        assert!(
+            !res.onset_events.is_empty(),
+            "shared condition should emit onsets"
+        );
     }
 
     #[test]
@@ -28889,7 +29016,10 @@ mod tests {
         let values = [0.0f32, PI / 2.0, PI, 1.5 * PI];
         let hist = e7_onset_phase_histogram(&values);
         let sum = hist.iter().map(|(_, frac)| *frac).sum::<f32>();
-        assert!((sum - 1.0).abs() < 1e-6, "histogram should sum to 1, got {sum}");
+        assert!(
+            (sum - 1.0).abs() < 1e-6,
+            "histogram should sum to 1, got {sum}"
+        );
     }
 
     #[test]
@@ -29364,8 +29494,7 @@ fn rhai_replay_header(title: &str, detail: &str) -> String {
              .amp({:.3})\n    \
              .sustain_drive(0.001)\n    \
              .pitch_smooth(0.01)\n    \
-             .adsr({:.3}, {:.3}, {:.3}, {:.3});\n\n"
-        ,
+             .adsr({:.3}, {:.3}, {:.3}, {:.3});\n\n",
         AUDIO_E2_AGENT_AMP,
         AUDIO_E2_AGENT_ATTACK_SEC,
         AUDIO_E2_AGENT_DECAY_SEC,
@@ -29484,11 +29613,7 @@ fn e6_audio_agents_at_snapshot(snapshot: &E6PitchSnapshot) -> Vec<&E6AgentSnapsh
 
 /// Emit Rhai scene for an E6 segment as per-life sustained voices.
 /// Each life gets a fresh attack/decay on birth, sustains while alive, and releases on death.
-fn rhai_e6_segment(
-    scene_name: &str,
-    snapshots: &[&E6PitchSnapshot],
-    step_sec: f32,
-) -> String {
+fn rhai_e6_segment(scene_name: &str, snapshots: &[&E6PitchSnapshot], step_sec: f32) -> String {
     let mut s = format!("scene(\"{scene_name}\", || {{\n");
 
     if snapshots.is_empty() {
@@ -29525,8 +29650,7 @@ fn rhai_e6_segment(
     ));
 
     let initial_agents = e6_audio_agents_at_snapshot(snapshots[0]);
-    let mut active_freqs: std::collections::BTreeMap<u64, f32> =
-        std::collections::BTreeMap::new();
+    let mut active_freqs: std::collections::BTreeMap<u64, f32> = std::collections::BTreeMap::new();
     for agent in initial_agents {
         active_freqs.insert(agent.life_id, agent.freq_hz);
         s.push_str(&format!(
@@ -29698,7 +29822,9 @@ fn rewrite_audio_manifest(
             continue;
         }
         let mut cols: Vec<String> = line.split(',').map(|s| s.to_string()).collect();
-        if cols.len() >= 8 && let Some(window) = by_label.get(cols[2].as_str()) {
+        if cols.len() >= 8
+            && let Some(window) = by_label.get(cols[2].as_str())
+        {
             cols[6] = format!("{:.1}", window.start_sec);
             cols[7] = format!("{:.1}", window.end_sec);
         }
@@ -29994,11 +30120,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
             let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
             let scene = format!("s{}_{label}", i + 1);
-            rhai.push_str(&rhai_e6_segment(
-                &scene,
-                &tail,
-                AUDIO_STEP_SEC,
-            ));
+            rhai.push_str(&rhai_e6_segment(&scene, &tail, AUDIO_STEP_SEC));
             if i + 1 < integration_order.len() {
                 rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
             }
@@ -30039,11 +30161,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         let snaps = &e6_both_seed0.snapshots;
         let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
         let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
-        rhai.push_str(&rhai_e6_segment(
-            "ql2_e6_both",
-            &tail,
-            AUDIO_STEP_SEC,
-        ));
+        rhai.push_str(&rhai_e6_segment("ql2_e6_both", &tail, AUDIO_STEP_SEC));
         rhai.push_str(&format!("wait({AUDIO_QUICKLISTEN_GAP_SEC:.1});\n\n"));
 
         // Segment 3: E2 nohill seed0 (index 1)
@@ -30062,11 +30180,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         let snaps = &e6_neither_seed0.snapshots;
         let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
         let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
-        rhai.push_str(&rhai_e6_segment(
-            "ql4_e6_neither",
-            &tail,
-            AUDIO_STEP_SEC,
-        ));
+        rhai.push_str(&rhai_e6_segment("ql4_e6_neither", &tail, AUDIO_STEP_SEC));
 
         write_with_log(out_dir.join("00_quicklisten.rhai"), rhai)?;
     }
@@ -30456,6 +30570,7 @@ fn e2_objective_score_at_log2(
     erb_scan: &[f32],
     prev_erb: &[f32],
     self_agent_i: usize,
+    current_pitch_log2: f32,
     pitch_log2: f32,
     min_idx: usize,
     max_idx: usize,
@@ -30475,15 +30590,33 @@ fn e2_objective_score_at_log2(
         }
         crowding += crowding_runtime_delta_erb(kernel_params, cand_erb - other_erb);
     }
-    let score = score_sign * c_score_scan[idx] - crowding_weight * crowding;
+    let move_cost = shared_hill_move_cost_coeff() * (pitch_log2 - current_pitch_log2).abs();
+    let score = score_sign * c_score_scan[idx] - crowding_weight * crowding - move_cost;
     (idx, score, crowding)
+}
+
+fn e2_scene_apply_move(
+    env_total: &mut [f32],
+    density_total: &mut [f32],
+    du_scan: &[f32],
+    from_idx: usize,
+    to_idx: usize,
+) {
+    if from_idx == to_idx {
+        return;
+    }
+    env_total[from_idx] = (env_total[from_idx] - 1.0).max(0.0);
+    let from_denom = du_scan[from_idx].max(1e-12);
+    density_total[from_idx] = (density_total[from_idx] - 1.0 / from_denom).max(0.0);
+    env_total[to_idx] += 1.0;
+    density_total[to_idx] += 1.0 / du_scan[to_idx].max(1e-12);
 }
 
 #[allow(clippy::too_many_arguments)]
 fn update_e2_sweep_pitch_core_proposal(
     schedule: E2UpdateSchedule,
     indices: &mut [usize],
-    prev_indices: &[usize],
+    _prev_indices: &[usize],
     pitch_cores: &mut [PitchHillClimbPitchCore],
     space: &Log2Space,
     landscape: &Landscape,
@@ -30520,17 +30653,15 @@ fn update_e2_sweep_pitch_core_proposal(
     }
 
     debug_assert_eq!(indices.len(), pitch_cores.len());
-    let mut order: Vec<usize> = (0..indices.len()).collect();
-    if matches!(schedule, E2UpdateSchedule::RandomSingle) {
-        order.shuffle(rng);
-    }
+    let order = build_e2_update_order(schedule, indices.len(), sweep, rng);
     let u_move_by_agent: Vec<f32> = if matches!(schedule, E2UpdateSchedule::Lazy) {
         (0..indices.len()).map(|_| rng.random::<f32>()).collect()
     } else {
         vec![0.0; indices.len()]
     };
     let u01_by_agent: Vec<f32> = (0..indices.len()).map(|_| rng.random::<f32>()).collect();
-    let prev_erb: Vec<f32> = prev_indices.iter().map(|&idx| erb_scan[idx]).collect();
+    let mut env_current = env_total.to_vec();
+    let mut density_current = density_total.to_vec();
     let mut env_loo = Vec::new();
     let mut density_loo = Vec::new();
     let mut c_score_current_sum = 0.0f32;
@@ -30551,27 +30682,29 @@ fn update_e2_sweep_pitch_core_proposal(
         let base_update_allowed = match schedule {
             E2UpdateSchedule::Checkerboard => (agent_i + sweep).is_multiple_of(2),
             E2UpdateSchedule::Lazy => u_move_by_agent[agent_i] < E2_LAZY_MOVE_PROB.clamp(0.0, 1.0),
-            E2UpdateSchedule::RandomSingle => true,
+            E2UpdateSchedule::RandomSingle | E2UpdateSchedule::SequentialRotate => true,
         };
 
-        let agent_idx = prev_indices[agent_i];
+        let agent_idx = indices[agent_i];
         let loo_c_score_scan = e2_loo_c_score_scan_for_agent_reused(
             space,
             workspace,
-            env_total,
-            density_total,
+            &env_current,
+            &density_current,
             du_scan,
             agent_idx,
             &mut env_loo,
             &mut density_loo,
         );
         let current_pitch_log2 = space.centers_hz[agent_idx].log2();
+        let current_erb: Vec<f32> = indices.iter().map(|&idx| erb_scan[idx]).collect();
         let (_, current_score, current_crowding) = e2_objective_score_at_log2(
             space,
             &loo_c_score_scan,
             erb_scan,
-            &prev_erb,
+            &current_erb,
             agent_i,
+            current_pitch_log2,
             current_pitch_log2,
             min_idx,
             max_idx,
@@ -30592,7 +30725,7 @@ fn update_e2_sweep_pitch_core_proposal(
 
         let (chosen_idx, chosen_score_val, chosen_crowding_val, accepted_worse) = if update_allowed
         {
-            let neighbor_pitch_log2: Vec<f32> = prev_indices
+            let neighbor_pitch_log2: Vec<f32> = indices
                 .iter()
                 .enumerate()
                 .filter_map(|(j, &idx)| {
@@ -30614,8 +30747,9 @@ fn update_e2_sweep_pitch_core_proposal(
                         space,
                         &loo_c_score_scan,
                         erb_scan,
-                        &prev_erb,
+                        &current_erb,
                         agent_i,
+                        current_pitch_log2,
                         pitch_log2,
                         min_idx,
                         max_idx,
@@ -30630,8 +30764,9 @@ fn update_e2_sweep_pitch_core_proposal(
                 space,
                 &loo_c_score_scan,
                 erb_scan,
-                &prev_erb,
+                &current_erb,
                 agent_i,
+                current_pitch_log2,
                 proposal.target_pitch_log2,
                 min_idx,
                 max_idx,
@@ -30664,7 +30799,16 @@ fn update_e2_sweep_pitch_core_proposal(
             (agent_idx, current_score, current_crowding, false)
         };
 
-        indices[agent_i] = chosen_idx;
+        if chosen_idx != agent_idx {
+            e2_scene_apply_move(
+                &mut env_current,
+                &mut density_current,
+                du_scan,
+                agent_idx,
+                chosen_idx,
+            );
+            indices[agent_i] = chosen_idx;
+        }
         let moved = chosen_idx != agent_idx;
         let delta_semitones = 12.0 * (log2_ratio_scan[chosen_idx] - log2_ratio_scan[agent_idx]);
         let abs_delta = delta_semitones.abs();
@@ -30740,7 +30884,7 @@ fn update_e2_sweep_pitch_core_proposal(
 fn update_e2_sweep_pitch_core_proposal_prescored(
     schedule: E2UpdateSchedule,
     indices: &mut [usize],
-    prev_indices: &[usize],
+    _prev_indices: &[usize],
     pitch_cores: &mut [PitchHillClimbPitchCore],
     space: &Log2Space,
     landscape: &Landscape,
@@ -30774,17 +30918,13 @@ fn update_e2_sweep_pitch_core_proposal_prescored(
     }
 
     debug_assert_eq!(indices.len(), pitch_cores.len());
-    let mut order: Vec<usize> = (0..indices.len()).collect();
-    if matches!(schedule, E2UpdateSchedule::RandomSingle) {
-        order.shuffle(rng);
-    }
+    let order = build_e2_update_order(schedule, indices.len(), sweep, rng);
     let u_move_by_agent: Vec<f32> = if matches!(schedule, E2UpdateSchedule::Lazy) {
         (0..indices.len()).map(|_| rng.random::<f32>()).collect()
     } else {
         vec![0.0; indices.len()]
     };
     let u01_by_agent: Vec<f32> = (0..indices.len()).map(|_| rng.random::<f32>()).collect();
-    let prev_erb: Vec<f32> = prev_indices.iter().map(|&idx| erb_scan[idx]).collect();
     let mut c_score_current_sum = 0.0f32;
     let mut c_score_current_count = 0u32;
     let mut c_score_chosen_sum = 0.0f32;
@@ -30803,17 +30943,19 @@ fn update_e2_sweep_pitch_core_proposal_prescored(
         let base_update_allowed = match schedule {
             E2UpdateSchedule::Checkerboard => (agent_i + sweep).is_multiple_of(2),
             E2UpdateSchedule::Lazy => u_move_by_agent[agent_i] < E2_LAZY_MOVE_PROB.clamp(0.0, 1.0),
-            E2UpdateSchedule::RandomSingle => true,
+            E2UpdateSchedule::RandomSingle | E2UpdateSchedule::SequentialRotate => true,
         };
 
-        let agent_idx = prev_indices[agent_i];
+        let agent_idx = indices[agent_i];
         let current_pitch_log2 = space.centers_hz[agent_idx].log2();
+        let current_erb: Vec<f32> = indices.iter().map(|&idx| erb_scan[idx]).collect();
         let (_, current_score, current_crowding) = e2_objective_score_at_log2(
             space,
             prescored_c_score_scan,
             erb_scan,
-            &prev_erb,
+            &current_erb,
             agent_i,
+            current_pitch_log2,
             current_pitch_log2,
             min_idx,
             max_idx,
@@ -30834,7 +30976,7 @@ fn update_e2_sweep_pitch_core_proposal_prescored(
 
         let (chosen_idx, chosen_score_val, chosen_crowding_val, accepted_worse) = if update_allowed
         {
-            let neighbor_pitch_log2: Vec<f32> = prev_indices
+            let neighbor_pitch_log2: Vec<f32> = indices
                 .iter()
                 .enumerate()
                 .filter_map(|(j, &idx)| {
@@ -30856,8 +30998,9 @@ fn update_e2_sweep_pitch_core_proposal_prescored(
                         space,
                         prescored_c_score_scan,
                         erb_scan,
-                        &prev_erb,
+                        &current_erb,
                         agent_i,
+                        current_pitch_log2,
                         pitch_log2,
                         min_idx,
                         max_idx,
@@ -30872,8 +31015,9 @@ fn update_e2_sweep_pitch_core_proposal_prescored(
                 space,
                 prescored_c_score_scan,
                 erb_scan,
-                &prev_erb,
+                &current_erb,
                 agent_i,
+                current_pitch_log2,
                 proposal.target_pitch_log2,
                 min_idx,
                 max_idx,

@@ -15,10 +15,10 @@ use conchordal::life::control::{AgentControl, LeaveSelfOutMode, PitchCoreKind, P
 use conchordal::life::individual::{PitchHillClimbPitchCore, SoundBody};
 use conchordal::life::lifecycle::LifecycleConfig;
 use conchordal::life::metabolism_policy::MetabolismPolicy;
-use conchordal::life::population::Population;
+use conchordal::life::population::{ControlUpdateMode, Population};
 use conchordal::life::scenario::{
-    Action, ArticulationCoreConfig, EnvelopeConfig, PhonationSpec, RhythmCouplingMode,
-    SpawnSpec, SpawnStrategy,
+    Action, ArticulationCoreConfig, EnvelopeConfig, PhonationSpec, RhythmCouplingMode, SpawnSpec,
+    SpawnStrategy,
 };
 use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
@@ -50,8 +50,8 @@ const E4_MATCH_SIGMA_CENTS: f32 = 15.0;
 const E2_E6_HILL_NEIGHBOR_STEP_CENTS: f32 = 25.0;
 const E2_E6_HILL_EXPLORATION: f32 = 0.0;
 const E2_E6_HILL_PERSISTENCE: f32 = 0.5;
-const E2_E6_HILL_MOVE_COST_COEFF: f32 = 0.5;
-const E2_E6_HILL_IMPROVEMENT_THRESHOLD: f32 = 0.02;
+const E2_E6_HILL_MOVE_COST_COEFF: f32 = 0.75;
+const E2_E6_HILL_IMPROVEMENT_THRESHOLD: f32 = 0.04;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct E4RuntimeOverrides {
@@ -268,6 +268,10 @@ pub fn configure_shared_hillclimb_core(core: &mut PitchHillClimbPitchCore, lands
     core.set_ratio_candidates(false, 0);
 }
 
+pub fn shared_hill_move_cost_coeff() -> f32 {
+    E2_E6_HILL_MOVE_COST_COEFF
+}
+
 fn apply_e6_shuffle_permutation(landscape: &mut Landscape, perm: &[usize]) {
     let apply = |v: &[f32]| -> Vec<f32> { perm.iter().map(|&i| v[i]).collect() };
     landscape.harmonicity = apply(&landscape.harmonicity);
@@ -444,6 +448,7 @@ pub fn run_e3_collect_deaths(cfg: &E3RunConfig) -> Vec<E3DeathRecord> {
         hop: E3_HOP,
     });
     pop.set_seed(cfg.seed);
+    pop.set_control_update_mode(ControlUpdateMode::SequentialRotating);
     pop.set_current_frame(0);
 
     let spec = e3_spawn_spec(cfg.condition, anchor_hz);
@@ -664,7 +669,12 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
         // Periodically recompute landscape from all alive agents (includes roughness)
         if step > 0 && step % LANDSCAPE_REFRESH_INTERVAL == 0 {
             update_e4_landscape_from_population(
-                &space, &params, &pop, &mut landscape, partials, E4_ENV_PARTIAL_DECAY_DEFAULT,
+                &space,
+                &params,
+                &pop,
+                &mut landscape,
+                partials,
+                E4_ENV_PARTIAL_DECAY_DEFAULT,
             );
             if let Some(ref perm) = shuffle_perm {
                 apply_e6_shuffle_permutation(&mut landscape, perm);
@@ -831,8 +841,11 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                         if let Some(ref perm) = shuffle_perm {
                             apply_e6_shuffle_permutation(&mut parent_landscape, perm);
                         }
-                        let offspring_freq =
-                            sample_from_parent_harmonicity(&parent_landscape, parent_freq, &mut rng);
+                        let offspring_freq = sample_from_parent_harmonicity(
+                            &parent_landscape,
+                            parent_freq,
+                            &mut rng,
+                        );
                         let spawn_freq = offspring_freq.clamp(min_spawn, max_spawn);
                         pop.apply_action(
                             Action::Spawn {
@@ -1752,7 +1765,9 @@ fn compute_roughness_for_landscape(
 ) {
     let (_erb, du) = erb_grid(space);
     let (density, _mass) = conchordal::core::psycho_state::normalize_density(
-        &landscape.subjective_intensity, &du, 1e-12,
+        &landscape.subjective_intensity,
+        &du,
+        1e-12,
     );
     let (r_pot, _r_total) = params
         .roughness_kernel
@@ -1760,7 +1775,12 @@ fn compute_roughness_for_landscape(
     let r_ref = compute_roughness_reference(params, space);
     landscape.roughness = r_pot;
     let mut r01 = vec![0.0f32; space.n_bins()];
-    r_pot_scan_to_r_state01_scan(&landscape.roughness, r_ref.peak, params.roughness_k, &mut r01);
+    r_pot_scan_to_r_state01_scan(
+        &landscape.roughness,
+        r_ref.peak,
+        params.roughness_k,
+        &mut r01,
+    );
     landscape.roughness01 = r01;
     landscape.recompute_consonance(params);
 }
@@ -1783,7 +1803,11 @@ fn build_e6_parent_harmonicity_landscape(
 
 /// Sample from the parent's harmonicity profile within the open interval (-1 oct, +1 oct),
 /// excluding unison with the parent. Falls back to uniform under the same constraints.
-fn sample_from_parent_harmonicity(landscape: &Landscape, parent_freq_hz: f32, rng: &mut impl Rng) -> f32 {
+fn sample_from_parent_harmonicity(
+    landscape: &Landscape,
+    parent_freq_hz: f32,
+    rng: &mut impl Rng,
+) -> f32 {
     let space = &landscape.space;
     let n = space.n_bins();
     let parent_log2 = parent_freq_hz.max(1.0).log2();
@@ -2283,7 +2307,8 @@ pub fn render_e3_audio(cfg: &E3AudioConfig, output_path: &std::path::Path) -> st
             let env = if local_t < NOTE_ATTACK_SEC {
                 (local_t / NOTE_ATTACK_SEC).clamp(0.0, 1.0)
             } else {
-                (1.0 - (local_t - NOTE_ATTACK_SEC) / (NOTE_DUR_SEC - NOTE_ATTACK_SEC)).clamp(0.0, 1.0)
+                (1.0 - (local_t - NOTE_ATTACK_SEC) / (NOTE_DUR_SEC - NOTE_ATTACK_SEC))
+                    .clamp(0.0, 1.0)
             };
             let phase = TAU * freq * local_t;
             let voice = phase.sin() + 0.35 * (2.0 * phase).sin() + 0.18 * (3.0 * phase).sin();
@@ -2330,10 +2355,7 @@ pub fn render_e3_audio(cfg: &E3AudioConfig, output_path: &std::path::Path) -> st
     Ok(())
 }
 
-pub fn generate_e3_rhai(
-    cfg: &E3AudioConfig,
-    output_path: &std::path::Path,
-) -> std::io::Result<()> {
+pub fn generate_e3_rhai(cfg: &E3AudioConfig, output_path: &std::path::Path) -> std::io::Result<()> {
     use std::io::Write;
 
     let (pitches_hz, mut attacks) = simulate_e3_audio_attacks(cfg)?;
@@ -2410,7 +2432,10 @@ mod tests {
         let spec = e6_spawn_spec(E4_ANCHOR_HZ, 0.5);
         let pitch = spec.control.pitch;
         assert_eq!(pitch.core_kind, PitchCoreKind::HillClimb);
-        assert_eq!(pitch.neighbor_step_cents, Some(E2_E6_HILL_NEIGHBOR_STEP_CENTS));
+        assert_eq!(
+            pitch.neighbor_step_cents,
+            Some(E2_E6_HILL_NEIGHBOR_STEP_CENTS)
+        );
         assert!((pitch.exploration - E2_E6_HILL_EXPLORATION).abs() <= 1e-6);
         assert!((pitch.persistence - E2_E6_HILL_PERSISTENCE).abs() <= 1e-6);
         assert!((pitch.move_cost_coeff - E2_E6_HILL_MOVE_COST_COEFF).abs() <= 1e-6);
@@ -2440,7 +2465,10 @@ mod tests {
         for _ in 0..128 {
             let freq = sample_from_parent_harmonicity(&landscape, parent_freq, &mut rng);
             let delta_oct = (freq / parent_freq).log2();
-            assert!(delta_oct > -1.0 && delta_oct < 1.0, "sample escaped open octave interval");
+            assert!(
+                delta_oct > -1.0 && delta_oct < 1.0,
+                "sample escaped open octave interval"
+            );
             assert!(delta_oct.abs() > 1e-6, "unison must be excluded");
         }
     }
