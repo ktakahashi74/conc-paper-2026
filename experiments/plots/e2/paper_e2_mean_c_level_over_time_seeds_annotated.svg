@@ -203,35 +203,35 @@ step
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="79,62 84,62 "/>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="85,430 1189,430 "/>
 <text x="85" y="440" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="22.580645161290324" opacity="1" fill="#000000">
-0.0
+0
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="85,430 85,435 "/>
 <text x="242" y="440" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="22.580645161290324" opacity="1" fill="#000000">
-1.0
+1
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="242,430 242,435 "/>
 <text x="400" y="440" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="22.580645161290324" opacity="1" fill="#000000">
-2.0
+2
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="400,430 400,435 "/>
 <text x="558" y="440" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="22.580645161290324" opacity="1" fill="#000000">
-3.0
+3
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="558,430 558,435 "/>
 <text x="715" y="440" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="22.580645161290324" opacity="1" fill="#000000">
-4.0
+4
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="715,430 715,435 "/>
 <text x="873" y="440" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="22.580645161290324" opacity="1" fill="#000000">
-5.0
+5
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="873,430 873,435 "/>
 <text x="1031" y="440" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="22.580645161290324" opacity="1" fill="#000000">
-6.0
+6
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="1031,430 1031,435 "/>
 <text x="1189" y="440" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="22.580645161290324" opacity="1" fill="#000000">
-7.0
+7
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="1189,430 1189,435 "/>
 <rect x="715" y="45" width="316" height="384" opacity="0.15" fill="#B4B4B4" stroke="none"/>
@@ -486,31 +486,31 @@ step
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="79,557 84,557 "/>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="85,930 1189,930 "/>
 <text x="85" y="940" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="22.580645161290324" opacity="1" fill="#000000">
-4.0
+4
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="85,930 85,935 "/>
 <text x="269" y="940" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="22.580645161290324" opacity="1" fill="#000000">
-4.5
+5
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="269,930 269,935 "/>
 <text x="453" y="940" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="22.580645161290324" opacity="1" fill="#000000">
-5.0
+5
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="453,930 453,935 "/>
 <text x="637" y="940" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="22.580645161290324" opacity="1" fill="#000000">
-5.5
+6
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="637,930 637,935 "/>
 <text x="821" y="940" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="22.580645161290324" opacity="1" fill="#000000">
-6.0
+6
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="821,930 821,935 "/>
 <text x="1005" y="940" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="22.580645161290324" opacity="1" fill="#000000">
-6.5
+7
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="1005,930 1005,935 "/>
 <text x="1189" y="940" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="22.580645161290324" opacity="1" fill="#000000">
-7.0
+7
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="1189,930 1189,935 "/>
 <rect x="85" y="545" width="736" height="384" opacity="0.15" fill="#B4B4B4" stroke="none"/>
