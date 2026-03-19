@@ -43,7 +43,7 @@
 
 <div class="track">
   <h2>00 &mdash; Quick Listen (Orientation)</h2>
-  <p class="meta">~41 s &middot; Curated montage: best-case emergence vs. ablation controls</p>
+  <p class="meta">~77 s &middot; Curated montage: best-case emergence vs. ablation controls</p>
   <p>Four short segments contrast the strongest emergent behaviour
      with ablation controls:</p>
   <ol class="segments">
@@ -76,9 +76,9 @@
 <div class="track">
   <h2>20 &mdash; Integration (Experiment 6)</h2>
   <p class="meta">Current E6 integration montage &middot; heredity vs. hill-climb conditions</p>
-  <p>Four conditions &times; two seeds (index 0, 10). Each segment ~11 s.
-     Replayed from a 6-agent audio simulation with slower pitch updates, ordered
-     from most integrated to random within each seed.</p>
+  <p>Four conditions &times; two seeds (index 0, 10). Each segment ~12 s.
+     Replayed from the full 32-agent paper regime with slower pitch updates and
+     lighter voices, ordered from most integrated to random within each seed.</p>
   <table>
     <tr><th>Condition</th><th>respawn</th><th>landscape_weight</th></tr>
     <tr><td>both</td><td>parent-only H heredity</td><td>1.0</td></tr>
@@ -87,10 +87,11 @@
     <tr><td>neither</td><td>random</td><td>0.0</td></tr>
   </table>
   <p>The current E6 audio replay uses parent-only harmonicity for hereditary respawn,
-     the same shared hill-climb profile, and a 6-agent listening regime so roughness
-     and crowding remain internally consistent.</p>
+     the same shared hill-climb profile, and the full 32-agent population. The
+     sonification is slowed and spectrally thinned for audibility, but the simulation
+     conditions match the paper regime.</p>
   <audio controls preload="none">
-    <source src="audio/20_integration.wav?v=20260318-4" type="audio/wav">
+    <source src="audio/20_integration.wav?v=20260319-1" type="audio/wav">
   </audio>
 </div>
 

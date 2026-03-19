@@ -9,9 +9,9 @@ Qualitative audio demonstrations accompanying the paper
 
 | File | Role | Duration | Description |
 |------|------|----------|-------------|
-| `00_quicklisten.wav` | Orientation | ~41 s | Curated montage: best-case emergence vs. ablation controls |
+| `00_quicklisten.wav` | Orientation | ~77 s | Curated montage: best-case emergence vs. ablation controls |
 | `10_exp1_polyphony.wav` | Evidence (E2) | ~35 s | Current E2 replay montage: baseline vs. no-hill across seed 0 and seed 10 |
-| `20_integration.wav` | Evidence (E6) | ~97 s | Current E6 integration montage: parent-only heredity vs. hill-climb conditions |
+| `20_integration.wav` | Evidence (E6) | ~107 s | Current E6 integration montage: full 32-agent paper regime, slowed for listening |
 | `30_e3_shared.wav`, `30_e3_scrambled.wav`, `30_e3_off.wav` | Evidence (main E3) | ~8 s each | Agent-only render of shared temporal scaffold vs. scrambled/off controls |
 
 ### 00_quicklisten — Orientation montage
@@ -41,10 +41,10 @@ no-hill removes local search while keeping the same crowding field.
 
 ### 20_integration — Experiment 6 (E6)
 
-Four conditions × two seeds (index 0, 10). Each segment ~11 s. Within each seed,
-segments are ordered from most integrated to random. The replay uses a dedicated
-6-agent audio simulation with slower pitch updates so roughness and crowding
-remain consistent with the heard population:
+Four conditions × two seeds (index 0, 10). Each segment ~12 s. Within each seed,
+segments are ordered from most integrated to random. The replay uses the full
+32-agent paper regime, but the sonification is slowed and spectrally thinned so
+the pitch structure is still audible:
 
 | Condition | respawn | landscape_weight |
 |-----------|---------|-----------------|
@@ -54,8 +54,8 @@ remain consistent with the heard population:
 | neither | random | 0.0 |
 
 The E6 supplementary render uses parent-only harmonicity for hereditary respawn
-and the same shared hill-climb profile, replayed as a 6-agent per-life montage
-with a fixed 220 Hz sine drone as a pitch reference.
+and the same shared hill-climb profile, replayed as a 32-agent per-life montage
+with slower updates and near-sine voices for audibility.
 
 **Expected:** "both" achieves the highest consonance score, with H-only above
 the random respawn controls.
@@ -90,7 +90,7 @@ cherry-picking.
 
 All tracks are rendered with `conchordal-render` using the same pipeline:
 
-- Primary voices: `harmonic` (neutral harmonic series)
+- Primary voices: `harmonic` (neutral harmonic series; E6 uses a 1-partial voice for clarity)
 - Fixed reference drones, where present: `sine`
 - Output: mono WAV, 48 kHz
 - No reverb, no mastering, no per-file loudness optimisation

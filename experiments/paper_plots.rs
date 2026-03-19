@@ -7331,15 +7331,19 @@ where
         let x1 = x0 + E6_SNAPSHOT_INTERVAL as f32;
         let y0 = (-12.0 + *bin as f32 * E6_INTERVAL_BIN_ST) * 100.0;
         let y1 = y0 + E6_INTERVAL_BIN_ST * 100.0;
-        let t = (*count / max_count).clamp(0.0, 1.0);
+        let t = (*count / max_count).clamp(0.0, 1.0).sqrt();
         let color = HSLColor(
             (220.0f64 - 220.0f64 * t as f64) / 360.0,
-            0.72,
-            0.94 - 0.50 * t as f64,
+            0.80,
+            0.88 - 0.58 * t as f64,
         );
         chart.draw_series(std::iter::once(Rectangle::new(
             [(x0, y0), (x1, y1)],
-            color.filled(),
+            ShapeStyle {
+                color: color.to_rgba(),
+                filled: true,
+                stroke_width: 1,
+            },
         )))?;
     }
 
@@ -29640,18 +29644,18 @@ const AUDIO_E2_AGENT_ATTACK_SEC: f32 = 0.30;
 const AUDIO_E2_AGENT_DECAY_SEC: f32 = 0.35;
 const AUDIO_E2_AGENT_SUSTAIN_LEVEL: f32 = 0.50;
 const AUDIO_E2_AGENT_RELEASE_SEC: f32 = 0.8;
-const AUDIO_E6_STEP_SEC: f32 = 0.24;
-const AUDIO_E6_POP_SIZE: usize = 6;
+const AUDIO_E6_STEP_SEC: f32 = 0.40;
+const AUDIO_E6_POP_SIZE: usize = E6_POP_SIZE;
 /// How many E6 snapshots to replay per segment (last N of run)
-const AUDIO_E6_TAIL_SNAPSHOTS: usize = 45;
-const AUDIO_E6_AGENT_AMP: f32 = 0.012;
-const AUDIO_E6_AGENT_PARTIALS: usize = 3;
-const AUDIO_E6_AGENT_BRIGHTNESS: f32 = 0.15;
-const AUDIO_E6_AGENT_SUSTAIN_DRIVE: f32 = 0.002;
-const AUDIO_E6_AGENT_ATTACK_SEC: f32 = 0.04;
-const AUDIO_E6_AGENT_DECAY_SEC: f32 = 0.35;
+const AUDIO_E6_TAIL_SNAPSHOTS: usize = 30;
+const AUDIO_E6_AGENT_AMP: f32 = 0.0025;
+const AUDIO_E6_AGENT_PARTIALS: usize = 1;
+const AUDIO_E6_AGENT_BRIGHTNESS: f32 = 0.0;
+const AUDIO_E6_AGENT_SUSTAIN_DRIVE: f32 = 0.001;
+const AUDIO_E6_AGENT_ATTACK_SEC: f32 = 0.08;
+const AUDIO_E6_AGENT_DECAY_SEC: f32 = 0.45;
 const AUDIO_E6_AGENT_SUSTAIN_LEVEL: f32 = 0.50;
-const AUDIO_E6_AGENT_RELEASE_SEC: f32 = 0.20;
+const AUDIO_E6_AGENT_RELEASE_SEC: f32 = 0.45;
 
 /// Header for generated Rhai replay scripts.
 fn rhai_replay_header(title: &str, detail: &str) -> String {
@@ -29844,7 +29848,7 @@ fn rhai_e6_segment(
         return s;
     }
     s.push_str(&format!(
-        "    let e6_voice = derive(harmonic)\n        .brain(\"drone\")\n        .pitch_mode(\"lock\")\n        .amp({:.3})\n        .modes(harmonic_modes().count({}))\n        .brightness({:.3})\n        .sustain_drive({:.3})\n        .pitch_smooth(0.08)\n        .adsr({:.3}, {:.3}, {:.3}, {:.3});\n",
+        "    let e6_voice = derive(harmonic)\n        .brain(\"drone\")\n        .pitch_mode(\"lock\")\n        .amp({:.3})\n        .modes(harmonic_modes().count({}))\n        .brightness({:.3})\n        .sustain_drive({:.3})\n        .pitch_smooth(0.12)\n        .adsr({:.3}, {:.3}, {:.3}, {:.3});\n",
         AUDIO_E6_AGENT_AMP,
         AUDIO_E6_AGENT_PARTIALS,
         AUDIO_E6_AGENT_BRIGHTNESS,
