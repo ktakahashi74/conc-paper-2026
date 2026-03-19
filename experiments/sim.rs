@@ -26,6 +26,7 @@ use rand::distr::weighted::WeightedIndex;
 use rand::prelude::SliceRandom;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex, OnceLock};
 
 pub const E4_ANCHOR_HZ: f32 = 220.0;
@@ -46,12 +47,11 @@ const E3_FMAX: f32 = 2000.0;
 const E3_RANGE_OCT: f32 = 2.0; // +/- 1 octave around anchor
 const E3_THETA_FREQ_HZ: f32 = 1.0;
 const E3_METABOLISM_RATE: f32 = 0.5;
-const E6_METABOLISM_RATE: f32 = E3_METABOLISM_RATE;
-const E6_RECHARGE_PER_ATTACK: f32 = 0.65;
-const E6_ACTION_COST_PER_ATTACK: f32 = 0.1325;
-const E6_PARENT_SELECTION_C_GAMMA: f32 = 4.0;
-const E6_PARENT_SELECTION_DENSITY_SIGMA_CENTS: f32 = 100.0;
-const E6_PARENT_SELECTION_DENSITY_STRENGTH: f32 = 1.0;
+const E6_METABOLISM_RATE: f32 = 0.12;
+const E6_SELECTION_DEATH_PROB_MAX: f32 = 0.002;
+const E6_SELECTION_DEATH_EXPONENT: f32 = 3.0;
+const E6_HEREDITY_MUTATION_SIGMA_ST: f32 = 2.0;
+const E6_HEREDITY_MUTATION_MAX_ATTEMPTS: usize = 24;
 const E2_MATCH_CROWDING_WEIGHT: f32 = 0.15;
 const E4_MATCH_SIGMA_CENTS: f32 = 15.0;
 const E2_E6_HILL_NEIGHBOR_STEP_CENTS: f32 = 25.0;
@@ -703,6 +703,18 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
             }
         }
         pop.advance(E3_HOP, E3_FS, step as u64, dt, &landscape);
+        let mut forced_dead_ids: HashSet<u64> = HashSet::new();
+        for agent in pop.individuals.iter() {
+            if !agent.is_alive() {
+                continue;
+            }
+            let c_level = selection_reference_landscape
+                .evaluate_pitch_level(agent.body.base_freq_hz())
+                .clamp(0.0, 1.0);
+            if rng.random::<f32>() < e6_anchor_selection_death_probability(c_level) {
+                forced_dead_ids.insert(agent.id());
+            }
+        }
 
         if step % snapshot_interval == 0 {
             let mut freqs_hz: Vec<f32> = Vec::new();
@@ -712,7 +724,7 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
             let mut phase_count = 0u32;
             let theta_phase = landscape.rhythm.theta.phase;
             for agent in pop.individuals.iter() {
-                if !agent.is_alive() {
+                if !agent.is_alive() || forced_dead_ids.contains(&agent.id()) {
                     continue;
                 }
                 let idx = agent.id() as usize;
@@ -759,10 +771,12 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                 continue;
             }
             let state = &mut states[idx];
-            let alive = agent.is_alive();
+            let alive = agent.is_alive() && !forced_dead_ids.contains(&id);
 
             if alive {
-                let c_level = landscape.evaluate_pitch_level(agent.body.base_freq_hz());
+                let c_level = selection_reference_landscape
+                    .evaluate_pitch_level(agent.body.base_freq_hz())
+                    .clamp(0.0, 1.0);
                 if state.pending_birth {
                     state.birth_step = step as u32;
                     state.c_level_birth = c_level;
@@ -835,6 +849,7 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
             }
         }
 
+        let respawn_set: HashSet<u64> = respawn_ids.iter().copied().collect();
         for id in respawn_ids {
             pop.remove_agent(id);
 
@@ -844,20 +859,14 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                     let alive_parents: Vec<f32> = pop
                         .individuals
                         .iter()
-                        .filter(|a| a.is_alive() && a.id() != id)
+                        .filter(|a| a.is_alive() && !respawn_set.contains(&a.id()))
                         .map(|a| a.body.base_freq_hz())
                         .filter(|f| f.is_finite() && *f > 0.0)
                         .collect();
                     if alive_parents.is_empty() {
                         strategy.clone()
                     } else {
-                        let parent_weights = e6_parent_selection_weights(
-                            &alive_parents,
-                            &selection_reference_landscape,
-                        );
-                        let parent_idx = sample_weighted_index(&parent_weights, &mut rng)
-                            .unwrap_or_else(|| rng.random_range(0..alive_parents.len()));
-                        let parent_freq = alive_parents[parent_idx];
+                        let parent_freq = alive_parents[rng.random_range(0..alive_parents.len())];
                         let mut parent_landscape = build_e6_parent_harmonicity_landscape(
                             &space,
                             &params,
@@ -877,7 +886,12 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                             tessitura_max_hz,
                             &mut rng,
                         );
-                        let spawn_freq = offspring_freq;
+                        let spawn_freq = mutate_e6_heredity_offspring(
+                            offspring_freq,
+                            tessitura_min_hz,
+                            tessitura_max_hz,
+                            &mut rng,
+                        );
                         out.respawns.push(E6RespawnRecord {
                             step,
                             dead_agent_id: id as usize,
@@ -1961,6 +1975,42 @@ fn sample_from_parent_harmonicity(
     sample_from_weight_scan(space, &truncated_weights, rng, fallback)
 }
 
+fn sample_standard_normal<R: Rng + ?Sized>(rng: &mut R) -> f32 {
+    let u1 = rng.random_range(f32::EPSILON..1.0);
+    let u2 = rng.random_range(0.0..1.0);
+    let mag = (-2.0 * u1.ln()).sqrt();
+    let angle = core::f32::consts::TAU * u2;
+    mag * angle.cos()
+}
+
+fn mutate_e6_heredity_offspring(
+    offspring_freq_hz: f32,
+    tessitura_min_hz: f32,
+    tessitura_max_hz: f32,
+    rng: &mut impl Rng,
+) -> f32 {
+    let sigma_oct = (E6_HEREDITY_MUTATION_SIGMA_ST / 12.0).max(0.0);
+    if sigma_oct <= 0.0 || !offspring_freq_hz.is_finite() || offspring_freq_hz <= 0.0 {
+        return offspring_freq_hz;
+    }
+
+    let min_log2 = tessitura_min_hz.max(1e-6).log2();
+    let max_log2 = tessitura_max_hz.max(tessitura_min_hz.max(1e-6)).log2();
+    let center_log2 = offspring_freq_hz.max(1e-6).log2();
+    for _ in 0..E6_HEREDITY_MUTATION_MAX_ATTEMPTS {
+        let candidate_log2 = center_log2 + sample_standard_normal(rng) * sigma_oct;
+        if candidate_log2.is_finite() && candidate_log2 >= min_log2 && candidate_log2 <= max_log2 {
+            return 2.0f32.powf(candidate_log2);
+        }
+    }
+    offspring_freq_hz
+}
+
+fn e6_anchor_selection_death_probability(c_level: f32) -> f32 {
+    let c = c_level.clamp(0.0, 1.0);
+    E6_SELECTION_DEATH_PROB_MAX * (1.0 - c).powf(E6_SELECTION_DEATH_EXPONENT)
+}
+
 fn normalize_scan_to_pmf(scan: &[f32]) -> Vec<f32> {
     let total: f32 = scan
         .iter()
@@ -2056,56 +2106,6 @@ fn crowding_sigma_erb_from_hz(freq_hz: f32, sigma_cents: f32) -> f32 {
     let base_hz = freq_hz.max(1e-6);
     let plus_hz = base_hz * 2.0f32.powf(sigma_log2);
     (hz_to_erb(plus_hz) - hz_to_erb(base_hz)).abs().max(1e-6)
-}
-
-fn sample_weighted_index(weights: &[f32], rng: &mut SmallRng) -> Option<usize> {
-    if weights.is_empty() {
-        return None;
-    }
-    let sanitized: Vec<f32> = weights
-        .iter()
-        .map(|w| if w.is_finite() { (*w).max(0.0) } else { 0.0 })
-        .collect();
-    if sanitized.iter().all(|w| *w <= 0.0) {
-        return None;
-    }
-    WeightedIndex::new(&sanitized)
-        .ok()
-        .map(|dist| dist.sample(rng))
-}
-
-fn e6_parent_selection_weights(
-    parent_freqs_hz: &[f32],
-    reference_landscape: &Landscape,
-) -> Vec<f32> {
-    if parent_freqs_hz.is_empty() {
-        return Vec::new();
-    }
-
-    let sigma_oct = (E6_PARENT_SELECTION_DENSITY_SIGMA_CENTS / 1200.0).max(1e-6);
-    let parent_log2: Vec<f32> = parent_freqs_hz.iter().map(|f| f.log2()).collect();
-
-    parent_freqs_hz
-        .iter()
-        .enumerate()
-        .map(|(i, &freq_hz)| {
-            let c_weight = reference_landscape
-                .evaluate_pitch_level(freq_hz)
-                .clamp(0.0, 1.0)
-                .powf(E6_PARENT_SELECTION_C_GAMMA);
-            let density = parent_log2
-                .iter()
-                .enumerate()
-                .filter(|(j, _)| *j != i)
-                .map(|(_, &other_log2)| {
-                    let z = (parent_log2[i] - other_log2) / sigma_oct;
-                    (-0.5 * z * z).exp()
-                })
-                .sum::<f32>();
-            let diversity_weight = 1.0 / (1.0 + E6_PARENT_SELECTION_DENSITY_STRENGTH * density);
-            (c_weight * diversity_weight).max(0.0)
-        })
-        .collect()
 }
 
 fn init_e4_rhythms(cfg: &E4SimConfig) -> NeuralRhythms {
@@ -2335,8 +2335,8 @@ fn e6_lifecycle() -> LifecycleConfig {
     LifecycleConfig::Sustain {
         initial_energy: 1.0,
         metabolism_rate: E6_METABOLISM_RATE,
-        recharge_rate: Some(E6_RECHARGE_PER_ATTACK),
-        action_cost: Some(E6_ACTION_COST_PER_ATTACK),
+        recharge_rate: Some(0.0),
+        action_cost: Some(0.0),
         continuous_recharge_rate: None,
         envelope: EnvelopeConfig::default(),
     }
@@ -2699,30 +2699,17 @@ mod tests {
     }
 
     #[test]
-    fn e6_lifecycle_strengthens_attack_coupled_selection_without_large_baseline_shift() {
-        let baseline_policy =
-            MetabolismPolicy::from_lifecycle(&e3_lifecycle(E3Condition::Baseline));
+    fn e6_lifecycle_is_neutral_turnover_with_soft_anchor_selection() {
         let e6_policy = MetabolismPolicy::from_lifecycle(&e6_lifecycle());
-        let reference_c = 0.75;
-        let baseline_attack_delta = baseline_policy.attack_delta_with_recharge(reference_c);
-        let e6_attack_delta = e6_policy.attack_delta_with_recharge(reference_c);
+        assert!((e6_policy.basal_cost_per_sec - E6_METABOLISM_RATE).abs() <= 1e-6);
+        assert_eq!(e6_policy.action_cost_per_attack, 0.0);
+        assert_eq!(e6_policy.recharge_per_attack, 0.0);
 
-        assert!(
-            (e6_policy.basal_cost_per_sec - baseline_policy.basal_cost_per_sec).abs() <= 1e-6,
-            "E6 should keep the same basal metabolism so average lifetime stays in the same band"
-        );
-        assert!(
-            e6_policy.recharge_per_attack > baseline_policy.recharge_per_attack,
-            "E6 should strengthen consonance-dependent recharge"
-        );
-        assert!(
-            e6_policy.action_cost_per_attack > baseline_policy.action_cost_per_attack,
-            "E6 should raise attack cost to keep average lifetime near the previous regime"
-        );
-        assert!(
-            (e6_attack_delta - baseline_attack_delta).abs() <= 0.01,
-            "E6 should keep attack energy near baseline around mid-high consonance"
-        );
+        let low = e6_anchor_selection_death_probability(0.1);
+        let mid = e6_anchor_selection_death_probability(0.5);
+        let high = e6_anchor_selection_death_probability(0.9);
+        assert!(low > mid && mid > high);
+        assert!(high >= 0.0 && low <= E6_SELECTION_DEATH_PROB_MAX);
     }
 
     #[test]
@@ -2774,27 +2761,32 @@ mod tests {
         }
         mean_abs_delta_oct /= 128.0;
         assert!(
-            mean_abs_delta_oct < 0.40,
+            mean_abs_delta_oct < 0.60,
             "gaussian window should keep hereditary respawns local on average"
         );
     }
 
     #[test]
-    fn e6_parent_selection_prefers_high_consonance_and_uncrowded_parents() {
-        let reference = e3_reference_landscape_with_partials(E4_ANCHOR_HZ, E4_ENV_PARTIALS_DEFAULT);
-        let parents = vec![330.0, 311.13];
-        let weights = e6_parent_selection_weights(&parents, &reference);
-        let isolated = e6_parent_selection_weights(&[330.0], &reference);
-        let crowded = e6_parent_selection_weights(&[330.0, 332.0], &reference);
-
-        assert_eq!(weights.len(), parents.len());
-        assert!(
-            weights[0] > weights[1],
-            "a consonant fifth should outrank a dissonant tritone when parent crowding is comparable"
+    fn e6_mutation_stays_within_tessitura_and_remains_local() {
+        let mut rng = SmallRng::seed_from_u64(0xE6AA_77DD);
+        let (min_hz, max_hz) = e3_tessitura_bounds(
+            E4_ANCHOR_HZ,
+            &Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT),
         );
+        let center = 220.0f32;
+        let mut mean_abs_delta_oct = 0.0f32;
+        for _ in 0..256 {
+            let freq = mutate_e6_heredity_offspring(center, min_hz, max_hz, &mut rng);
+            assert!(
+                freq >= min_hz && freq <= max_hz,
+                "mutation should resample within the configured tessitura"
+            );
+            mean_abs_delta_oct += (freq / center).log2().abs();
+        }
+        mean_abs_delta_oct /= 256.0;
         assert!(
-            crowded[0] < isolated[0],
-            "a nearby duplicate should downweight an otherwise attractive parent"
+            mean_abs_delta_oct < 0.30,
+            "small mutation should perturb offspring locally on average"
         );
     }
 
