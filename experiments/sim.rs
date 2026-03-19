@@ -46,6 +46,12 @@ const E3_FMAX: f32 = 2000.0;
 const E3_RANGE_OCT: f32 = 2.0; // +/- 1 octave around anchor
 const E3_THETA_FREQ_HZ: f32 = 1.0;
 const E3_METABOLISM_RATE: f32 = 0.5;
+const E6_METABOLISM_RATE: f32 = E3_METABOLISM_RATE;
+const E6_RECHARGE_PER_ATTACK: f32 = 0.65;
+const E6_ACTION_COST_PER_ATTACK: f32 = 0.1325;
+const E6_PARENT_SELECTION_C_GAMMA: f32 = 4.0;
+const E6_PARENT_SELECTION_DENSITY_SIGMA_CENTS: f32 = 100.0;
+const E6_PARENT_SELECTION_DENSITY_STRENGTH: f32 = 1.0;
 const E2_MATCH_CROWDING_WEIGHT: f32 = 0.15;
 const E4_MATCH_SIGMA_CENTS: f32 = 15.0;
 const E2_E6_HILL_NEIGHBOR_STEP_CENTS: f32 = 25.0;
@@ -624,6 +630,7 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
     let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
     let params = make_landscape_params(&space, E3_FS, 1.0);
     let partials = cfg.env_partials.unwrap_or(E4_ENV_PARTIALS_DEFAULT);
+    let selection_reference_landscape = e3_reference_landscape_with_partials(anchor_hz, partials);
     let mut landscape = build_anchor_landscape(
         &space,
         &params,
@@ -844,7 +851,12 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                     if alive_parents.is_empty() {
                         strategy.clone()
                     } else {
-                        let parent_idx = rng.random_range(0..alive_parents.len());
+                        let parent_weights = e6_parent_selection_weights(
+                            &alive_parents,
+                            &selection_reference_landscape,
+                        );
+                        let parent_idx = sample_weighted_index(&parent_weights, &mut rng)
+                            .unwrap_or_else(|| rng.random_range(0..alive_parents.len()));
                         let parent_freq = alive_parents[parent_idx];
                         let mut parent_landscape = build_e6_parent_harmonicity_landscape(
                             &space,
@@ -2046,6 +2058,56 @@ fn crowding_sigma_erb_from_hz(freq_hz: f32, sigma_cents: f32) -> f32 {
     (hz_to_erb(plus_hz) - hz_to_erb(base_hz)).abs().max(1e-6)
 }
 
+fn sample_weighted_index(weights: &[f32], rng: &mut SmallRng) -> Option<usize> {
+    if weights.is_empty() {
+        return None;
+    }
+    let sanitized: Vec<f32> = weights
+        .iter()
+        .map(|w| if w.is_finite() { (*w).max(0.0) } else { 0.0 })
+        .collect();
+    if sanitized.iter().all(|w| *w <= 0.0) {
+        return None;
+    }
+    WeightedIndex::new(&sanitized)
+        .ok()
+        .map(|dist| dist.sample(rng))
+}
+
+fn e6_parent_selection_weights(
+    parent_freqs_hz: &[f32],
+    reference_landscape: &Landscape,
+) -> Vec<f32> {
+    if parent_freqs_hz.is_empty() {
+        return Vec::new();
+    }
+
+    let sigma_oct = (E6_PARENT_SELECTION_DENSITY_SIGMA_CENTS / 1200.0).max(1e-6);
+    let parent_log2: Vec<f32> = parent_freqs_hz.iter().map(|f| f.log2()).collect();
+
+    parent_freqs_hz
+        .iter()
+        .enumerate()
+        .map(|(i, &freq_hz)| {
+            let c_weight = reference_landscape
+                .evaluate_pitch_level(freq_hz)
+                .clamp(0.0, 1.0)
+                .powf(E6_PARENT_SELECTION_C_GAMMA);
+            let density = parent_log2
+                .iter()
+                .enumerate()
+                .filter(|(j, _)| *j != i)
+                .map(|(_, &other_log2)| {
+                    let z = (parent_log2[i] - other_log2) / sigma_oct;
+                    (-0.5 * z * z).exp()
+                })
+                .sum::<f32>();
+            let diversity_weight = 1.0 / (1.0 + E6_PARENT_SELECTION_DENSITY_STRENGTH * density);
+            (c_weight * diversity_weight).max(0.0)
+        })
+        .collect()
+}
+
 fn init_e4_rhythms(cfg: &E4SimConfig) -> NeuralRhythms {
     let mut rhythms = NeuralRhythms::default();
     rhythms.theta.freq_hz = cfg.theta_freq_hz.max(0.1);
@@ -2192,7 +2254,7 @@ fn e6_spawn_spec(anchor_hz: f32, landscape_weight: f32) -> SpawnSpec {
     control.pitch.range_oct = E3_RANGE_OCT;
     control.phonation.spec = PhonationSpec::default();
 
-    let lifecycle = e3_lifecycle(E3Condition::Baseline);
+    let lifecycle = e6_lifecycle();
     let articulation = ArticulationCoreConfig::Entrain {
         lifecycle,
         rhythm_freq: Some(E3_THETA_FREQ_HZ),
@@ -2264,6 +2326,17 @@ fn e3_lifecycle(condition: E3Condition) -> LifecycleConfig {
         metabolism_rate: E3_METABOLISM_RATE,
         recharge_rate,
         action_cost: None,
+        continuous_recharge_rate: None,
+        envelope: EnvelopeConfig::default(),
+    }
+}
+
+fn e6_lifecycle() -> LifecycleConfig {
+    LifecycleConfig::Sustain {
+        initial_energy: 1.0,
+        metabolism_rate: E6_METABOLISM_RATE,
+        recharge_rate: Some(E6_RECHARGE_PER_ATTACK),
+        action_cost: Some(E6_ACTION_COST_PER_ATTACK),
         continuous_recharge_rate: None,
         envelope: EnvelopeConfig::default(),
     }
@@ -2626,6 +2699,33 @@ mod tests {
     }
 
     #[test]
+    fn e6_lifecycle_strengthens_attack_coupled_selection_without_large_baseline_shift() {
+        let baseline_policy =
+            MetabolismPolicy::from_lifecycle(&e3_lifecycle(E3Condition::Baseline));
+        let e6_policy = MetabolismPolicy::from_lifecycle(&e6_lifecycle());
+        let reference_c = 0.75;
+        let baseline_attack_delta = baseline_policy.attack_delta_with_recharge(reference_c);
+        let e6_attack_delta = e6_policy.attack_delta_with_recharge(reference_c);
+
+        assert!(
+            (e6_policy.basal_cost_per_sec - baseline_policy.basal_cost_per_sec).abs() <= 1e-6,
+            "E6 should keep the same basal metabolism so average lifetime stays in the same band"
+        );
+        assert!(
+            e6_policy.recharge_per_attack > baseline_policy.recharge_per_attack,
+            "E6 should strengthen consonance-dependent recharge"
+        );
+        assert!(
+            e6_policy.action_cost_per_attack > baseline_policy.action_cost_per_attack,
+            "E6 should raise attack cost to keep average lifetime near the previous regime"
+        );
+        assert!(
+            (e6_attack_delta - baseline_attack_delta).abs() <= 0.01,
+            "E6 should keep attack energy near baseline around mid-high consonance"
+        );
+    }
+
+    #[test]
     fn parent_harmonicity_sampler_uses_local_window_and_parent_notch() {
         let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
         let params = make_landscape_params(&space, E3_FS, 1.0);
@@ -2676,6 +2776,25 @@ mod tests {
         assert!(
             mean_abs_delta_oct < 0.40,
             "gaussian window should keep hereditary respawns local on average"
+        );
+    }
+
+    #[test]
+    fn e6_parent_selection_prefers_high_consonance_and_uncrowded_parents() {
+        let reference = e3_reference_landscape_with_partials(E4_ANCHOR_HZ, E4_ENV_PARTIALS_DEFAULT);
+        let parents = vec![330.0, 311.13];
+        let weights = e6_parent_selection_weights(&parents, &reference);
+        let isolated = e6_parent_selection_weights(&[330.0], &reference);
+        let crowded = e6_parent_selection_weights(&[330.0, 332.0], &reference);
+
+        assert_eq!(weights.len(), parents.len());
+        assert!(
+            weights[0] > weights[1],
+            "a consonant fifth should outrank a dissonant tritone when parent crowding is comparable"
+        );
+        assert!(
+            crowded[0] < isolated[0],
+            "a nearby duplicate should downweight an otherwise attractive parent"
         );
     }
 
