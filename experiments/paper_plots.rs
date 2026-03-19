@@ -15,10 +15,10 @@ use plotters::prelude::*;
 
 use crate::sim::{
     E3Condition, E3DeathRecord, E3RunConfig, E4_ANCHOR_HZ, E4RuntimeOverrides, E4TailSamples,
-    E6AgentSnapshot, E6Condition, E6PitchSnapshot, E6RunConfig, E6RunResult,
+    E6AgentSnapshot, E6Condition, E6PitchSnapshot, E6RespawnRecord, E6RunConfig, E6RunResult,
     configure_shared_hillclimb_core, e3_policy_params, e3_reference_landscape,
-    e3_reference_landscape_with_partials, e4_paper_meta, run_e3_collect_deaths,
-    run_e4_condition_tail_samples, run_e4_condition_tail_samples_with_wr,
+    e3_reference_landscape_with_partials, e4_paper_meta, e6_sampler_debug_scan,
+    run_e3_collect_deaths, run_e4_condition_tail_samples, run_e4_condition_tail_samples_with_wr,
     run_e4_mirror_schedule_samples, run_e6, set_e4_runtime_overrides, shared_hill_move_cost_coeff,
 };
 use conchordal::core::consonance_kernel::{ConsonanceKernel, ConsonanceRepresentationParams};
@@ -619,6 +619,7 @@ fn usage() -> String {
         "  paper --e2-render-baseline 5 4 2",
         "  paper --e2-render-nohill 5 4 2",
         "  paper --e2-render-proposal 5 4 2",
+        "  paper --e6-debug-sampler",
         "  paper --exp e2 --e2-quick --e2-dense-sweep",
         "  paper --exp e2 --e2-quick --e2-candidate-search",
         "If no experiment is specified, paper defaults (E1,E2,E3,E6,E7) run.",
@@ -1312,6 +1313,10 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
     // Handle --audio-rhai: generate Rhai replay scripts and exit
     if args.iter().any(|arg| arg == "--audio-rhai") {
         generate_audio_replay_rhai()?;
+        return Ok(());
+    }
+    if args.iter().any(|arg| arg == "--e6-debug-sampler") {
+        generate_e6_sampler_debug_plots()?;
         return Ok(());
     }
     // Handle --e3-audio: generate supplementary Experiment 3 scenarios
@@ -8060,6 +8065,389 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
 
     root.present()?;
     log_output_path(&fig_path);
+    Ok(())
+}
+
+fn generate_e6_sampler_debug_plots() -> Result<(), Box<dyn Error>> {
+    let out_dir = Path::new(PAPER_PLOTS_BASE_DIR).join("e6");
+    create_dir_all(&out_dir)?;
+
+    let seed = E6_SEEDS[0];
+    let cfg = E6RunConfig {
+        seed,
+        steps_cap: E6_STEPS_CAP,
+        min_deaths: E6_MIN_DEATHS,
+        pop_size: E6_POP_SIZE,
+        first_k: E6_FIRST_K,
+        condition: E6Condition::Heredity,
+        snapshot_interval: E6_SNAPSHOT_INTERVAL,
+        landscape_weight: 0.0,
+        shuffle_landscape: false,
+        env_partials: None,
+    };
+    let result = run_e6(&cfg);
+    let final_snapshot = result
+        .snapshots
+        .last()
+        .ok_or_else(|| io::Error::other("E6 debug run produced no snapshots"))?;
+
+    let mut freqs = final_snapshot.freqs_hz.clone();
+    freqs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    if freqs.is_empty() {
+        return Err(io::Error::other("E6 debug run produced no live frequencies").into());
+    }
+
+    let parent_freqs = e6_cluster_representative_parent_freqs(&final_snapshot.freqs_hz, 4);
+
+    let scans = parent_freqs
+        .iter()
+        .map(|&parent_freq_hz| {
+            e6_sampler_debug_scan(
+                parent_freq_hz,
+                &final_snapshot.freqs_hz,
+                None,
+                E4_BIND_SIGMA_CENTS,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let png_path = out_dir.join("paper_e6_sampler_debug_seed0_honly.png");
+    let root = BitMapBackend::new(&png_path, (1800, 1200)).into_drawing_area();
+    root.fill(&WHITE)?;
+    let areas = root.split_evenly((2, 2));
+
+    for (area, scan) in areas.into_iter().zip(scans.iter()) {
+        let mut chart = ChartBuilder::on(&area)
+            .margin(18)
+            .x_label_area_size(48)
+            .y_label_area_size(58)
+            .caption(
+                format!(
+                    "parent {:.1} st ({:.1} Hz), seed {} H-only final scene",
+                    scan.parent_semitones_from_anchor, scan.parent_freq_hz, seed
+                ),
+                ("sans-serif", 28).into_font(),
+            )
+            .build_cartesian_2d(-12.5f32..12.5f32, 0.0f32..0.16f32)?;
+
+        chart
+            .configure_mesh()
+            .x_desc("delta from parent (semitones)")
+            .y_desc("PMF")
+            .x_labels(9)
+            .y_labels(6)
+            .label_style(("sans-serif", 20).into_font())
+            .axis_desc_style(("sans-serif", 22).into_font())
+            .draw()?;
+
+        let plot_stage = |chart: &mut ChartContext<
+            '_,
+            BitMapBackend<'_>,
+            Cartesian2d<RangedCoordf32, RangedCoordf32>,
+        >,
+                          name: &str,
+                          color: RGBColor,
+                          data: &[f32]|
+         -> Result<(), Box<dyn Error>> {
+            let series = scan
+                .delta_semitones
+                .iter()
+                .copied()
+                .zip(data.iter().copied())
+                .filter(|(x, _)| *x >= -12.5 && *x <= 12.5);
+            chart
+                .draw_series(LineSeries::new(series, color.stroke_width(3)))?
+                .label(name)
+                .legend(move |(x, y)| {
+                    PathElement::new(vec![(x, y), (x + 20, y)], color.stroke_width(3))
+                });
+            Ok(())
+        };
+
+        plot_stage(&mut chart, "H", RGBColor(70, 70, 70), &scan.harmonicity_pmf)?;
+        plot_stage(
+            &mut chart,
+            "H × local",
+            RGBColor(58, 106, 120),
+            &scan.harmonicity_local_pmf,
+        )?;
+        plot_stage(
+            &mut chart,
+            "× social+tessitura",
+            RGBColor(139, 34, 82),
+            &scan.final_pmf,
+        )?;
+
+        chart.draw_series(std::iter::once(PathElement::new(
+            vec![(12.0, 0.0), (12.0, 0.16)],
+            BLACK.mix(0.2).stroke_width(1),
+        )))?;
+        chart
+            .configure_series_labels()
+            .position(SeriesLabelPosition::UpperRight)
+            .background_style(WHITE.mix(0.85))
+            .border_style(BLACK.mix(0.25))
+            .label_font(("sans-serif", 18).into_font())
+            .draw()?;
+    }
+
+    root.present()?;
+    log_output_path(&png_path);
+
+    let csv_path = out_dir.join("paper_e6_sampler_debug_seed0_honly_peaks.csv");
+    let mut csv = String::from("parent_st,parent_hz,stage,rank,delta_st,freq_hz,pmf\n");
+    for scan in &scans {
+        for (stage_name, data) in [
+            ("H", &scan.harmonicity_pmf),
+            ("H_local", &scan.harmonicity_local_pmf),
+            ("final", &scan.final_pmf),
+        ] {
+            let mut peaks: Vec<(usize, f32)> = data.iter().copied().enumerate().collect();
+            peaks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            for (rank, (idx, prob)) in peaks.into_iter().take(10).enumerate() {
+                let freq_hz = scan.parent_freq_hz * 2.0f32.powf(scan.delta_semitones[idx] / 12.0);
+                csv.push_str(&format!(
+                    "{:.3},{:.3},{},{},{:.3},{:.3},{:.8}\n",
+                    scan.parent_semitones_from_anchor,
+                    scan.parent_freq_hz,
+                    stage_name,
+                    rank + 1,
+                    scan.delta_semitones[idx],
+                    freq_hz,
+                    prob,
+                ));
+            }
+        }
+    }
+    write_with_log(csv_path, csv)?;
+
+    let mut tail_csv = String::from(
+        "parent_st,parent_hz,stage,mass_abs_gt_12,mass_abs_ge_12,mass_abs_within_12,pmf_neg12,pmf_pos12\n",
+    );
+    for scan in &scans {
+        for (stage_name, data) in [
+            ("H", &scan.harmonicity_pmf),
+            ("H_local", &scan.harmonicity_local_pmf),
+            ("final", &scan.final_pmf),
+        ] {
+            let mut mass_abs_gt_12 = 0.0f32;
+            let mut mass_abs_ge_12 = 0.0f32;
+            let mut mass_abs_within_12 = 0.0f32;
+            let mut pmf_neg12 = 0.0f32;
+            let mut pmf_pos12 = 0.0f32;
+            for (&delta_st, &pmf) in scan.delta_semitones.iter().zip(data.iter()) {
+                let abs_delta = delta_st.abs();
+                if abs_delta > 12.0 + 1e-6 {
+                    mass_abs_gt_12 += pmf;
+                }
+                if abs_delta >= 12.0 - 1e-6 {
+                    mass_abs_ge_12 += pmf;
+                }
+                if abs_delta <= 12.0 + 1e-6 {
+                    mass_abs_within_12 += pmf;
+                }
+                if (delta_st + 12.0).abs() <= 1e-6 {
+                    pmf_neg12 += pmf;
+                }
+                if (delta_st - 12.0).abs() <= 1e-6 {
+                    pmf_pos12 += pmf;
+                }
+            }
+            tail_csv.push_str(&format!(
+                "{:.3},{:.3},{},{:.8},{:.8},{:.8},{:.8},{:.8}\n",
+                scan.parent_semitones_from_anchor,
+                scan.parent_freq_hz,
+                stage_name,
+                mass_abs_gt_12,
+                mass_abs_ge_12,
+                mass_abs_within_12,
+                pmf_neg12,
+                pmf_pos12,
+            ));
+        }
+    }
+    write_with_log(
+        out_dir.join("paper_e6_sampler_debug_seed0_honly_tail.csv"),
+        tail_csv,
+    )?;
+
+    let respawn_png_path = out_dir.join("paper_e6_respawn_debug_seed0_honly.png");
+    render_e6_respawn_debug_plot(&respawn_png_path, &result.respawns)?;
+    let mut respawn_csv = String::from(
+        "step,dead_agent_id,parent_freq_hz,parent_st,offspring_freq_hz,offspring_st,spawn_freq_hz,spawn_st,delta_st\n",
+    );
+    for rec in &result.respawns {
+        let parent_st = 12.0 * (rec.parent_freq_hz / E4_ANCHOR_HZ).log2();
+        let offspring_st = 12.0 * (rec.offspring_freq_hz / E4_ANCHOR_HZ).log2();
+        let spawn_st = 12.0 * (rec.spawn_freq_hz / E4_ANCHOR_HZ).log2();
+        let delta_st = 12.0 * (rec.spawn_freq_hz / rec.parent_freq_hz).log2();
+        respawn_csv.push_str(&format!(
+            "{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
+            rec.step,
+            rec.dead_agent_id,
+            rec.parent_freq_hz,
+            parent_st,
+            rec.offspring_freq_hz,
+            offspring_st,
+            rec.spawn_freq_hz,
+            spawn_st,
+            delta_st,
+        ));
+    }
+    write_with_log(
+        out_dir.join("paper_e6_respawn_debug_seed0_honly.csv"),
+        respawn_csv,
+    )?;
+    Ok(())
+}
+
+fn e6_cluster_representative_parent_freqs(freqs_hz: &[f32], n_max: usize) -> Vec<f32> {
+    let mut semitone_freqs: Vec<(f32, f32)> = freqs_hz
+        .iter()
+        .copied()
+        .filter(|f| f.is_finite() && *f > 0.0)
+        .map(|f| (12.0 * (f / E4_ANCHOR_HZ).log2(), f))
+        .collect();
+    semitone_freqs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    if semitone_freqs.is_empty() {
+        return Vec::new();
+    }
+
+    let mut clusters: Vec<Vec<(f32, f32)>> = Vec::new();
+    let mut current = vec![semitone_freqs[0]];
+    for &(st, hz) in semitone_freqs.iter().skip(1) {
+        if st - current.last().map(|p| p.0).unwrap_or(st) <= 1.0 {
+            current.push((st, hz));
+        } else {
+            clusters.push(current);
+            current = vec![(st, hz)];
+        }
+    }
+    clusters.push(current);
+    clusters.sort_by(|a, b| b.len().cmp(&a.len()));
+
+    clusters
+        .into_iter()
+        .take(n_max)
+        .map(|cluster| cluster[cluster.len() / 2].1)
+        .collect()
+}
+
+fn render_e6_respawn_debug_plot(
+    out_path: &Path,
+    respawns: &[E6RespawnRecord],
+) -> Result<(), Box<dyn Error>> {
+    let root = BitMapBackend::new(out_path, (1800, 1000)).into_drawing_area();
+    root.fill(&WHITE)?;
+    let areas = root.split_evenly((2, 2));
+
+    let parent_st: Vec<f32> = respawns
+        .iter()
+        .map(|r| 12.0 * (r.parent_freq_hz / E4_ANCHOR_HZ).log2())
+        .collect();
+    let spawn_st: Vec<f32> = respawns
+        .iter()
+        .map(|r| 12.0 * (r.spawn_freq_hz / E4_ANCHOR_HZ).log2())
+        .collect();
+    let delta_st: Vec<f32> = respawns
+        .iter()
+        .map(|r| 12.0 * (r.spawn_freq_hz / r.parent_freq_hz).log2())
+        .collect();
+
+    {
+        let mut chart = ChartBuilder::on(&areas[0])
+            .margin(16)
+            .caption("Parent semitone histogram", ("sans-serif", 28).into_font())
+            .x_label_area_size(40)
+            .y_label_area_size(48)
+            .build_cartesian_2d(-12.5f32..14.5f32, 0u32..500u32)?;
+        chart
+            .configure_mesh()
+            .x_desc("parent semitones from anchor")
+            .y_desc("count")
+            .label_style(("sans-serif", 18).into_font())
+            .axis_desc_style(("sans-serif", 20).into_font())
+            .draw()?;
+        let bins = histogram_counts_fixed(&parent_st, -12.5, 14.5, 0.5);
+        chart.draw_series(bins.iter().map(|&(center, count)| {
+            let x0 = center - 0.25;
+            let x1 = center + 0.25;
+            Rectangle::new([(x0, 0u32), (x1, count as u32)], PAL_H.mix(0.65).filled())
+        }))?;
+    }
+
+    {
+        let mut chart = ChartBuilder::on(&areas[1])
+            .margin(16)
+            .caption("Spawned semitone histogram", ("sans-serif", 28).into_font())
+            .x_label_area_size(40)
+            .y_label_area_size(48)
+            .build_cartesian_2d(-12.5f32..14.5f32, 0u32..500u32)?;
+        chart
+            .configure_mesh()
+            .x_desc("spawn semitones from anchor")
+            .y_desc("count")
+            .label_style(("sans-serif", 18).into_font())
+            .axis_desc_style(("sans-serif", 20).into_font())
+            .draw()?;
+        let bins = histogram_counts_fixed(&spawn_st, -12.5, 14.5, 0.5);
+        chart.draw_series(bins.iter().map(|&(center, count)| {
+            let x0 = center - 0.25;
+            let x1 = center + 0.25;
+            Rectangle::new([(x0, 0u32), (x1, count as u32)], PAL_R.mix(0.65).filled())
+        }))?;
+    }
+
+    {
+        let mut chart = ChartBuilder::on(&areas[2])
+            .margin(16)
+            .caption(
+                "Parent vs spawned semitones",
+                ("sans-serif", 28).into_font(),
+            )
+            .x_label_area_size(48)
+            .y_label_area_size(48)
+            .build_cartesian_2d(-12.5f32..14.5f32, -12.5f32..14.5f32)?;
+        chart
+            .configure_mesh()
+            .x_desc("parent st")
+            .y_desc("spawn st")
+            .label_style(("sans-serif", 18).into_font())
+            .axis_desc_style(("sans-serif", 20).into_font())
+            .draw()?;
+        chart.draw_series(
+            parent_st
+                .iter()
+                .copied()
+                .zip(spawn_st.iter().copied())
+                .map(|(x, y)| Circle::new((x, y), 2, RGBColor(80, 80, 80).mix(0.35).filled())),
+        )?;
+    }
+
+    {
+        let mut chart = ChartBuilder::on(&areas[3])
+            .margin(16)
+            .caption("Spawn delta from parent", ("sans-serif", 28).into_font())
+            .x_label_area_size(40)
+            .y_label_area_size(48)
+            .build_cartesian_2d(-12.5f32..12.5f32, 0u32..400u32)?;
+        chart
+            .configure_mesh()
+            .x_desc("spawn minus parent (st)")
+            .y_desc("count")
+            .label_style(("sans-serif", 18).into_font())
+            .axis_desc_style(("sans-serif", 20).into_font())
+            .draw()?;
+        let bins = histogram_counts_fixed(&delta_st, -12.5, 12.5, 0.5);
+        chart.draw_series(bins.iter().map(|&(center, count)| {
+            let x0 = center - 0.25;
+            let x1 = center + 0.25;
+            Rectangle::new([(x0, 0u32), (x1, count as u32)], PAL_C.mix(0.65).filled())
+        }))?;
+    }
+
+    root.present()?;
+    log_output_path(out_path);
     Ok(())
 }
 

@@ -156,7 +156,27 @@ pub struct E6PitchSnapshot {
 pub struct E6RunResult {
     pub deaths: Vec<E3DeathRecord>,
     pub snapshots: Vec<E6PitchSnapshot>,
+    pub respawns: Vec<E6RespawnRecord>,
     pub total_deaths: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct E6SamplerDebugScan {
+    pub parent_freq_hz: f32,
+    pub parent_semitones_from_anchor: f32,
+    pub delta_semitones: Vec<f32>,
+    pub harmonicity_pmf: Vec<f32>,
+    pub harmonicity_local_pmf: Vec<f32>,
+    pub final_pmf: Vec<f32>,
+}
+
+#[derive(Clone, Debug)]
+pub struct E6RespawnRecord {
+    pub step: usize,
+    pub dead_agent_id: usize,
+    pub parent_freq_hz: f32,
+    pub offspring_freq_hz: f32,
+    pub spawn_freq_hz: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -593,6 +613,7 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
     let mut out = E6RunResult {
         deaths: Vec::new(),
         snapshots: Vec::new(),
+        respawns: Vec::new(),
         total_deaths: 0,
     };
     if cfg.pop_size == 0 || cfg.steps_cap == 0 {
@@ -657,13 +678,7 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
     let first_k = cfg.first_k as u32;
     let snapshot_interval = cfg.snapshot_interval.max(1);
     let mut rng = SmallRng::seed_from_u64(cfg.seed ^ 0xE600_5EED_u64);
-    let half = 0.5 * E3_RANGE_OCT;
-    let min_spawn = (anchor_hz * 2.0f32.powf(-half))
-        .clamp(space.fmin, space.fmax)
-        .min((anchor_hz * 2.0f32.powf(half)).clamp(space.fmin, space.fmax));
-    let max_spawn = (anchor_hz * 2.0f32.powf(half))
-        .clamp(space.fmin, space.fmax)
-        .max((anchor_hz * 2.0f32.powf(-half)).clamp(space.fmin, space.fmax));
+    let (tessitura_min_hz, tessitura_max_hz) = e3_tessitura_bounds(anchor_hz, &space);
 
     for step in 0..cfg.steps_cap {
         // Recompute landscape from all alive agents on every update (includes roughness).
@@ -843,11 +858,21 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                         }
                         let offspring_freq = sample_from_parent_harmonicity(
                             &parent_landscape,
+                            &landscape,
                             parent_freq,
                             spec.control.pitch.crowding_sigma_cents,
+                            tessitura_min_hz,
+                            tessitura_max_hz,
                             &mut rng,
                         );
-                        let spawn_freq = offspring_freq.clamp(min_spawn, max_spawn);
+                        let spawn_freq = offspring_freq;
+                        out.respawns.push(E6RespawnRecord {
+                            step,
+                            dead_agent_id: id as usize,
+                            parent_freq_hz: parent_freq,
+                            offspring_freq_hz: offspring_freq,
+                            spawn_freq_hz: spawn_freq,
+                        });
                         pop.apply_action(
                             Action::Spawn {
                                 group_id: E3_GROUP_AGENTS,
@@ -1802,7 +1827,8 @@ fn build_e6_parent_harmonicity_landscape(
     )
 }
 
-const E6_HEREDITY_PARENT_WINDOW_SIGMA_OCT: f32 = 0.30;
+const E6_HEREDITY_PARENT_WINDOW_SIGMA_OCT: f32 = 0.60;
+const E6_HEREDITY_SOCIAL_ROUGHNESS_WEIGHT: f32 = 0.25;
 
 fn parent_window_and_notch_weights(
     space: &Log2Space,
@@ -1826,6 +1852,15 @@ fn parent_window_and_notch_weights(
             window * notch.max(0.0)
         })
         .collect()
+}
+
+fn weak_social_roughness_weight(current_landscape: &Landscape, idx: usize) -> f32 {
+    let roughness01 = current_landscape
+        .roughness01
+        .get(idx)
+        .copied()
+        .unwrap_or(0.0);
+    (1.0 - E6_HEREDITY_SOCIAL_ROUGHNESS_WEIGHT * roughness01.clamp(0.0, 1.0)).max(0.0)
 }
 
 fn sample_from_weight_scan(
@@ -1853,17 +1888,43 @@ fn sample_from_weight_scan(
     space.centers_hz[space.n_bins() - 1]
 }
 
+fn tessitura_masked_weights(
+    space: &Log2Space,
+    weights: &[f32],
+    tessitura_min_hz: f32,
+    tessitura_max_hz: f32,
+) -> Vec<f32> {
+    let min_hz = tessitura_min_hz.min(tessitura_max_hz).max(1e-6);
+    let max_hz = tessitura_max_hz.max(tessitura_min_hz).max(min_hz);
+    space
+        .centers_hz
+        .iter()
+        .zip(weights.iter())
+        .map(|(&freq_hz, &weight)| {
+            if freq_hz >= min_hz && freq_hz <= max_hz {
+                weight
+            } else {
+                0.0
+            }
+        })
+        .collect()
+}
+
 /// Sample from the parent's harmonicity profile, localized by a parent-centered Gaussian
-/// and a parent-specific crowding notch. Falls back to the same local window without H weights.
+/// and a parent-specific crowding notch, then truncated to the experiment tessitura.
+/// Falls back to the same local window without H weights inside that tessitura.
 fn sample_from_parent_harmonicity(
-    landscape: &Landscape,
+    parent_landscape: &Landscape,
+    current_landscape: &Landscape,
     parent_freq_hz: f32,
     crowding_sigma_cents: f32,
+    tessitura_min_hz: f32,
+    tessitura_max_hz: f32,
     rng: &mut impl Rng,
 ) -> f32 {
-    let space = &landscape.space;
+    let space = &parent_landscape.space;
     let n = space.n_bins();
-    if n == 0 || landscape.harmonicity01.len() != n {
+    if n == 0 || parent_landscape.harmonicity01.len() != n {
         return parent_freq_hz;
     }
 
@@ -1871,11 +1932,111 @@ fn sample_from_parent_harmonicity(
         parent_window_and_notch_weights(space, parent_freq_hz, crowding_sigma_cents);
     let mut weights = Vec::with_capacity(n);
     for (idx, &local_weight) in local_weights.iter().enumerate() {
-        let h = landscape.harmonicity01[idx].max(0.0);
-        weights.push(h * local_weight);
+        let h = parent_landscape.harmonicity01[idx].max(0.0);
+        let social_weight = weak_social_roughness_weight(current_landscape, idx);
+        weights.push(h * local_weight * social_weight);
     }
-    let fallback = sample_from_weight_scan(space, &local_weights, rng, parent_freq_hz);
-    sample_from_weight_scan(space, &weights, rng, fallback)
+    let mut fallback_weights = Vec::with_capacity(n);
+    for (idx, &local_weight) in local_weights.iter().enumerate() {
+        let social_weight = weak_social_roughness_weight(current_landscape, idx);
+        fallback_weights.push(local_weight * social_weight);
+    }
+    let truncated_weights =
+        tessitura_masked_weights(space, &weights, tessitura_min_hz, tessitura_max_hz);
+    let truncated_fallback_weights =
+        tessitura_masked_weights(space, &fallback_weights, tessitura_min_hz, tessitura_max_hz);
+    let fallback = sample_from_weight_scan(space, &truncated_fallback_weights, rng, parent_freq_hz);
+    sample_from_weight_scan(space, &truncated_weights, rng, fallback)
+}
+
+fn normalize_scan_to_pmf(scan: &[f32]) -> Vec<f32> {
+    let total: f32 = scan
+        .iter()
+        .copied()
+        .filter(|w| w.is_finite() && *w > 0.0)
+        .sum();
+    if total <= 0.0 {
+        return vec![0.0; scan.len()];
+    }
+    scan.iter()
+        .map(|&w| {
+            if w.is_finite() && w > 0.0 {
+                w / total
+            } else {
+                0.0
+            }
+        })
+        .collect()
+}
+
+pub fn e6_sampler_debug_scan(
+    parent_freq_hz: f32,
+    current_freqs_hz: &[f32],
+    env_partials: Option<u32>,
+    crowding_sigma_cents: f32,
+) -> E6SamplerDebugScan {
+    let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
+    let params = make_landscape_params(&space, E3_FS, 1.0);
+    let partials = env_partials.unwrap_or(E4_ENV_PARTIALS_DEFAULT);
+    let parent_landscape = build_e6_parent_harmonicity_landscape(
+        &space,
+        &params,
+        parent_freq_hz,
+        partials,
+        E4_ENV_PARTIAL_DECAY_DEFAULT,
+    );
+    let current_landscape = if current_freqs_hz.is_empty() {
+        build_anchor_landscape(
+            &space,
+            &params,
+            E4_ANCHOR_HZ,
+            partials,
+            E4_ENV_PARTIAL_DECAY_DEFAULT,
+        )
+    } else {
+        build_density_landscape_from_freqs(
+            &space,
+            &params,
+            current_freqs_hz,
+            partials,
+            E4_ENV_PARTIAL_DECAY_DEFAULT,
+        )
+    };
+
+    let local_weights =
+        parent_window_and_notch_weights(&space, parent_freq_hz, crowding_sigma_cents);
+    let parent_log2 = parent_freq_hz.max(1e-6).log2();
+    let (tessitura_min_hz, tessitura_max_hz) = e3_tessitura_bounds(E4_ANCHOR_HZ, &space);
+
+    let mut harmonicity = Vec::with_capacity(space.n_bins());
+    let mut harmonicity_local = Vec::with_capacity(space.n_bins());
+    let mut final_weights = Vec::with_capacity(space.n_bins());
+    let mut delta_semitones = Vec::with_capacity(space.n_bins());
+
+    for (idx, &local_weight) in local_weights.iter().enumerate() {
+        let delta_oct = space.centers_log2[idx] - parent_log2;
+        let delta_st = 12.0 * delta_oct;
+        let h = parent_landscape.harmonicity01[idx].max(0.0);
+        let w_h_local = h * local_weight;
+        let social_weight = weak_social_roughness_weight(&current_landscape, idx);
+        let w_final = w_h_local * social_weight;
+
+        harmonicity.push(h);
+        harmonicity_local.push(w_h_local);
+        final_weights.push(w_final);
+        delta_semitones.push(delta_st);
+    }
+    let final_weights =
+        tessitura_masked_weights(&space, &final_weights, tessitura_min_hz, tessitura_max_hz);
+
+    E6SamplerDebugScan {
+        parent_freq_hz,
+        parent_semitones_from_anchor: 12.0 * (parent_freq_hz / E4_ANCHOR_HZ).log2(),
+        delta_semitones,
+        harmonicity_pmf: normalize_scan_to_pmf(&harmonicity),
+        harmonicity_local_pmf: normalize_scan_to_pmf(&harmonicity_local),
+        final_pmf: normalize_scan_to_pmf(&final_weights),
+    }
 }
 
 fn crowding_sigma_erb_from_hz(freq_hz: f32, sigma_cents: f32) -> f32 {
@@ -2077,15 +2238,20 @@ fn e3_spawn_spec(condition: E3Condition, anchor_hz: f32) -> SpawnSpec {
 }
 
 fn e3_spawn_strategy(anchor_hz: f32, space: &Log2Space) -> SpawnStrategy {
+    let (min_freq, max_freq) = e3_tessitura_bounds(anchor_hz, space);
+    SpawnStrategy::RandomLog {
+        min_freq: min_freq.min(max_freq),
+        max_freq: max_freq.max(min_freq),
+    }
+}
+
+fn e3_tessitura_bounds(anchor_hz: f32, space: &Log2Space) -> (f32, f32) {
     let half = 0.5 * E3_RANGE_OCT;
     let min_freq = anchor_hz * 2.0f32.powf(-half);
     let max_freq = anchor_hz * 2.0f32.powf(half);
     let min_freq = min_freq.clamp(space.fmin, space.fmax);
     let max_freq = max_freq.clamp(space.fmin, space.fmax);
-    SpawnStrategy::RandomLog {
-        min_freq: min_freq.min(max_freq),
-        max_freq: max_freq.max(min_freq),
-    }
+    (min_freq.min(max_freq), max_freq.max(min_freq))
 }
 
 fn e3_lifecycle(condition: E3Condition) -> LifecycleConfig {
@@ -2464,15 +2630,18 @@ mod tests {
         let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
         let params = make_landscape_params(&space, E3_FS, 1.0);
         let parent_freq = 220.0f32;
-        let mut landscape = build_e6_parent_harmonicity_landscape(
+        let mut parent_landscape = build_e6_parent_harmonicity_landscape(
             &space,
             &params,
             parent_freq,
             E4_ENV_PARTIALS_DEFAULT,
             E4_ENV_PARTIAL_DECAY_DEFAULT,
         );
-        landscape.harmonicity01.fill(1.0);
+        parent_landscape.harmonicity01.fill(1.0);
+        let mut current_landscape = parent_landscape.clone();
+        current_landscape.roughness01.fill(0.0);
         let weights = parent_window_and_notch_weights(&space, parent_freq, E4_MATCH_SIGMA_CENTS);
+        let (tessitura_min_hz, tessitura_max_hz) = e3_tessitura_bounds(E4_ANCHOR_HZ, &space);
         let parent_idx = space.nearest_index(parent_freq);
         let notch_escape_idx = space.nearest_index(parent_freq * 2.0f32.powf(0.03));
         let near_idx = space.nearest_index(parent_freq * 2.0f32.powf(0.10));
@@ -2489,10 +2658,17 @@ mod tests {
         let mut mean_abs_delta_oct = 0.0f32;
         for _ in 0..128 {
             let freq = sample_from_parent_harmonicity(
-                &landscape,
+                &parent_landscape,
+                &current_landscape,
                 parent_freq,
                 E4_MATCH_SIGMA_CENTS,
+                tessitura_min_hz,
+                tessitura_max_hz,
                 &mut rng,
+            );
+            assert!(
+                freq >= tessitura_min_hz && freq <= tessitura_max_hz,
+                "tessitura-truncated heredity sampler should stay within the configured register"
             );
             mean_abs_delta_oct += (freq / parent_freq).log2().abs();
         }

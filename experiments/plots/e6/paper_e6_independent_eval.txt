@@ -1,9 +1,9 @@
 E6 Independent Consonance Evaluation (JI ratio-complexity metric)
 ================================================================
-Spearman rho(JI_score, C_score): 0.5614
-Permutation p-value (9999 perms): p<0.001
+Spearman rho(JI_score, C_score): -0.0105
+Permutation p-value (9999 perms): p=0.948
 
 JI score by condition:
-heredity: mean=0.1339 sd=0.0336 (n=20)
+heredity: mean=0.1047 sd=0.0084 (n=20)
 random:   mean=0.1101 sd=0.0086 (n=20)
-Welch t=3.07, df=21.5, p=0.005747, Cohen's d=0.97
+Welch t=-2.03, df=38.0, p=0.049851, Cohen's d=-0.64

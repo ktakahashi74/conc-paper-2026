@@ -1,12 +1,12 @@
 Interaction test (sign-flip permutation, exact)
 ================================================
 Condition means (final C_score):
-heredity (H):      0.1663
-heredity+hill (HH): 0.2958
+heredity (H):      0.0620
+heredity+hill (HH): 0.0662
 random (R):         0.0622
 random+hill (RH):   0.0690
 
 Interaction contrast: HH - H - RH + R
-mean = 0.1227, 95% CI = [0.0857, 0.1597]
-p = 0.000008 (exact)
+mean = -0.0026, 95% CI = [-0.0309, 0.0258]
+p = 0.879375 (exact)
 n_seeds = 20
