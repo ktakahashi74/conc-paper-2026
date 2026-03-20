@@ -12,8 +12,10 @@ use conchordal::core::timebase::Timebase;
 use conchordal::life::articulation_core::{
     AnyArticulationCore, ArticulationState, kuramoto_phase_step,
 };
-use conchordal::life::control::{AgentControl, LeaveSelfOutMode, PitchCoreKind, PitchMode};
-use conchordal::life::individual::{PitchHillClimbPitchCore, SoundBody};
+use conchordal::life::control::{
+    AgentControl, ControlUpdate, LeaveSelfOutMode, PitchCoreKind, PitchMode,
+};
+use conchordal::life::individual::{Individual, PitchHillClimbPitchCore, SoundBody};
 use conchordal::life::lifecycle::LifecycleConfig;
 use conchordal::life::metabolism_policy::MetabolismPolicy;
 use conchordal::life::population::{ControlUpdateMode, Population};
@@ -47,11 +49,16 @@ const E3_FMAX: f32 = 2000.0;
 const E3_RANGE_OCT: f32 = 2.0; // +/- 1 octave around anchor
 const E3_THETA_FREQ_HZ: f32 = 1.0;
 const E3_METABOLISM_RATE: f32 = 0.5;
-const E6_METABOLISM_RATE: f32 = 0.12;
-const E6_SELECTION_DEATH_PROB_MAX: f32 = 0.002;
-const E6_SELECTION_DEATH_EXPONENT: f32 = 3.0;
+const E6_METABOLISM_RATE: f32 = 0.06;
+const E6_SELECTION_DEATH_PROB_MAX: f32 = 0.006;
+const E6_SELECTION_DEATH_EXPONENT: f32 = 2.0;
 const E6_HEREDITY_MUTATION_SIGMA_ST: f32 = 2.0;
 const E6_HEREDITY_MUTATION_MAX_ATTEMPTS: usize = 24;
+const E6_JUVENILE_HILL_STEPS: u32 = 96;
+const E6_JUVENILE_LOCAL_SEARCH_WINDOW_ST: f32 = 5.0;
+const E6_JUVENILE_LOCAL_SEARCH_STEP_CENTS: f32 = 25.0;
+const E6_JUVENILE_LOCAL_SEARCH_MIN_IMPROVEMENT: f32 = 1e-4;
+const E6_JUVENILE_CULL_LEVEL: f32 = 0.58;
 const E2_MATCH_CROWDING_WEIGHT: f32 = 0.15;
 const E4_MATCH_SIGMA_CENTS: f32 = 15.0;
 const E2_E6_HILL_NEIGHBOR_STEP_CENTS: f32 = 25.0;
@@ -702,10 +709,43 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                 apply_e6_shuffle_permutation(&mut landscape, perm);
             }
         }
+        let mut juvenile_cull_ids: HashSet<u64> = HashSet::new();
+        for agent in pop.individuals.iter_mut() {
+            if !agent.is_alive() {
+                continue;
+            }
+            let idx = agent.id() as usize;
+            if idx >= states.len() {
+                continue;
+            }
+            agent
+                .apply_patch(&ControlUpdate {
+                    landscape_weight: Some(0.0),
+                    ..ControlUpdate::default()
+                })
+                .expect("e6 juvenile hill-climb control patch should be valid");
+            if e6_juvenile_local_search_enabled(states[idx].ticks, cfg.landscape_weight) {
+                e6_apply_bruteforce_local_consonance_search(
+                    agent,
+                    &selection_reference_landscape,
+                    tessitura_min_hz,
+                    tessitura_max_hz,
+                );
+                let c_level = selection_reference_landscape
+                    .evaluate_pitch_level(agent.body.base_freq_hz())
+                    .clamp(0.0, 1.0);
+                if c_level < E6_JUVENILE_CULL_LEVEL {
+                    juvenile_cull_ids.insert(agent.id());
+                }
+            }
+        }
         pop.advance(E3_HOP, E3_FS, step as u64, dt, &landscape);
-        let mut forced_dead_ids: HashSet<u64> = HashSet::new();
+        let mut forced_dead_ids: HashSet<u64> = juvenile_cull_ids.clone();
         for agent in pop.individuals.iter() {
             if !agent.is_alive() {
+                continue;
+            }
+            if juvenile_cull_ids.contains(&agent.id()) {
                 continue;
             }
             let c_level = selection_reference_landscape
@@ -799,7 +839,15 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                 }
             }
 
-            if state.was_alive && !alive {
+            let culled_juvenile = juvenile_cull_ids.contains(&id);
+            if !alive && (state.was_alive || culled_juvenile) {
+                if state.pending_birth {
+                    state.birth_step = step as u32;
+                    state.c_level_birth = selection_reference_landscape
+                        .evaluate_pitch_level(agent.body.base_freq_hz())
+                        .clamp(0.0, 1.0);
+                    state.pending_birth = false;
+                }
                 let ticks = state.ticks.max(1);
                 let avg_c_level_tick = if state.ticks > 0 {
                     state.sum_c_level_tick / state.ticks as f32
@@ -2672,6 +2720,59 @@ pub fn generate_e3_rhai(cfg: &E3AudioConfig, output_path: &std::path::Path) -> s
     Ok(())
 }
 
+fn e6_juvenile_local_search_enabled(age_ticks: u32, adult_landscape_weight: f32) -> bool {
+    adult_landscape_weight > 0.0 && age_ticks < E6_JUVENILE_HILL_STEPS
+}
+
+fn e6_apply_bruteforce_local_consonance_search(
+    agent: &mut Individual,
+    reference_landscape: &Landscape,
+    tessitura_min_hz: f32,
+    tessitura_max_hz: f32,
+) -> bool {
+    let current_freq = agent.body.base_freq_hz();
+    if !current_freq.is_finite() || current_freq <= 0.0 {
+        return false;
+    }
+
+    let current_log2 = current_freq.log2();
+    let current_score = reference_landscape.evaluate_pitch_score(current_freq);
+    let search_step_oct = E6_JUVENILE_LOCAL_SEARCH_STEP_CENTS / 1200.0;
+    let search_radius_steps = ((E6_JUVENILE_LOCAL_SEARCH_WINDOW_ST * 100.0)
+        / E6_JUVENILE_LOCAL_SEARCH_STEP_CENTS)
+        .round() as i32;
+
+    let mut best_log2 = current_log2;
+    let mut best_score = current_score;
+    let mut best_abs_offset = i32::MAX;
+
+    for offset in -search_radius_steps..=search_radius_steps {
+        let cand_log2 = current_log2 + offset as f32 * search_step_oct;
+        let cand_freq = 2.0f32.powf(cand_log2);
+        if !cand_freq.is_finite() || cand_freq < tessitura_min_hz || cand_freq > tessitura_max_hz {
+            continue;
+        }
+        let cand_score = reference_landscape.evaluate_pitch_score(cand_freq);
+        let abs_offset = offset.abs();
+        let improved = cand_score > best_score + E6_JUVENILE_LOCAL_SEARCH_MIN_IMPROVEMENT;
+        let ties_better = (cand_score - best_score).abs()
+            <= E6_JUVENILE_LOCAL_SEARCH_MIN_IMPROVEMENT
+            && abs_offset < best_abs_offset;
+        if improved || ties_better {
+            best_score = cand_score;
+            best_log2 = cand_log2;
+            best_abs_offset = abs_offset;
+        }
+    }
+
+    if (best_log2 - current_log2).abs() > 1e-6 {
+        agent.force_set_pitch_log2(best_log2);
+        true
+    } else {
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2710,6 +2811,20 @@ mod tests {
         let high = e6_anchor_selection_death_probability(0.9);
         assert!(low > mid && mid > high);
         assert!(high >= 0.0 && low <= E6_SELECTION_DEATH_PROB_MAX);
+    }
+
+    #[test]
+    fn juvenile_local_search_turns_off_after_early_window() {
+        assert!(e6_juvenile_local_search_enabled(0, 0.75));
+        assert!(e6_juvenile_local_search_enabled(
+            E6_JUVENILE_HILL_STEPS - 1,
+            0.75
+        ));
+        assert!(!e6_juvenile_local_search_enabled(
+            E6_JUVENILE_HILL_STEPS,
+            0.75
+        ));
+        assert!(!e6_juvenile_local_search_enabled(12, 0.0));
     }
 
     #[test]
