@@ -361,10 +361,10 @@ const PAL_E7_OFF: RGBColor = PAL_C;
 
 const E6_FIRST_K: usize = 20;
 const E6_POP_SIZE: usize = 32;
-const E6_MIN_DEATHS: usize = 4000;
+const E6_MIN_DEATHS: usize = 2500;
 const E6_STEPS_CAP: usize = 10_000;
 const E6_HILL_LANDSCAPE_WEIGHT: f32 = 1.0;
-const E6_SNAPSHOT_INTERVAL: usize = 100;
+const E6_SNAPSHOT_INTERVAL: usize = 10;
 const E6_FIG_X_MAX: f32 = 10_000.0;
 const E6_CONSONANT_WINDOW_ST: f32 = 0.25;
 const E6_INTERVAL_BIN_ST: f32 = 0.25;

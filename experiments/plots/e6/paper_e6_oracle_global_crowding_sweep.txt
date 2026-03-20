@@ -4,7 +4,7 @@ Respawn is forced to the global anchor-C argmax, N is fixed at 32,
 movement remains enabled, and only crowding_strength is varied.
 Condition is random because oracle births make heredity/random equivalent here.
 
-crowding=0.0000  final C=0.2351 +/- 0.0195  late20 C=0.3469 +/- 0.0012  final occ=0.1831 +/- 0.0208  final pairwise JI=0.3668 +/- 0.0115
-crowding=0.0375  final C=0.1074 +/- 0.0229  late20 C=0.2044 +/- 0.0066  final occ=0.1328 +/- 0.0444  final pairwise JI=0.3179 +/- 0.0252
-crowding=0.0750  final C=0.1017 +/- 0.0182  late20 C=0.2083 +/- 0.0074  final occ=0.1531 +/- 0.0591  final pairwise JI=0.3200 +/- 0.0280
-crowding=0.1500  final C=0.0724 +/- 0.0094  late20 C=0.1999 +/- 0.0047  final occ=0.0953 +/- 0.0498  final pairwise JI=0.3306 +/- 0.0292
+crowding=0.0000  final C=0.9999 +/- 0.0000  late20 C=0.9999 +/- 0.0000  final occ=1.0000 +/- 0.0000  final pairwise JI=1.0000 +/- 0.0000
+crowding=0.0375  final C=0.9999 +/- 0.0000  late20 C=0.9999 +/- 0.0000  final occ=1.0000 +/- 0.0000  final pairwise JI=1.0000 +/- 0.0000
+crowding=0.0750  final C=0.9999 +/- 0.0000  late20 C=0.9999 +/- 0.0000  final occ=1.0000 +/- 0.0000  final pairwise JI=1.0000 +/- 0.0000
+crowding=0.1500  final C=0.9999 +/- 0.0000  late20 C=0.9999 +/- 0.0000  final occ=1.0000 +/- 0.0000  final pairwise JI=1.0000 +/- 0.0000

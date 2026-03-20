@@ -49,6 +49,7 @@ const E3_FMAX: f32 = 2000.0;
 const E3_RANGE_OCT: f32 = 2.0; // +/- 1 octave around anchor
 const E3_THETA_FREQ_HZ: f32 = 1.0;
 const E3_METABOLISM_RATE: f32 = 0.5;
+const E6_INITIAL_ENERGY: f32 = 0.05;
 const E6_METABOLISM_RATE: f32 = 0.12;
 const E6_SELECTION_RECHARGE_PER_SEC: f32 = 0.10;
 const E6_FERTILITY_ENERGY_EXPONENT: f32 = 2.0;
@@ -3317,7 +3318,7 @@ fn e3_lifecycle(condition: E3Condition) -> LifecycleConfig {
 
 fn e6_lifecycle() -> LifecycleConfig {
     LifecycleConfig::Sustain {
-        initial_energy: 1.0,
+        initial_energy: E6_INITIAL_ENERGY,
         metabolism_rate: E6_METABOLISM_RATE,
         recharge_rate: Some(0.0),
         action_cost: Some(0.0),
