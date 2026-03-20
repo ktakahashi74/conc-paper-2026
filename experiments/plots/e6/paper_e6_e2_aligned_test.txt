@@ -1,0 +1,27 @@
+E6 E2-Aligned Dynamics Diagnostic
+===============================
+Conditions use:
+- pop_size = 24
+- range_oct = 4.0
+- adaptation = off
+- crowding = E2 weight (0.15)
+- exact local search around current pitch: +/-2 st, 25-cent grid
+
+Final C_score by condition:
+H baseline:    mean=0.7960 +/- 0.0476
+H E2-aligned:  mean=0.0682 +/- 0.0163
+R baseline:    mean=0.6001 +/- 0.0205
+R E2-aligned:  mean=0.0684 +/- 0.0086
+
+Final consonant occupation:
+H E2-aligned:  mean=0.2604 +/- 0.0605
+R E2-aligned:  mean=0.3214 +/- 0.0373
+
+Final pairwise JI:
+H E2-aligned:  mean=0.2340 +/- 0.0452
+R E2-aligned:  mean=0.1194 +/- 0.0080
+
+Paired contrasts (per-seed):
+H E2-aligned - H baseline: mean=-0.7277, p=p<0.001 (exact)
+R E2-aligned - R baseline: mean=-0.5317, p=p<0.001 (exact)
+H E2-aligned - R E2-aligned: mean=-0.0001, p=p=0.989 (exact)

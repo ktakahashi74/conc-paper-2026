@@ -1,0 +1,10 @@
+E6 Oracle Global Anchor-C Adaptation Sweep
+=======================================
+Respawn is forced to the global anchor-C argmax, N is fixed at 32,
+and we vary crowding strength and whether adaptation is enabled.
+Condition is random because oracle births make heredity/random equivalent here.
+
+crowding=0.0000, adaptation=off  final C=0.9999 +/- 0.0000  late20 C=0.9999 +/- 0.0000  final occ=1.0000 +/- 0.0000  final pairwise JI=1.0000 +/- 0.0000
+crowding=0.0000, adaptation=on  final C=0.2351 +/- 0.0195  late20 C=0.3469 +/- 0.0012  final occ=0.1831 +/- 0.0208  final pairwise JI=0.3668 +/- 0.0115
+crowding=0.1500, adaptation=off  final C=0.0796 +/- 0.0150  late20 C=0.2036 +/- 0.0061  final occ=0.0891 +/- 0.0393  final pairwise JI=0.3522 +/- 0.0465
+crowding=0.1500, adaptation=on  final C=0.0724 +/- 0.0094  late20 C=0.1999 +/- 0.0047  final occ=0.0953 +/- 0.0498  final pairwise JI=0.3306 +/- 0.0292

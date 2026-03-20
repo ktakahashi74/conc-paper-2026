@@ -1,0 +1,12 @@
+E6 Oracle Global Anchor-C Population Sweep
+========================================
+Respawn is forced to the global anchor-C argmax, movement remains enabled,
+and only population size N is varied. Condition is random because oracle
+births make heredity/random equivalent here.
+
+N=1   final C=0.2066 +/- 0.1461  late20 C=0.3430 +/- 0.0069  final occ=0.1500 +/- 0.1565  final pairwise JI=0.0000 +/- 0.0000
+N=2   final C=0.6098 +/- 0.1102  late20 C=0.3700 +/- 0.0130  final occ=0.6000 +/- 0.1117  final pairwise JI=0.4684 +/- 0.1731
+N=4   final C=0.2789 +/- 0.0603  late20 C=0.2603 +/- 0.0209  final occ=0.2750 +/- 0.0684  final pairwise JI=0.2710 +/- 0.0460
+N=8   final C=0.1780 +/- 0.0453  late20 C=0.2246 +/- 0.0125  final occ=0.2188 +/- 0.0486  final pairwise JI=0.2752 +/- 0.0349
+N=16  final C=0.0839 +/- 0.0266  late20 C=0.1995 +/- 0.0098  final occ=0.1281 +/- 0.0706  final pairwise JI=0.3458 +/- 0.0411
+N=32  final C=0.0724 +/- 0.0094  late20 C=0.1999 +/- 0.0047  final occ=0.0953 +/- 0.0498  final pairwise JI=0.3306 +/- 0.0292
