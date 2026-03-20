@@ -6476,11 +6476,20 @@ fn plot_e6_hereditary_adaptation(
 ) -> Result<(), Box<dyn Error>> {
     let anchor_hz = E4_ANCHOR_HZ;
     let landscape = e3_reference_landscape(anchor_hz);
-    let run_jobs = |specs: &[(&'static str, E6Condition, Option<f32>, bool, bool)]| {
-        let mut jobs: Vec<(&'static str, E6Condition, Option<f32>, bool, bool, u64)> = Vec::new();
+    let run_jobs = |specs: &[(&'static str, E6Condition, bool, Option<f32>, bool, bool)]| {
+        let mut jobs: Vec<(
+            &'static str,
+            E6Condition,
+            bool,
+            Option<f32>,
+            bool,
+            bool,
+            u64,
+        )> = Vec::new();
         for &(
             label,
             condition,
+            selection_enabled,
             oracle_radius_st,
             oracle_global_anchor_c,
             oracle_freeze_pitch_after_respawn,
@@ -6490,6 +6499,7 @@ fn plot_e6_hereditary_adaptation(
                 jobs.push((
                     label,
                     condition,
+                    selection_enabled,
                     oracle_radius_st,
                     oracle_global_anchor_c,
                     oracle_freeze_pitch_after_respawn,
@@ -6503,7 +6513,7 @@ fn plot_e6_hereditary_adaptation(
             .min(jobs.len())
             .max(1);
         let next = AtomicUsize::new(0);
-        let results_slot: Mutex<Vec<Option<(&'static str, E6Condition, u64, E6RunResult)>>> =
+        let results_slot: Mutex<Vec<Option<(&'static str, E6Condition, bool, u64, E6RunResult)>>> =
             Mutex::new((0..jobs.len()).map(|_| None).collect());
         std::thread::scope(|scope| {
             for _ in 0..worker_count {
@@ -6516,6 +6526,7 @@ fn plot_e6_hereditary_adaptation(
                         let (
                             label,
                             condition,
+                            selection_enabled,
                             oracle_radius_st,
                             oracle_global_anchor_c,
                             oracle_freeze_pitch_after_respawn,
@@ -6540,10 +6551,12 @@ fn plot_e6_hereditary_adaptation(
                             range_oct_override: Some(E2_PAPER_RANGE_OCT),
                             e2_aligned_exact_local_search_radius_st: None,
                             disable_within_life_pitch_movement: true,
+                            selection_enabled,
                             juvenile_cull_enabled: false,
                         };
                         let result = run_e6(&cfg);
-                        results_slot.lock().unwrap()[idx] = Some((label, condition, seed, result));
+                        results_slot.lock().unwrap()[idx] =
+                            Some((label, condition, selection_enabled, seed, result));
                     }
                 });
             }
@@ -6557,13 +6570,16 @@ fn plot_e6_hereditary_adaptation(
     };
 
     let all_results = run_jobs(&[
-        ("heredity", E6Condition::Heredity, None, false, false),
-        ("random", E6Condition::Random, None, false, false),
+        ("heredity_nosel", E6Condition::Heredity, false, None, false, false),
+        ("random_nosel", E6Condition::Random, false, None, false, false),
+        ("heredity", E6Condition::Heredity, true, None, false, false),
+        ("random", E6Condition::Random, true, None, false, false),
     ]);
     let oracle_results = run_jobs(&[
         (
             "heredity_oracle",
             E6Condition::Heredity,
+            true,
             Some(5.0),
             false,
             false,
@@ -6571,6 +6587,7 @@ fn plot_e6_hereditary_adaptation(
         (
             "random_oracle",
             E6Condition::Random,
+            true,
             Some(5.0),
             false,
             false,
@@ -6580,6 +6597,7 @@ fn plot_e6_hereditary_adaptation(
         (
             "heredity_oracle_global",
             E6Condition::Heredity,
+            true,
             None,
             true,
             false,
@@ -6587,6 +6605,7 @@ fn plot_e6_hereditary_adaptation(
         (
             "random_oracle_global",
             E6Condition::Random,
+            true,
             None,
             true,
             false,
@@ -6596,6 +6615,7 @@ fn plot_e6_hereditary_adaptation(
         (
             "heredity_oracle_global_freeze",
             E6Condition::Heredity,
+            true,
             None,
             true,
             true,
@@ -6603,6 +6623,7 @@ fn plot_e6_hereditary_adaptation(
         (
             "random_oracle_global_freeze",
             E6Condition::Random,
+            true,
             None,
             true,
             true,
@@ -6654,6 +6675,7 @@ fn plot_e6_hereditary_adaptation(
                         range_oct_override: Some(E2_PAPER_RANGE_OCT),
                         e2_aligned_exact_local_search_radius_st: Some(2.0),
                         disable_within_life_pitch_movement: false,
+                        selection_enabled: true,
                         juvenile_cull_enabled: false,
                     };
                     let result = run_e6(&cfg);
@@ -6714,6 +6736,7 @@ fn plot_e6_hereditary_adaptation(
                         range_oct_override: Some(E2_PAPER_RANGE_OCT),
                         e2_aligned_exact_local_search_radius_st: Some(0.0),
                         disable_within_life_pitch_movement: false,
+                        selection_enabled: true,
                         juvenile_cull_enabled: false,
                     };
                     let result = run_e6(&cfg);
@@ -6744,18 +6767,17 @@ fn plot_e6_hereditary_adaptation(
 
     let mut mean_c_by_cond_seed: HashMap<&'static str, HashMap<u64, Vec<(usize, f32)>>> =
         HashMap::new();
+    let mut final_c_by_label_seed: HashMap<&'static str, HashMap<u64, f32>> = HashMap::new();
     let mut deaths_by_cond: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut heat_counts: HashMap<(usize, i32), f32> = HashMap::new();
     let mut hered_seed_last_step: HashMap<u64, usize> = HashMap::new();
     let mut hered_seed_last_bins: HashMap<u64, Vec<i32>> = HashMap::new();
     let mut endpoint_metrics_csv =
         String::from("condition,seed,anchor_ji_mass,pairwise_ji_score\n");
-    let mut final_anchor_ji_heredity: Vec<f32> = Vec::new();
-    let mut final_anchor_ji_random: Vec<f32> = Vec::new();
-    let mut final_pairwise_ji_heredity: Vec<f32> = Vec::new();
-    let mut final_pairwise_ji_random: Vec<f32> = Vec::new();
+    let mut final_anchor_ji_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
+    let mut final_pairwise_ji_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
 
-    for (cond_label, condition, seed, result) in &all_results {
+    for (cond_label, _condition, _selection_enabled, seed, result) in &all_results {
         deaths_by_cond
             .entry(cond_label)
             .or_default()
@@ -6929,7 +6951,7 @@ fn plot_e6_hereditary_adaptation(
                     c_level,
                     if is_consonant { 1 } else { 0 }
                 ));
-                if *condition == E6Condition::Heredity {
+                if *cond_label == "heredity" {
                     let half_range_st = 0.5 * E2_PAPER_RANGE_OCT * 12.0;
                     let clamped =
                         semitone.clamp(-half_range_st, half_range_st - f32::EPSILON);
@@ -6967,20 +6989,22 @@ fn plot_e6_hereditary_adaptation(
         } else {
             run_points.iter().map(|p| p.n_alive as f32).sum::<f32>() / run_points.len() as f32
         };
-        match condition {
-            E6Condition::Heredity => {
-                final_anchor_ji_heredity.push(final_anchor_ji_mass);
-                final_pairwise_ji_heredity.push(final_pairwise_ji_score);
-            }
-            E6Condition::Random => {
-                final_anchor_ji_random.push(final_anchor_ji_mass);
-                final_pairwise_ji_random.push(final_pairwise_ji_score);
-            }
-        }
+        final_anchor_ji_by_label
+            .entry(*cond_label)
+            .or_default()
+            .push(final_anchor_ji_mass);
+        final_pairwise_ji_by_label
+            .entry(*cond_label)
+            .or_default()
+            .push(final_pairwise_ji_score);
         endpoint_metrics_csv.push_str(&format!(
             "{},{},{:.6},{:.6}\n",
             cond_label, seed, final_anchor_ji_mass, final_pairwise_ji_score
         ));
+        final_c_by_label_seed
+            .entry(*cond_label)
+            .or_default()
+            .insert(*seed, end.mean_c_score);
         summary_csv.push_str(&format!(
             "{},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.3}\n",
             cond_label,
@@ -7000,13 +7024,13 @@ fn plot_e6_hereditary_adaptation(
         ));
     }
 
-    let write_life_checks_csv = |results: &[(&'static str, E6Condition, u64, E6RunResult)],
+    let write_life_checks_csv = |results: &[(&'static str, E6Condition, bool, u64, E6RunResult)],
                                  path: &Path|
      -> Result<(), Box<dyn Error>> {
         let mut csv = String::from(
             "condition,seed,life_id,agent_id,birth_step,death_step,lifetime_steps,spawn_c_score,spawn_c_level,step1_c_score,step1_c_level,step10_c_score,step10_c_level,step100_c_score,step100_c_level\n",
         );
-        for (label, _condition, seed, result) in results {
+        for (label, _condition, _selection_enabled, seed, result) in results {
             for rec in &result.life_checks {
                 let step1_c_score = rec
                     .step1_c_score
@@ -7083,7 +7107,7 @@ fn plot_e6_hereditary_adaptation(
     );
     let mut oracle_by_label_seed: HashMap<&'static str, HashMap<u64, OracleRunSummary>> =
         HashMap::new();
-    for (label, _condition, seed, result) in &oracle_results {
+    for (label, _condition, _selection_enabled, seed, result) in &oracle_results {
         for rec in &result.respawns {
             let parent_st = rec
                 .parent_freq_hz
@@ -7257,8 +7281,8 @@ fn plot_e6_hereditary_adaptation(
 
     let baseline_h: HashMap<u64, OracleRunSummary> = all_results
         .iter()
-        .filter(|(label, _, _, _)| *label == "heredity")
-        .filter_map(|(_, _, seed, result)| {
+        .filter(|(label, _, _, _, _)| *label == "heredity")
+        .filter_map(|(_, _, _, seed, result)| {
             let run_points: Vec<E6SnapshotPoint> = result
                 .snapshots
                 .iter()
@@ -7288,8 +7312,8 @@ fn plot_e6_hereditary_adaptation(
         .collect();
     let baseline_r: HashMap<u64, OracleRunSummary> = all_results
         .iter()
-        .filter(|(label, _, _, _)| *label == "random")
-        .filter_map(|(_, _, seed, result)| {
+        .filter(|(label, _, _, _, _)| *label == "random")
+        .filter_map(|(_, _, _, seed, result)| {
             let run_points: Vec<E6SnapshotPoint> = result
                 .snapshots
                 .iter()
@@ -7429,7 +7453,7 @@ fn plot_e6_hereditary_adaptation(
     );
     let mut global_oracle_by_label_seed: HashMap<&'static str, HashMap<u64, OracleRunSummary>> =
         HashMap::new();
-    for (label, _condition, seed, result) in &global_oracle_results {
+    for (label, _condition, _selection_enabled, seed, result) in &global_oracle_results {
         for rec in &result.respawns {
             let parent_st = rec
                 .parent_freq_hz
@@ -7705,7 +7729,7 @@ fn plot_e6_hereditary_adaptation(
         &'static str,
         HashMap<u64, OracleRunSummary>,
     > = HashMap::new();
-    for (label, _condition, seed, result) in &global_oracle_freeze_results {
+    for (label, _condition, _selection_enabled, seed, result) in &global_oracle_freeze_results {
         for rec in &result.respawns {
             let parent_st = rec
                 .parent_freq_hz
@@ -8307,6 +8331,7 @@ fn plot_e6_hereditary_adaptation(
                         range_oct_override: None,
                         e2_aligned_exact_local_search_radius_st: None,
                         disable_within_life_pitch_movement: false,
+                        selection_enabled: true,
                         juvenile_cull_enabled: false,
                     };
                     let result = run_e6(&cfg);
@@ -8464,6 +8489,7 @@ fn plot_e6_hereditary_adaptation(
                         range_oct_override: None,
                         e2_aligned_exact_local_search_radius_st: None,
                         disable_within_life_pitch_movement: false,
+                        selection_enabled: true,
                         juvenile_cull_enabled: false,
                     };
                     let result = run_e6(&cfg);
@@ -8627,6 +8653,7 @@ fn plot_e6_hereditary_adaptation(
                         range_oct_override: None,
                         e2_aligned_exact_local_search_radius_st: None,
                         disable_within_life_pitch_movement: false,
+                        selection_enabled: true,
                         juvenile_cull_enabled: false,
                     };
                     let result = run_e6(&cfg);
@@ -8753,204 +8780,225 @@ fn plot_e6_hereditary_adaptation(
         }
     }
 
-    let c_heredity = e6_series_stats(
-        mean_c_by_cond_seed.get(E6Condition::Heredity.label()),
-        E6_SNAPSHOT_INTERVAL,
-    );
-    let c_random = e6_series_stats(
-        mean_c_by_cond_seed.get(E6Condition::Random.label()),
-        E6_SNAPSHOT_INTERVAL,
-    );
+    let c_heredity_nosel =
+        e6_series_stats(mean_c_by_cond_seed.get("heredity_nosel"), E6_SNAPSHOT_INTERVAL);
+    let c_random_nosel =
+        e6_series_stats(mean_c_by_cond_seed.get("random_nosel"), E6_SNAPSHOT_INTERVAL);
+    let c_heredity = e6_series_stats(mean_c_by_cond_seed.get("heredity"), E6_SNAPSHOT_INTERVAL);
+    let c_random = e6_series_stats(mean_c_by_cond_seed.get("random"), E6_SNAPSHOT_INTERVAL);
+    let final_anchor_ji_heredity_nosel = final_anchor_ji_by_label
+        .remove("heredity_nosel")
+        .unwrap_or_default();
+    let final_anchor_ji_random_nosel = final_anchor_ji_by_label
+        .remove("random_nosel")
+        .unwrap_or_default();
+    let final_anchor_ji_heredity = final_anchor_ji_by_label.remove("heredity").unwrap_or_default();
+    let final_anchor_ji_random = final_anchor_ji_by_label.remove("random").unwrap_or_default();
+    let final_pairwise_ji_heredity_nosel = final_pairwise_ji_by_label
+        .remove("heredity_nosel")
+        .unwrap_or_default();
+    let final_pairwise_ji_random_nosel = final_pairwise_ji_by_label
+        .remove("random_nosel")
+        .unwrap_or_default();
+    let final_pairwise_ji_heredity = final_pairwise_ji_by_label
+        .remove("heredity")
+        .unwrap_or_default();
+    let final_pairwise_ji_random = final_pairwise_ji_by_label.remove("random").unwrap_or_default();
     render_e6_figure(
         &out_dir.join("paper_e6_figure.svg"),
+        &c_heredity_nosel,
+        &c_random_nosel,
         &c_heredity,
         &c_random,
         &heat_counts,
+        &final_anchor_ji_heredity_nosel,
+        &final_anchor_ji_random_nosel,
         &final_anchor_ji_heredity,
         &final_anchor_ji_random,
+        &final_pairwise_ji_heredity_nosel,
+        &final_pairwise_ji_random_nosel,
         &final_pairwise_ji_heredity,
         &final_pairwise_ji_random,
     )?;
+
+    {
+        let collect_seed_values =
+            |label: &'static str, by_label_seed: &HashMap<&'static str, HashMap<u64, f32>>| {
+                E6_SEEDS
+                    .iter()
+                    .filter_map(|seed| by_label_seed.get(label)?.get(seed).copied())
+                    .collect::<Vec<_>>()
+            };
+        let h0 = collect_seed_values("heredity_nosel", &final_c_by_label_seed);
+        let r0 = collect_seed_values("random_nosel", &final_c_by_label_seed);
+        let h1 = collect_seed_values("heredity", &final_c_by_label_seed);
+        let r1 = collect_seed_values("random", &final_c_by_label_seed);
+        let interaction: Vec<f32> = h1
+            .iter()
+            .zip(&r1)
+            .zip(h0.iter().zip(&r0))
+            .map(|((&h1, &r1), (&h0, &r0))| (h1 - r1) - (h0 - r0))
+            .collect();
+        let main_selection: Vec<f32> = h1
+            .iter()
+            .zip(&r1)
+            .zip(h0.iter().zip(&r0))
+            .map(|((&h1, &r1), (&h0, &r0))| 0.5 * ((h1 - h0) + (r1 - r0)))
+            .collect();
+        let main_heredity: Vec<f32> = h1
+            .iter()
+            .zip(&r1)
+            .zip(h0.iter().zip(&r0))
+            .map(|((&h1, &r1), (&h0, &r0))| 0.5 * ((h1 - r1) + (h0 - r0)))
+            .collect();
+        let mean_ci = |values: &[f32]| -> (f32, f32) {
+            if values.is_empty() {
+                (0.0, 0.0)
+            } else {
+                (mean_std_scalar(values).0, ci95_half_width(values))
+            }
+        };
+        let (h0_mean, h0_ci) = mean_ci(&h0);
+        let (r0_mean, r0_ci) = mean_ci(&r0);
+        let (h1_mean, h1_ci) = mean_ci(&h1);
+        let (r1_mean, r1_ci) = mean_ci(&r1);
+        let (sel_p, sel_method) =
+            permutation_pvalue_one_sample(&main_selection, 100_000, 0xE6F5_2101);
+        let (her_p, her_method) =
+            permutation_pvalue_one_sample(&main_heredity, 100_000, 0xE6F5_2102);
+        let (int_p, int_method) =
+            permutation_pvalue_one_sample(&interaction, 100_000, 0xE6F5_2103);
+        let report = format!(
+            "E6 Fig.5 2x2 Factorial (selection x heredity)\n\
+             ===========================================\n\
+             Final C_score means:\n\
+             heredity, no selection: {:.4} +/- {:.4}\n\
+             random,   no selection: {:.4} +/- {:.4}\n\
+             heredity, selection:    {:.4} +/- {:.4}\n\
+             random,   selection:    {:.4} +/- {:.4}\n\
+             \n\
+             Main effects and interaction (paired sign-flip permutation):\n\
+             selection main effect: {:.4}, p={} ({})\n\
+             heredity main effect:  {:.4}, p={} ({})\n\
+             interaction:           {:.4}, p={} ({})\n",
+            h0_mean,
+            h0_ci,
+            r0_mean,
+            r0_ci,
+            h1_mean,
+            h1_ci,
+            r1_mean,
+            r1_ci,
+            mean_std_scalar(&main_selection).0,
+            format_p_value(sel_p),
+            sel_method,
+            mean_std_scalar(&main_heredity).0,
+            format_p_value(her_p),
+            her_method,
+            mean_std_scalar(&interaction).0,
+            format_p_value(int_p),
+            int_method,
+        );
+        write_with_log(out_dir.join("paper_e6_factorial_test.txt"), report)?;
+    }
 
     // ── C1: Independent consonance evaluation (JI ratio-complexity metric) ──
     {
         let mut ji_scores: Vec<f32> = Vec::new();
         let mut c_scores: Vec<f32> = Vec::new();
-        let mut ji_heredity: Vec<f32> = Vec::new();
-        let mut ji_random: Vec<f32> = Vec::new();
+        let mut ji_h0: Vec<f32> = Vec::new();
+        let mut ji_r0: Vec<f32> = Vec::new();
+        let mut ji_h1: Vec<f32> = Vec::new();
+        let mut ji_r1: Vec<f32> = Vec::new();
 
-        for (_label, condition, _seed, result) in &all_results {
+        for (label, _condition, _selection_enabled, _seed, result) in &all_results {
             if let Some(last_snap) = result.snapshots.last() {
                 let ji = ji_population_score(&last_snap.freqs_hz, anchor_hz);
                 let c = e6_snapshot_point(&last_snap.freqs_hz, anchor_hz, &landscape).mean_c_score;
                 ji_scores.push(ji);
                 c_scores.push(c);
-                match condition {
-                    E6Condition::Heredity => ji_heredity.push(ji),
-                    E6Condition::Random => ji_random.push(ji),
+                match *label {
+                    "heredity_nosel" => ji_h0.push(ji),
+                    "random_nosel" => ji_r0.push(ji),
+                    "heredity" => ji_h1.push(ji),
+                    "random" => ji_r1.push(ji),
+                    _ => {}
                 }
             }
         }
 
         let rho = spearman_rho(&ji_scores, &c_scores);
         let p = perm_pvalue(&ji_scores, &c_scores, 9999, 0xC1E0A1, spearman_rho);
-
-        let ji_h_mean = if ji_heredity.is_empty() {
-            0.0
-        } else {
-            ji_heredity.iter().sum::<f32>() / ji_heredity.len() as f32
-        };
-        let ji_r_mean = if ji_random.is_empty() {
-            0.0
-        } else {
-            ji_random.iter().sum::<f32>() / ji_random.len() as f32
-        };
-        let ji_h_sd = if ji_heredity.len() > 1 {
-            let var = ji_heredity
-                .iter()
-                .map(|x| (x - ji_h_mean).powi(2))
-                .sum::<f32>()
-                / (ji_heredity.len() - 1) as f32;
-            var.sqrt()
-        } else {
-            0.0
-        };
-        let ji_r_sd = if ji_random.len() > 1 {
-            let var = ji_random
-                .iter()
-                .map(|x| (x - ji_r_mean).powi(2))
-                .sum::<f32>()
-                / (ji_random.len() - 1) as f32;
-            var.sqrt()
-        } else {
-            0.0
-        };
-
-        // Welch t-test for JI_score: heredity vs random
-        let nh = ji_heredity.len() as f64;
-        let nr = ji_random.len() as f64;
-        let mh = ji_h_mean as f64;
-        let mr = ji_r_mean as f64;
-        let sh = ji_h_sd as f64;
-        let sr = ji_r_sd as f64;
-        let va = sh * sh / nh;
-        let vb = sr * sr / nr;
-        let se = (va + vb).sqrt();
-        let ji_t = if se > 1e-15 { (mh - mr) / se } else { 0.0 };
-        let ji_df = if se > 1e-15 {
-            (va + vb).powi(2) / (va * va / (nh - 1.0) + vb * vb / (nr - 1.0))
-        } else {
-            1.0
-        };
-        // Cohen's d (pooled SD)
-        let sd_pooled = (((nh - 1.0) * sh * sh + (nr - 1.0) * sr * sr) / (nh + nr - 2.0)).sqrt();
-        let ji_d = if sd_pooled > 1e-15 {
-            (mh - mr) / sd_pooled
-        } else {
-            0.0
-        };
-        // p-value via regularized incomplete beta (same as E2 implementation)
-        let t_abs = ji_t.abs();
-        let x = ji_df / (ji_df + t_abs * t_abs);
-        fn ln_gamma_ji(x: f64) -> f64 {
-            let coeffs = [
-                76.18009172947146,
-                -86.50532032941677,
-                24.01409824083091,
-                -1.231739572450155,
-                0.1208650973866179e-2,
-                -0.5395239384953e-5,
-            ];
-            let mut y = x;
-            let tmp = x + 5.5 - (x + 0.5) * (x + 5.5).ln();
-            let mut ser = 1.000000000190015_f64;
-            for &c in &coeffs {
-                y += 1.0;
-                ser += c / y;
-            }
-            -tmp + (2.5066282746310005 * ser / x).ln()
-        }
-        fn betacf_ji(a: f64, b: f64, x: f64) -> f64 {
-            let (fpmin, eps) = (1e-30, 3e-12);
-            let (qab, qap, qam) = (a + b, a + 1.0, a - 1.0);
-            let mut c = 1.0_f64;
-            let mut d = (1.0 - qab * x / qap).recip();
-            if d.abs() < fpmin {
-                d = fpmin;
-            }
-            let mut h = d;
-            for m in 1..=200 {
-                let mf = m as f64;
-                let aa = mf * (b - mf) * x / ((qam + 2.0 * mf) * (a + 2.0 * mf));
-                d = 1.0 + aa * d;
-                if d.abs() < fpmin {
-                    d = fpmin;
-                }
-                c = 1.0 + aa / c;
-                if c.abs() < fpmin {
-                    c = fpmin;
-                }
-                d = d.recip();
-                h *= d * c;
-                let aa2 = -(a + mf) * (qab + mf) * x / ((a + 2.0 * mf) * (qap + 2.0 * mf));
-                d = 1.0 + aa2 * d;
-                if d.abs() < fpmin {
-                    d = fpmin;
-                }
-                c = 1.0 + aa2 / c;
-                if c.abs() < fpmin {
-                    c = fpmin;
-                }
-                d = d.recip();
-                let delta = d * c;
-                h *= delta;
-                if (delta - 1.0).abs() < eps {
-                    break;
-                }
-            }
-            h
-        }
-        fn rib_ji(a: f64, b: f64, x: f64) -> f64 {
-            if x <= 0.0 {
-                return 0.0;
-            }
-            if x >= 1.0 {
-                return 1.0;
-            }
-            let bt = (ln_gamma_ji(a + b) - ln_gamma_ji(a) - ln_gamma_ji(b)
-                + a * x.ln()
-                + b * (1.0 - x).ln())
-            .exp();
-            if x < (a + 1.0) / (a + b + 2.0) {
-                bt * betacf_ji(a, b, x) / a
+        let mean_ci = |values: &[f32]| -> (f32, f32) {
+            if values.is_empty() {
+                (0.0, 0.0)
             } else {
-                1.0 - bt * betacf_ji(b, a, 1.0 - x) / b
+                (mean_std_scalar(values).0, ci95_half_width(values))
             }
-        }
-        let ji_p = rib_ji(ji_df / 2.0, 0.5, x);
-
+        };
+        let interaction: Vec<f32> = ji_h1
+            .iter()
+            .zip(&ji_r1)
+            .zip(ji_h0.iter().zip(&ji_r0))
+            .map(|((&h1, &r1), (&h0, &r0))| (h1 - r1) - (h0 - r0))
+            .collect();
+        let main_selection: Vec<f32> = ji_h1
+            .iter()
+            .zip(&ji_r1)
+            .zip(ji_h0.iter().zip(&ji_r0))
+            .map(|((&h1, &r1), (&h0, &r0))| 0.5 * ((h1 - h0) + (r1 - r0)))
+            .collect();
+        let main_heredity: Vec<f32> = ji_h1
+            .iter()
+            .zip(&ji_r1)
+            .zip(ji_h0.iter().zip(&ji_r0))
+            .map(|((&h1, &r1), (&h0, &r0))| 0.5 * ((h1 - r1) + (h0 - r0)))
+            .collect();
+        let (sel_p, sel_method) =
+            permutation_pvalue_one_sample(&main_selection, 100_000, 0xC1E6_0101);
+        let (her_p, her_method) =
+            permutation_pvalue_one_sample(&main_heredity, 100_000, 0xC1E6_0102);
+        let (int_p, int_method) =
+            permutation_pvalue_one_sample(&interaction, 100_000, 0xC1E6_0103);
+        let (h0_mean, h0_ci) = mean_ci(&ji_h0);
+        let (r0_mean, r0_ci) = mean_ci(&ji_r0);
+        let (h1_mean, h1_ci) = mean_ci(&ji_h1);
+        let (r1_mean, r1_ci) = mean_ci(&ji_r1);
         let eval_text = format!(
             "E6 Independent Consonance Evaluation (JI ratio-complexity metric)\n\
              ================================================================\n\
              Spearman rho(JI_score, C_score): {:.4}\n\
              Permutation p-value (9999 perms): {}\n\
              \n\
-             JI score by condition:\n\
-             heredity: mean={:.4} sd={:.4} (n={})\n\
-             random:   mean={:.4} sd={:.4} (n={})\n\
-             Welch t={:.2}, df={:.1}, p={:.6}, Cohen's d={:.2}\n",
+             JI score by 2x2 condition:\n\
+             heredity, no selection: {:.4} +/- {:.4}\n\
+             random,   no selection: {:.4} +/- {:.4}\n\
+             heredity, selection:    {:.4} +/- {:.4}\n\
+             random,   selection:    {:.4} +/- {:.4}\n\
+             \n\
+             Main effects and interaction (paired sign-flip permutation):\n\
+             selection main effect: {:.4}, p={} ({})\n\
+             heredity main effect:  {:.4}, p={} ({})\n\
+             interaction:           {:.4}, p={} ({})\n",
             rho,
             format_p_value(p),
-            ji_h_mean,
-            ji_h_sd,
-            ji_heredity.len(),
-            ji_r_mean,
-            ji_r_sd,
-            ji_random.len(),
-            ji_t,
-            ji_df,
-            ji_p,
-            ji_d,
+            h0_mean,
+            h0_ci,
+            r0_mean,
+            r0_ci,
+            h1_mean,
+            h1_ci,
+            r1_mean,
+            r1_ci,
+            mean_std_scalar(&main_selection).0,
+            format_p_value(sel_p),
+            sel_method,
+            mean_std_scalar(&main_heredity).0,
+            format_p_value(her_p),
+            her_method,
+            mean_std_scalar(&interaction).0,
+            format_p_value(int_p),
+            int_method,
         );
         write_with_log(out_dir.join("paper_e6_independent_eval.txt"), eval_text)?;
     }
@@ -9133,11 +9181,17 @@ fn e6_series_stats(
 #[allow(clippy::too_many_arguments)]
 fn render_e6_figure(
     out_path: &Path,
+    c_heredity_nosel: &[(f32, f32, f32)],
+    c_random_nosel: &[(f32, f32, f32)],
     c_heredity: &[(f32, f32, f32)],
     c_random: &[(f32, f32, f32)],
     heat_counts: &HashMap<(usize, i32), f32>,
+    final_anchor_ji_heredity_nosel: &[f32],
+    final_anchor_ji_random_nosel: &[f32],
     final_anchor_ji_heredity: &[f32],
     final_anchor_ji_random: &[f32],
+    final_pairwise_ji_heredity_nosel: &[f32],
+    final_pairwise_ji_random_nosel: &[f32],
     final_pairwise_ji_heredity: &[f32],
     final_pairwise_ji_random: &[f32],
 ) -> Result<(), Box<dyn Error>> {
@@ -9147,20 +9201,43 @@ fn render_e6_figure(
     let left_panels = left.split_evenly((1, 2));
     let right_panels = right.split_evenly((1, 2));
 
+    let series_specs = [
+        E6FigureSeries {
+            label: "heredity (no sel)",
+            series: c_heredity_nosel,
+            color: PAL_H.mix(0.45),
+        },
+        E6FigureSeries {
+            label: "random (no sel)",
+            series: c_random_nosel,
+            color: PAL_R.mix(0.45),
+        },
+        E6FigureSeries {
+            label: "heredity",
+            series: c_heredity,
+            color: PAL_H.to_rgba(),
+        },
+        E6FigureSeries {
+            label: "random",
+            series: c_random,
+            color: PAL_R.to_rgba(),
+        },
+    ];
     draw_e6_series_panel(
         &left_panels[0],
         "A. Mean consonance",
         "C_score",
-        c_heredity,
-        c_random,
+        &series_specs,
         0.0,
         1.0,
     )?;
     draw_e6_heatmap_panel(&left_panels[1], heat_counts)?;
-    draw_e6_final_metric_panel(
+    draw_e6_factorial_metric_panel(
         &right_panels[0],
         "C. Anchor JI mass",
         "JI mass",
+        final_anchor_ji_heredity_nosel,
+        final_anchor_ji_random_nosel,
         final_anchor_ji_heredity,
         final_anchor_ji_random,
         0.0,
@@ -9170,10 +9247,12 @@ fn render_e6_figure(
         50,
         126,
     )?;
-    draw_e6_final_metric_panel(
+    draw_e6_factorial_metric_panel(
         &right_panels[1],
         "D. Pairwise JI score",
         "JI_score",
+        final_pairwise_ji_heredity_nosel,
+        final_pairwise_ji_random_nosel,
         final_pairwise_ji_heredity,
         final_pairwise_ji_random,
         0.0,
@@ -9188,22 +9267,26 @@ fn render_e6_figure(
     Ok(())
 }
 
+struct E6FigureSeries<'a> {
+    label: &'a str,
+    series: &'a [(f32, f32, f32)],
+    color: RGBAColor,
+}
+
 fn draw_e6_series_panel<DB: DrawingBackend>(
     area: &DrawingArea<DB, Shift>,
     caption: &str,
     y_desc: &str,
-    heredity: &[(f32, f32, f32)],
-    random: &[(f32, f32, f32)],
+    series_specs: &[E6FigureSeries<'_>],
     y_lo: f32,
     y_hi: f32,
 ) -> Result<(), Box<dyn Error>>
 where
     <DB as DrawingBackend>::ErrorType: 'static,
 {
-    let x_max = heredity
+    let x_max = series_specs
         .iter()
-        .chain(random.iter())
-        .map(|(x, _, _)| *x)
+        .flat_map(|spec| spec.series.iter().map(|(x, _, _)| *x))
         .fold(0.0f32, f32::max)
         .min(E6_FIG_X_MAX)
         .max(1.0);
@@ -9224,7 +9307,10 @@ where
         .axis_desc_style(("sans-serif", 50).into_font())
         .draw()?;
 
-    for (label, series, color) in [("heredity", heredity, PAL_H), ("random", random, PAL_R)] {
+    for spec in series_specs {
+        let label = spec.label;
+        let series = spec.series;
+        let color = spec.color;
         if series.is_empty() {
             continue;
         }
@@ -9275,15 +9361,22 @@ where
         .label_font(("sans-serif", 48).into_font())
         .draw()?;
 
+    chart.draw_series(std::iter::once(Text::new(
+        "light: no selection; dark: selection",
+        (x_max * 0.03, y_hi - (y_hi - y_lo) * 0.06),
+        ("sans-serif", 32).into_font(),
+    )))?;
     Ok(())
 }
 
-fn draw_e6_final_metric_panel<DB: DrawingBackend>(
+fn draw_e6_factorial_metric_panel<DB: DrawingBackend>(
     area: &DrawingArea<DB, Shift>,
     caption: &str,
     y_desc: &str,
-    heredity: &[f32],
-    random: &[f32],
+    heredity_nosel: &[f32],
+    random_nosel: &[f32],
+    heredity_sel: &[f32],
+    random_sel: &[f32],
     y_lo: f32,
     y_hi_override: Option<f32>,
     caption_size: u32,
@@ -9301,17 +9394,21 @@ where
             (mean_std_scalar(values).0, ci95_half_width(values))
         }
     };
-    let (h_mean, h_ci) = mean_ci(heredity);
-    let (r_mean, r_ci) = mean_ci(random);
+    let (h0_mean, h0_ci) = mean_ci(heredity_nosel);
+    let (r0_mean, r0_ci) = mean_ci(random_nosel);
+    let (h1_mean, h1_ci) = mean_ci(heredity_sel);
+    let (r1_mean, r1_ci) = mean_ci(random_sel);
     let y_hi = y_hi_override.unwrap_or_else(|| {
-        let max_v = (h_mean + h_ci).max(r_mean + r_ci).max(y_lo + 1e-6);
-        (1.15 * max_v).max(y_lo + 1e-6)
+        [h0_mean + h0_ci, r0_mean + r0_ci, h1_mean + h1_ci, r1_mean + r1_ci]
+            .into_iter()
+            .fold(y_lo + 1e-6, f32::max)
+            * 1.15
     });
 
     let mut chart = ChartBuilder::on(area)
         .caption(caption, ("sans-serif", caption_size))
         .margin(22)
-        .x_label_area_size(80)
+        .x_label_area_size(90)
         .y_label_area_size(y_label_area_size)
         .build_cartesian_2d(-0.5f32..1.5f32, y_lo..y_hi)?;
 
@@ -9320,36 +9417,42 @@ where
         .disable_mesh()
         .y_desc(y_desc)
         .x_labels(2)
-        .x_label_formatter(&|v| {
-            let idx = v.round() as i32;
-            match idx {
-                0 => "heredity".to_string(),
-                1 => "random".to_string(),
-                _ => String::new(),
-            }
+        .x_label_formatter(&|v| match v.round() as i32 {
+            0 => "no selection".to_string(),
+            1 => "selection".to_string(),
+            _ => String::new(),
         })
         .label_style(("sans-serif", label_size).into_font())
         .axis_desc_style(("sans-serif", axis_desc_size).into_font())
         .draw()?;
 
-    for (i, (mean, ci, color)) in [(h_mean, h_ci, PAL_H), (r_mean, r_ci, PAL_R)]
-        .into_iter()
-        .enumerate()
-    {
-        let center = i as f32;
-        let x0 = center - 0.3;
-        let x1 = center + 0.3;
+    let bar_specs = [
+        (0.0f32 - 0.16, h0_mean, h0_ci, PAL_H.mix(0.75)),
+        (0.0f32 + 0.16, r0_mean, r0_ci, PAL_R.mix(0.75)),
+        (1.0f32 - 0.16, h1_mean, h1_ci, PAL_H.to_rgba()),
+        (1.0f32 + 0.16, r1_mean, r1_ci, PAL_R.to_rgba()),
+    ];
+    for (center, mean, ci, color) in bar_specs {
+        let x0 = center - 0.12;
+        let x1 = center + 0.12;
         chart.draw_series(std::iter::once(Rectangle::new(
             [(x0, y_lo), (x1, mean)],
-            color.mix(0.7).filled(),
+            color.filled(),
         )))?;
-        let err_lo = (mean - ci).max(y_lo);
-        let err_hi = (mean + ci).min(y_hi);
         chart.draw_series(std::iter::once(PathElement::new(
-            vec![(center, err_lo), (center, err_hi)],
-            BLACK.mix(0.7),
+            vec![
+                (center, (mean - ci).max(y_lo)),
+                (center, (mean + ci).min(y_hi)),
+            ],
+            BLACK.stroke_width(2),
         )))?;
     }
+
+    chart.draw_series(std::iter::once(Text::new(
+        "teal: heredity; rose: random",
+        (-0.42f32, y_hi * 0.95),
+        ("sans-serif", 32).into_font(),
+    )))?;
 
     Ok(())
 }
@@ -9370,7 +9473,7 @@ where
         .min(E6_FIG_X_MAX - E6_SNAPSHOT_INTERVAL as f32)
         + E6_SNAPSHOT_INTERVAL as f32;
     let mut chart = ChartBuilder::on(area)
-        .caption("B. Heredity pitch heatmap", ("sans-serif", 64))
+        .caption("B. Heredity + selection pitch heatmap", ("sans-serif", 64))
         .margin(20)
         .x_label_area_size(90)
         .y_label_area_size(120)
@@ -9645,6 +9748,7 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
                                 range_oct_override: Some(E2_PAPER_RANGE_OCT),
                                 e2_aligned_exact_local_search_radius_st: None,
                                 disable_within_life_pitch_movement: false,
+                                selection_enabled: true,
                                 juvenile_cull_enabled: true,
                             };
                             let result = run_e6(&cfg);
@@ -9967,6 +10071,7 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
                                         range_oct_override: Some(E2_PAPER_RANGE_OCT),
                                         e2_aligned_exact_local_search_radius_st: None,
                                         disable_within_life_pitch_movement: false,
+                                        selection_enabled: true,
                                         juvenile_cull_enabled: true,
                                     };
                                     let result = run_e6(&cfg);
@@ -10175,6 +10280,7 @@ fn generate_e6_sampler_debug_plots() -> Result<(), Box<dyn Error>> {
         range_oct_override: Some(E2_PAPER_RANGE_OCT),
         e2_aligned_exact_local_search_radius_st: None,
         disable_within_life_pitch_movement: false,
+        selection_enabled: true,
         juvenile_cull_enabled: true,
     };
     let result = run_e6(&cfg);
@@ -32941,6 +33047,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
                 range_oct_override: Some(E2_PAPER_RANGE_OCT),
                 e2_aligned_exact_local_search_radius_st: None,
                 disable_within_life_pitch_movement: false,
+                selection_enabled: true,
                 juvenile_cull_enabled: true,
             };
             let result = run_e6(&cfg);

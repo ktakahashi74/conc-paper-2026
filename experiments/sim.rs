@@ -159,6 +159,7 @@ pub struct E6RunConfig {
     pub range_oct_override: Option<f32>,
     pub e2_aligned_exact_local_search_radius_st: Option<f32>,
     pub disable_within_life_pitch_movement: bool,
+    pub selection_enabled: bool,
     pub juvenile_cull_enabled: bool,
 }
 
@@ -817,7 +818,9 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
             let c_level = selection_reference_landscape
                 .evaluate_pitch_level(agent.body.base_freq_hz())
                 .clamp(0.0, 1.0);
-            e6_apply_anchor_selection_recharge(agent, c_level, dt);
+                if cfg.selection_enabled {
+                    e6_apply_anchor_selection_recharge(agent, c_level, dt);
+                }
         }
         pop.advance(E3_HOP, E3_FS, step as u64, dt, &landscape);
         if cfg.oracle_freeze_pitch_after_respawn {
@@ -1272,10 +1275,14 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                             .map(|(_, _, _, _, c_level, _)| *c_level)
                             .sum::<f32>()
                             / candidate_count as f32;
-                        let parent_idx = if let Ok(dist) =
-                            WeightedIndex::new(alive_parents.iter().map(|(_, _, _, _, _, w)| *w))
-                        {
-                            dist.sample(&mut rng)
+                        let parent_idx = if cfg.selection_enabled {
+                            if let Ok(dist) = WeightedIndex::new(
+                                alive_parents.iter().map(|(_, _, _, _, _, w)| *w),
+                            ) {
+                                dist.sample(&mut rng)
+                            } else {
+                                rng.random_range(0..alive_parents.len())
+                            }
                         } else {
                             rng.random_range(0..alive_parents.len())
                         };
@@ -1287,7 +1294,9 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                             parent_c_level,
                             parent_weight,
                         ) = alive_parents[parent_idx];
-                        let chosen_prob = if total_weight > 0.0 && total_weight.is_finite() {
+                        let chosen_prob = if !cfg.selection_enabled {
+                            Some(1.0 / candidate_count as f32)
+                        } else if total_weight > 0.0 && total_weight.is_finite() {
                             Some((parent_weight / total_weight).clamp(0.0, 1.0))
                         } else {
                             None
