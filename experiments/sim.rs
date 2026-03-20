@@ -59,7 +59,10 @@ const E6_HEREDITY_PEAK_MIN_RELATIVE_MASS: f32 = 0.20;
 const E6_HEREDITY_INHERIT_SAME_FAMILY_PROB: f32 = 0.80;
 const E6_HEREDITY_AZIMUTH_SIGMA_ST: f32 = 0.25;
 const E6_HEREDITY_AZIMUTH_CLIP_ST: f32 = 1.5;
-const E6_POST_RESPAWN_AZIMUTH_TUNING_RADIUS_ST: f32 = 2.0;
+const E6_POST_RESPAWN_AZIMUTH_TUNING_RADIUS_ST: f32 = 1.0;
+const E6_JUVENILE_CULL_TICKS: u32 = 20;
+const E6_JUVENILE_CULL_C_LEVEL_THRESHOLD: f32 = 0.75;
+const E6_JUVENILE_CULL_PROB_PER_TICK: f32 = 0.25;
 const E2_MATCH_CROWDING_WEIGHT: f32 = 0.15;
 const E4_MATCH_SIGMA_CENTS: f32 = 15.0;
 const E2_E6_HILL_NEIGHBOR_STEP_CENTS: f32 = 25.0;
@@ -156,6 +159,7 @@ pub struct E6RunConfig {
     pub range_oct_override: Option<f32>,
     pub e2_aligned_exact_local_search_radius_st: Option<f32>,
     pub disable_within_life_pitch_movement: bool,
+    pub juvenile_cull_enabled: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -891,6 +895,13 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                 let c_level = selection_reference_landscape
                     .evaluate_pitch_level(agent.body.base_freq_hz())
                     .clamp(0.0, 1.0);
+                if cfg.juvenile_cull_enabled
+                    && state.ticks < E6_JUVENILE_CULL_TICKS
+                    && c_level < E6_JUVENILE_CULL_C_LEVEL_THRESHOLD
+                    && rng.random::<f32>() < E6_JUVENILE_CULL_PROB_PER_TICK
+                {
+                    agent.start_remove_fade(0.0);
+                }
                 if state.pending_birth {
                     state.birth_step = step as u32;
                     state.c_level_birth = c_level;

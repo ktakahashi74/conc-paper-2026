@@ -8,20 +8,20 @@ Conditions use:
 - within-life movement = off
 
 Final C_score by condition:
-H baseline:  mean=0.8080 +/- 0.0370
-H static:    mean=0.0656 +/- 0.0110
-R baseline:  mean=0.5745 +/- 0.0232
-R static:    mean=0.0691 +/- 0.0082
+H baseline:  mean=0.7062 +/- 0.0630
+H static:    mean=0.0739 +/- 0.0102
+R baseline:  mean=0.4390 +/- 0.0236
+R static:    mean=0.0696 +/- 0.0096
 
 Final consonant occupation:
-H static:    mean=0.3198 +/- 0.0602
-R static:    mean=0.3375 +/- 0.0349
+H static:    mean=0.2852 +/- 0.0499
+R static:    mean=0.2775 +/- 0.0322
 
 Final pairwise JI:
-H static:    mean=0.1946 +/- 0.0151
-R static:    mean=0.1166 +/- 0.0055
+H static:    mean=0.2021 +/- 0.0236
+R static:    mean=0.1132 +/- 0.0052
 
 Paired contrasts (per-seed):
-H static - H baseline: mean=-0.7424, p=p<0.001 (exact)
-R static - R baseline: mean=-0.5054, p=p<0.001 (exact)
-H static - R static: mean=-0.0035, p=p=0.615 (exact)
+H static - H baseline: mean=-0.6323, p=p<0.001 (exact)
+R static - R baseline: mean=-0.3694, p=p<0.001 (exact)
+H static - R static: mean=0.0043, p=p=0.536 (exact)

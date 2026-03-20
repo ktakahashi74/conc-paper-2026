@@ -6537,9 +6537,10 @@ fn plot_e6_hereditary_adaptation(
                             oracle_freeze_pitch_after_respawn,
                             crowding_strength_override: Some(0.0),
                             adaptation_enabled_override: Some(false),
-                            range_oct_override: None,
+                            range_oct_override: Some(E2_PAPER_RANGE_OCT),
                             e2_aligned_exact_local_search_radius_st: None,
                             disable_within_life_pitch_movement: true,
+                            juvenile_cull_enabled: false,
                         };
                         let result = run_e6(&cfg);
                         results_slot.lock().unwrap()[idx] = Some((label, condition, seed, result));
@@ -6653,6 +6654,7 @@ fn plot_e6_hereditary_adaptation(
                         range_oct_override: Some(E2_PAPER_RANGE_OCT),
                         e2_aligned_exact_local_search_radius_st: Some(2.0),
                         disable_within_life_pitch_movement: false,
+                        juvenile_cull_enabled: false,
                     };
                     let result = run_e6(&cfg);
                     e2_aligned_slots.lock().unwrap()[idx] = Some((label, condition, seed, result));
@@ -6709,9 +6711,10 @@ fn plot_e6_hereditary_adaptation(
                         oracle_freeze_pitch_after_respawn: false,
                         crowding_strength_override: Some(0.0),
                         adaptation_enabled_override: Some(false),
-                        range_oct_override: None,
+                        range_oct_override: Some(E2_PAPER_RANGE_OCT),
                         e2_aligned_exact_local_search_radius_st: Some(0.0),
                         disable_within_life_pitch_movement: false,
+                        juvenile_cull_enabled: false,
                     };
                     let result = run_e6(&cfg);
                     e6_static_slots.lock().unwrap()[idx] = Some((label, condition, seed, result));
@@ -6927,8 +6930,10 @@ fn plot_e6_hereditary_adaptation(
                     if is_consonant { 1 } else { 0 }
                 ));
                 if *condition == E6Condition::Heredity {
-                    let clamped = semitone.clamp(-12.0, 12.0 - f32::EPSILON);
-                    let bin = ((clamped + 12.0) / E6_INTERVAL_BIN_ST).floor() as i32;
+                    let half_range_st = 0.5 * E2_PAPER_RANGE_OCT * 12.0;
+                    let clamped =
+                        semitone.clamp(-half_range_st, half_range_st - f32::EPSILON);
+                    let bin = ((clamped + half_range_st) / E6_INTERVAL_BIN_ST).floor() as i32;
                     *heat_counts.entry((snap.step, bin)).or_insert(0.0) += 1.0;
                     let entry = hered_seed_last_bins.entry(*seed).or_default();
                     if hered_seed_last_step.get(seed).copied() != Some(snap.step) {
@@ -8302,6 +8307,7 @@ fn plot_e6_hereditary_adaptation(
                         range_oct_override: None,
                         e2_aligned_exact_local_search_radius_st: None,
                         disable_within_life_pitch_movement: false,
+                        juvenile_cull_enabled: false,
                     };
                     let result = run_e6(&cfg);
                     oracle_global_pop_sweep_slots.lock().unwrap()[idx] =
@@ -8458,6 +8464,7 @@ fn plot_e6_hereditary_adaptation(
                         range_oct_override: None,
                         e2_aligned_exact_local_search_radius_st: None,
                         disable_within_life_pitch_movement: false,
+                        juvenile_cull_enabled: false,
                     };
                     let result = run_e6(&cfg);
                     oracle_global_crowding_sweep_slots.lock().unwrap()[idx] =
@@ -8620,6 +8627,7 @@ fn plot_e6_hereditary_adaptation(
                         range_oct_override: None,
                         e2_aligned_exact_local_search_radius_st: None,
                         disable_within_life_pitch_movement: false,
+                        juvenile_cull_enabled: false,
                     };
                     let result = run_e6(&cfg);
                     oracle_global_adaptation_slots.lock().unwrap()[idx] =
@@ -9353,6 +9361,8 @@ fn draw_e6_heatmap_panel<DB: DrawingBackend>(
 where
     <DB as DrawingBackend>::ErrorType: 'static,
 {
+    let half_range_st = 0.5 * E2_PAPER_RANGE_OCT * 12.0;
+    let half_range_cents = half_range_st * 100.0;
     let x_max = heat_counts
         .keys()
         .map(|(step, _)| *step as f32)
@@ -9364,7 +9374,10 @@ where
         .margin(20)
         .x_label_area_size(90)
         .y_label_area_size(120)
-        .build_cartesian_2d(0.0f32..x_max.max(1.0), -1200.0f32..1200.0f32)?;
+        .build_cartesian_2d(
+            0.0f32..x_max.max(1.0),
+            -half_range_cents..half_range_cents,
+        )?;
 
     chart
         .configure_mesh()
@@ -9384,7 +9397,7 @@ where
     for ((step, bin), count) in heat_counts {
         let x0 = *step as f32;
         let x1 = x0 + E6_SNAPSHOT_INTERVAL as f32;
-        let y0 = (-12.0 + *bin as f32 * E6_INTERVAL_BIN_ST) * 100.0;
+        let y0 = (-half_range_st + *bin as f32 * E6_INTERVAL_BIN_ST) * 100.0;
         let y1 = y0 + E6_INTERVAL_BIN_ST * 100.0;
         let t = (*count / max_count).clamp(0.0, 1.0).sqrt();
         let color = HSLColor(
@@ -9403,14 +9416,16 @@ where
     }
 
     for &target in &E2_CONSONANT_STEPS {
-        for y in [target * 100.0, (target - 12.0) * 100.0] {
-            if !(-1200.0..=1200.0).contains(&y) {
-                continue;
+        let mut y_st = target - half_range_st;
+        while y_st <= half_range_st {
+            let y = y_st * 100.0;
+            if (-half_range_cents..=half_range_cents).contains(&y) {
+                chart.draw_series(std::iter::once(PathElement::new(
+                    vec![(0.0, y), (x_max.max(1.0), y)],
+                    BLACK.mix(0.18),
+                )))?;
             }
-            chart.draw_series(std::iter::once(PathElement::new(
-                vec![(0.0, y), (x_max.max(1.0), y)],
-                BLACK.mix(0.18),
-            )))?;
+            y_st += 12.0;
         }
     }
 
@@ -9627,9 +9642,10 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
                                 oracle_freeze_pitch_after_respawn: false,
                                 crowding_strength_override: None,
                                 adaptation_enabled_override: None,
-                                range_oct_override: None,
+                                range_oct_override: Some(E2_PAPER_RANGE_OCT),
                                 e2_aligned_exact_local_search_radius_st: None,
                                 disable_within_life_pitch_movement: false,
+                                juvenile_cull_enabled: true,
                             };
                             let result = run_e6(&cfg);
                             int_slots.lock().unwrap()[idx] = Some((seed, result));
@@ -9948,9 +9964,10 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
                                         oracle_freeze_pitch_after_respawn: false,
                                         crowding_strength_override: None,
                                         adaptation_enabled_override: None,
-                                        range_oct_override: None,
+                                        range_oct_override: Some(E2_PAPER_RANGE_OCT),
                                         e2_aligned_exact_local_search_radius_st: None,
                                         disable_within_life_pitch_movement: false,
+                                        juvenile_cull_enabled: true,
                                     };
                                     let result = run_e6(&cfg);
                                     result
@@ -10155,9 +10172,10 @@ fn generate_e6_sampler_debug_plots() -> Result<(), Box<dyn Error>> {
         oracle_freeze_pitch_after_respawn: false,
         crowding_strength_override: None,
         adaptation_enabled_override: None,
-        range_oct_override: None,
+        range_oct_override: Some(E2_PAPER_RANGE_OCT),
         e2_aligned_exact_local_search_radius_st: None,
         disable_within_life_pitch_movement: false,
+        juvenile_cull_enabled: true,
     };
     let result = run_e6(&cfg);
     let final_snapshot = result
@@ -32920,9 +32938,10 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
                 oracle_freeze_pitch_after_respawn: false,
                 crowding_strength_override: None,
                 adaptation_enabled_override: None,
-                range_oct_override: None,
+                range_oct_override: Some(E2_PAPER_RANGE_OCT),
                 e2_aligned_exact_local_search_radius_st: None,
                 disable_within_life_pitch_movement: false,
+                juvenile_cull_enabled: true,
             };
             let result = run_e6(&cfg);
             e6_results.push((label, result));

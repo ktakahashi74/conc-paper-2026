@@ -4,9 +4,9 @@ Respawn is replaced by the global anchor-C argmax within tessitura.
 Grid = 25 cents
 
 Final C_score by condition:
-H baseline:        mean=0.8080 +/- 0.0370
+H baseline:        mean=0.7062 +/- 0.0630
 H global oracle:   mean=0.9999 +/- 0.0000
-R baseline:        mean=0.5745 +/- 0.0232
+R baseline:        mean=0.4390 +/- 0.0236
 R global oracle:   mean=0.9999 +/- 0.0000
 
 Final consonant occupation:
@@ -18,6 +18,6 @@ H global oracle:   mean=1.0000 +/- 0.0000
 R global oracle:   mean=1.0000 +/- 0.0000
 
 Paired contrasts (per-seed):
-H global oracle - H baseline: mean=0.1919, p=p<0.001 (exact)
-R global oracle - R baseline: mean=0.4255, p=p<0.001 (exact)
+H global oracle - H baseline: mean=0.2937, p=p<0.001 (exact)
+R global oracle - R baseline: mean=0.5609, p=p<0.001 (exact)
 H global oracle - R global oracle: mean=0.0000, p=p=1.000 (exact)

@@ -8,9 +8,9 @@ Conditions use:
 - exact local search around current pitch: +/-2 st, 25-cent grid
 
 Final C_score by condition:
-H baseline:    mean=0.8080 +/- 0.0370
+H baseline:    mean=0.7062 +/- 0.0630
 H E2-aligned:  mean=0.0764 +/- 0.0195
-R baseline:    mean=0.5745 +/- 0.0232
+R baseline:    mean=0.4390 +/- 0.0236
 R E2-aligned:  mean=0.0610 +/- 0.0082
 
 Final consonant occupation:
@@ -22,6 +22,6 @@ H E2-aligned:  mean=0.2300 +/- 0.0273
 R E2-aligned:  mean=0.1121 +/- 0.0079
 
 Paired contrasts (per-seed):
-H E2-aligned - H baseline: mean=-0.7316, p=p<0.001 (exact)
-R E2-aligned - R baseline: mean=-0.5134, p=p<0.001 (exact)
+H E2-aligned - H baseline: mean=-0.6298, p=p<0.001 (exact)
+R E2-aligned - R baseline: mean=-0.3780, p=p<0.001 (exact)
 H E2-aligned - R E2-aligned: mean=0.0154, p=p=0.112 (exact)
