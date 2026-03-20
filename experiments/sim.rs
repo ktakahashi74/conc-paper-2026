@@ -12,9 +12,7 @@ use conchordal::core::timebase::Timebase;
 use conchordal::life::articulation_core::{
     AnyArticulationCore, ArticulationState, kuramoto_phase_step,
 };
-use conchordal::life::control::{
-    AgentControl, ControlUpdate, LeaveSelfOutMode, PitchCoreKind, PitchMode,
-};
+use conchordal::life::control::{AgentControl, LeaveSelfOutMode, PitchCoreKind, PitchMode};
 use conchordal::life::individual::{Individual, PitchHillClimbPitchCore, SoundBody};
 use conchordal::life::lifecycle::LifecycleConfig;
 use conchordal::life::metabolism_policy::MetabolismPolicy;
@@ -49,16 +47,11 @@ const E3_FMAX: f32 = 2000.0;
 const E3_RANGE_OCT: f32 = 2.0; // +/- 1 octave around anchor
 const E3_THETA_FREQ_HZ: f32 = 1.0;
 const E3_METABOLISM_RATE: f32 = 0.5;
-const E6_METABOLISM_RATE: f32 = 0.06;
-const E6_SELECTION_DEATH_PROB_MAX: f32 = 0.006;
-const E6_SELECTION_DEATH_EXPONENT: f32 = 2.0;
-const E6_HEREDITY_MUTATION_SIGMA_ST: f32 = 2.0;
+const E6_METABOLISM_RATE: f32 = 0.12;
+const E6_SELECTION_RECHARGE_PER_SEC: f32 = 0.10;
+const E6_FERTILITY_ENERGY_EXPONENT: f32 = 2.0;
+const E6_HEREDITY_MUTATION_SIGMA_ST: f32 = 1.0;
 const E6_HEREDITY_MUTATION_MAX_ATTEMPTS: usize = 24;
-const E6_JUVENILE_HILL_STEPS: u32 = 96;
-const E6_JUVENILE_LOCAL_SEARCH_WINDOW_ST: f32 = 5.0;
-const E6_JUVENILE_LOCAL_SEARCH_STEP_CENTS: f32 = 25.0;
-const E6_JUVENILE_LOCAL_SEARCH_MIN_IMPROVEMENT: f32 = 1e-4;
-const E6_JUVENILE_CULL_LEVEL: f32 = 0.58;
 const E2_MATCH_CROWDING_WEIGHT: f32 = 0.15;
 const E4_MATCH_SIGMA_CENTS: f32 = 15.0;
 const E2_E6_HILL_NEIGHBOR_STEP_CENTS: f32 = 25.0;
@@ -709,52 +702,16 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                 apply_e6_shuffle_permutation(&mut landscape, perm);
             }
         }
-        let mut juvenile_cull_ids: HashSet<u64> = HashSet::new();
         for agent in pop.individuals.iter_mut() {
             if !agent.is_alive() {
-                continue;
-            }
-            let idx = agent.id() as usize;
-            if idx >= states.len() {
-                continue;
-            }
-            agent
-                .apply_patch(&ControlUpdate {
-                    landscape_weight: Some(0.0),
-                    ..ControlUpdate::default()
-                })
-                .expect("e6 juvenile hill-climb control patch should be valid");
-            if e6_juvenile_local_search_enabled(states[idx].ticks, cfg.landscape_weight) {
-                e6_apply_bruteforce_local_consonance_search(
-                    agent,
-                    &selection_reference_landscape,
-                    tessitura_min_hz,
-                    tessitura_max_hz,
-                );
-                let c_level = selection_reference_landscape
-                    .evaluate_pitch_level(agent.body.base_freq_hz())
-                    .clamp(0.0, 1.0);
-                if c_level < E6_JUVENILE_CULL_LEVEL {
-                    juvenile_cull_ids.insert(agent.id());
-                }
-            }
-        }
-        pop.advance(E3_HOP, E3_FS, step as u64, dt, &landscape);
-        let mut forced_dead_ids: HashSet<u64> = juvenile_cull_ids.clone();
-        for agent in pop.individuals.iter() {
-            if !agent.is_alive() {
-                continue;
-            }
-            if juvenile_cull_ids.contains(&agent.id()) {
                 continue;
             }
             let c_level = selection_reference_landscape
                 .evaluate_pitch_level(agent.body.base_freq_hz())
                 .clamp(0.0, 1.0);
-            if rng.random::<f32>() < e6_anchor_selection_death_probability(c_level) {
-                forced_dead_ids.insert(agent.id());
-            }
+            e6_apply_anchor_selection_recharge(agent, c_level, dt);
         }
+        pop.advance(E3_HOP, E3_FS, step as u64, dt, &landscape);
 
         if step % snapshot_interval == 0 {
             let mut freqs_hz: Vec<f32> = Vec::new();
@@ -764,7 +721,7 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
             let mut phase_count = 0u32;
             let theta_phase = landscape.rhythm.theta.phase;
             for agent in pop.individuals.iter() {
-                if !agent.is_alive() || forced_dead_ids.contains(&agent.id()) {
+                if !agent.is_alive() {
                     continue;
                 }
                 let idx = agent.id() as usize;
@@ -811,7 +768,7 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                 continue;
             }
             let state = &mut states[idx];
-            let alive = agent.is_alive() && !forced_dead_ids.contains(&id);
+            let alive = agent.is_alive();
 
             if alive {
                 let c_level = selection_reference_landscape
@@ -839,8 +796,7 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                 }
             }
 
-            let culled_juvenile = juvenile_cull_ids.contains(&id);
-            if !alive && (state.was_alive || culled_juvenile) {
+            if !alive && state.was_alive {
                 if state.pending_birth {
                     state.birth_step = step as u32;
                     state.c_level_birth = selection_reference_landscape
@@ -904,17 +860,29 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
             let offspring_strategy = match cfg.condition {
                 E6Condition::Random => strategy.clone(),
                 E6Condition::Heredity => {
-                    let alive_parents: Vec<f32> = pop
+                    let alive_parents: Vec<(f32, f32)> = pop
                         .individuals
                         .iter()
                         .filter(|a| a.is_alive() && !respawn_set.contains(&a.id()))
-                        .map(|a| a.body.base_freq_hz())
-                        .filter(|f| f.is_finite() && *f > 0.0)
+                        .filter_map(|a| {
+                            let freq = a.body.base_freq_hz();
+                            if !freq.is_finite() || freq <= 0.0 {
+                                return None;
+                            }
+                            let weight = e6_parent_fertility_weight(a)?;
+                            Some((freq, weight))
+                        })
                         .collect();
                     if alive_parents.is_empty() {
                         strategy.clone()
                     } else {
-                        let parent_freq = alive_parents[rng.random_range(0..alive_parents.len())];
+                        let parent_freq = if let Ok(dist) =
+                            WeightedIndex::new(alive_parents.iter().map(|(_, w)| *w))
+                        {
+                            alive_parents[dist.sample(&mut rng)].0
+                        } else {
+                            alive_parents[rng.random_range(0..alive_parents.len())].0
+                        };
                         let mut parent_landscape = build_e6_parent_harmonicity_landscape(
                             &space,
                             &params,
@@ -1901,7 +1869,7 @@ fn build_e6_parent_harmonicity_landscape(
     )
 }
 
-const E6_HEREDITY_PARENT_WINDOW_SIGMA_OCT: f32 = 0.60;
+const E6_HEREDITY_PARENT_WINDOW_SIGMA_OCT: f32 = 0.45;
 const E6_HEREDITY_SOCIAL_ROUGHNESS_WEIGHT: f32 = 0.25;
 
 fn parent_window_and_notch_weights(
@@ -2054,9 +2022,26 @@ fn mutate_e6_heredity_offspring(
     offspring_freq_hz
 }
 
-fn e6_anchor_selection_death_probability(c_level: f32) -> f32 {
-    let c = c_level.clamp(0.0, 1.0);
-    E6_SELECTION_DEATH_PROB_MAX * (1.0 - c).powf(E6_SELECTION_DEATH_EXPONENT)
+fn e6_apply_anchor_selection_recharge(agent: &mut Individual, c_level: f32, dt_sec: f32) {
+    let delta = E6_SELECTION_RECHARGE_PER_SEC * c_level.clamp(0.0, 1.0) * dt_sec.max(0.0);
+    if delta <= 0.0 || !delta.is_finite() {
+        return;
+    }
+    if let AnyArticulationCore::Entrain(ref mut core) = agent.articulation.core {
+        core.energy = (core.energy + delta).max(0.0);
+    }
+}
+
+fn e6_parent_fertility_weight(agent: &Individual) -> Option<f32> {
+    let AnyArticulationCore::Entrain(ref core) = agent.articulation.core else {
+        return None;
+    };
+    let energy = core.energy.max(0.0);
+    if !energy.is_finite() {
+        return None;
+    }
+    let weight = energy.powf(E6_FERTILITY_ENERGY_EXPONENT);
+    Some(weight.max(1e-6))
 }
 
 fn normalize_scan_to_pmf(scan: &[f32]) -> Vec<f32> {
@@ -2720,62 +2705,10 @@ pub fn generate_e3_rhai(cfg: &E3AudioConfig, output_path: &std::path::Path) -> s
     Ok(())
 }
 
-fn e6_juvenile_local_search_enabled(age_ticks: u32, adult_landscape_weight: f32) -> bool {
-    adult_landscape_weight > 0.0 && age_ticks < E6_JUVENILE_HILL_STEPS
-}
-
-fn e6_apply_bruteforce_local_consonance_search(
-    agent: &mut Individual,
-    reference_landscape: &Landscape,
-    tessitura_min_hz: f32,
-    tessitura_max_hz: f32,
-) -> bool {
-    let current_freq = agent.body.base_freq_hz();
-    if !current_freq.is_finite() || current_freq <= 0.0 {
-        return false;
-    }
-
-    let current_log2 = current_freq.log2();
-    let current_score = reference_landscape.evaluate_pitch_score(current_freq);
-    let search_step_oct = E6_JUVENILE_LOCAL_SEARCH_STEP_CENTS / 1200.0;
-    let search_radius_steps = ((E6_JUVENILE_LOCAL_SEARCH_WINDOW_ST * 100.0)
-        / E6_JUVENILE_LOCAL_SEARCH_STEP_CENTS)
-        .round() as i32;
-
-    let mut best_log2 = current_log2;
-    let mut best_score = current_score;
-    let mut best_abs_offset = i32::MAX;
-
-    for offset in -search_radius_steps..=search_radius_steps {
-        let cand_log2 = current_log2 + offset as f32 * search_step_oct;
-        let cand_freq = 2.0f32.powf(cand_log2);
-        if !cand_freq.is_finite() || cand_freq < tessitura_min_hz || cand_freq > tessitura_max_hz {
-            continue;
-        }
-        let cand_score = reference_landscape.evaluate_pitch_score(cand_freq);
-        let abs_offset = offset.abs();
-        let improved = cand_score > best_score + E6_JUVENILE_LOCAL_SEARCH_MIN_IMPROVEMENT;
-        let ties_better = (cand_score - best_score).abs()
-            <= E6_JUVENILE_LOCAL_SEARCH_MIN_IMPROVEMENT
-            && abs_offset < best_abs_offset;
-        if improved || ties_better {
-            best_score = cand_score;
-            best_log2 = cand_log2;
-            best_abs_offset = abs_offset;
-        }
-    }
-
-    if (best_log2 - current_log2).abs() > 1e-6 {
-        agent.force_set_pitch_log2(best_log2);
-        true
-    } else {
-        false
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use conchordal::life::individual::AgentMetadata;
 
     #[test]
     fn e6_spawn_spec_uses_e2_crowding_and_e4_sigma() {
@@ -2800,31 +2733,31 @@ mod tests {
     }
 
     #[test]
-    fn e6_lifecycle_is_neutral_turnover_with_soft_anchor_selection() {
+    fn e6_lifecycle_is_neutral_turnover_with_external_anchor_recharge() {
         let e6_policy = MetabolismPolicy::from_lifecycle(&e6_lifecycle());
         assert!((e6_policy.basal_cost_per_sec - E6_METABOLISM_RATE).abs() <= 1e-6);
         assert_eq!(e6_policy.action_cost_per_attack, 0.0);
         assert_eq!(e6_policy.recharge_per_attack, 0.0);
-
-        let low = e6_anchor_selection_death_probability(0.1);
-        let mid = e6_anchor_selection_death_probability(0.5);
-        let high = e6_anchor_selection_death_probability(0.9);
-        assert!(low > mid && mid > high);
-        assert!(high >= 0.0 && low <= E6_SELECTION_DEATH_PROB_MAX);
     }
 
     #[test]
-    fn juvenile_local_search_turns_off_after_early_window() {
-        assert!(e6_juvenile_local_search_enabled(0, 0.75));
-        assert!(e6_juvenile_local_search_enabled(
-            E6_JUVENILE_HILL_STEPS - 1,
-            0.75
-        ));
-        assert!(!e6_juvenile_local_search_enabled(
-            E6_JUVENILE_HILL_STEPS,
-            0.75
-        ));
-        assert!(!e6_juvenile_local_search_enabled(12, 0.0));
+    fn e6_parent_fertility_weight_scales_with_energy() {
+        let spec = e6_spawn_spec(E4_ANCHOR_HZ, 0.0);
+        let meta = AgentMetadata {
+            group_id: E3_GROUP_AGENTS,
+            member_idx: 0,
+        };
+        let mut low = spec.clone().spawn(0, 0, meta.clone(), E3_FS, 0);
+        let mut high = spec.spawn(1, 0, meta, E3_FS, 0);
+        if let AnyArticulationCore::Entrain(ref mut core) = low.articulation.core {
+            core.energy = 0.2;
+        }
+        if let AnyArticulationCore::Entrain(ref mut core) = high.articulation.core {
+            core.energy = 0.8;
+        }
+        let low_w = e6_parent_fertility_weight(&low).expect("low fertility weight");
+        let high_w = e6_parent_fertility_weight(&high).expect("high fertility weight");
+        assert!(high_w > low_w);
     }
 
     #[test]
