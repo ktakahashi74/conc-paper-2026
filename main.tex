@@ -222,10 +222,10 @@ Each agent proposes local pitch perturbations of magnitude $\lambda=15$\,ct samp
 Agents possess energy $E$. Dynamics follow:
 
 \begin{equation}
-E \leftarrow E - c_b \Delta t - c_a I_{\text{attack}} + r_E \cdot C_{\text{level01}} \cdot I_{\text{attack}},
+E \leftarrow E - c_b \Delta t + r_E \cdot C_{\text{level01}} \cdot \Delta t,
 \end{equation}
 
-where $c_b$ is basal cost, $c_a$ attack cost, $r_E$ recharge coefficient, and $I_{\text{attack}}\in\{0,1\}$ indicates a sound-onset event ($I_{\text{attack}}=1$ when the agent's phase oscillator crosses zero with $E>0$). Agents start with $E=1.0$ and perish when $E\leq 0$. We set $c_b=0.5$/s, $c_a=0.02$ per event, and $r_E=0.5$ per attack; time advances in hops of $512$ samples at $48\,$kHz ($\Delta t\approx 10.7\,$ms). In the baseline condition, recharge scales with consonance ($r_E=0.5$); in the ablation condition, $r_E=0$. An agent's \emph{vitality} $v = \sqrt{E/E_{\text{cap}}}$ (where $E_{\text{cap}}=1.0$) provides a normalised vigour signal available to downstream dynamics such as phase coupling.
+where $c_b$ is basal cost and $r_E$ is a consonance-dependent recharge rate. Agents start with $E=1.0$ and perish when $E\leq 0$. We set $c_b=0.5$/s and $r_E=0.4$/s; time advances in hops of $512$ samples at $48\,$kHz ($\Delta t\approx 10.7\,$ms). In the baseline condition, recharge scales continuously with consonance ($r_E=0.4$/s); in the ablation condition, $r_E=0$. An agent's \emph{vitality} $v = \sqrt{E/E_{\text{cap}}}$ (where $E_{\text{cap}}=1.0$) provides a normalised vigour signal available to downstream dynamics such as phase coupling.
 
 \subsection{Temporal Oscillation}
 

@@ -49,6 +49,7 @@ const E3_FMAX: f32 = 2000.0;
 const E3_RANGE_OCT: f32 = 2.0; // +/- 1 octave around anchor
 const E3_THETA_FREQ_HZ: f32 = 1.0;
 const E3_METABOLISM_RATE: f32 = 0.5;
+const E3_SELECTION_RECHARGE_PER_SEC: f32 = 0.40;
 const E6_INITIAL_ENERGY: f32 = 0.05;
 const E6_METABOLISM_RATE: f32 = 0.12;
 const E6_SELECTION_RECHARGE_PER_SEC: f32 = 0.10;
@@ -255,6 +256,11 @@ pub struct E3DeathRecord {
     pub birth_step: u32,
     pub death_step: u32,
     pub lifetime_steps: u32,
+    pub c_score_birth: f32,
+    pub c_score_firstk: f32,
+    pub avg_c_score_tick: f32,
+    pub c_score_std_over_life: f32,
+    pub avg_c_score_attack: f32,
     pub c_level_birth: f32,
     pub c_level_firstk: f32,
     pub avg_c_level_tick: f32,
@@ -270,6 +276,7 @@ pub struct E3PolicyParams {
     pub basal_cost_per_sec: f32,
     pub action_cost_per_attack: f32,
     pub recharge_per_attack: f32,
+    pub continuous_recharge_per_sec: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -277,6 +284,11 @@ struct E3LifeState {
     life_id: u64,
     birth_step: u32,
     ticks: u32,
+    sum_c_score_tick: f32,
+    sum_c_score_tick_sq: f32,
+    sum_c_score_firstk: f32,
+    c_score_birth: f32,
+    sum_c_score_attack: f32,
     sum_c_level_tick: f32,
     sum_c_level_tick_sq: f32,
     sum_c_level_firstk: f32,
@@ -303,6 +315,11 @@ impl E3LifeState {
             life_id,
             birth_step: 0,
             ticks: 0,
+            sum_c_score_tick: 0.0,
+            sum_c_score_tick_sq: 0.0,
+            sum_c_score_firstk: 0.0,
+            c_score_birth: 0.0,
+            sum_c_score_attack: 0.0,
             sum_c_level_tick: 0.0,
             sum_c_level_tick_sq: 0.0,
             sum_c_level_firstk: 0.0,
@@ -328,6 +345,11 @@ impl E3LifeState {
         self.life_id = life_id;
         self.birth_step = 0;
         self.ticks = 0;
+        self.sum_c_score_tick = 0.0;
+        self.sum_c_score_tick_sq = 0.0;
+        self.sum_c_score_firstk = 0.0;
+        self.c_score_birth = 0.0;
+        self.sum_c_score_attack = 0.0;
         self.sum_c_level_tick = 0.0;
         self.sum_c_level_tick_sq = 0.0;
         self.sum_c_level_firstk = 0.0;
@@ -593,6 +615,18 @@ pub fn run_e3_collect_deaths(cfg: &E3RunConfig) -> Vec<E3DeathRecord> {
     let first_k = cfg.first_k as u32;
 
     for step in 0..cfg.steps_cap {
+        if matches!(cfg.condition, E3Condition::Baseline) {
+            for agent in pop.individuals.iter_mut() {
+                if !agent.is_alive() {
+                    continue;
+                }
+                let c_level = landscape
+                    .evaluate_pitch_level(agent.body.base_freq_hz())
+                    .clamp(0.0, 1.0);
+                apply_selection_recharge(agent, c_level, E3_SELECTION_RECHARGE_PER_SEC, dt);
+            }
+        }
+
         pop.advance(E3_HOP, E3_FS, step as u64, dt, &landscape);
 
         let mut respawn_ids: Vec<u64> = Vec::new();
@@ -606,16 +640,21 @@ pub fn run_e3_collect_deaths(cfg: &E3RunConfig) -> Vec<E3DeathRecord> {
             let alive = agent.is_alive();
 
             if alive {
+                let c_score = landscape.evaluate_pitch_score(agent.body.base_freq_hz());
                 let c_level = landscape.evaluate_pitch_level(agent.body.base_freq_hz());
                 if state.pending_birth {
                     state.birth_step = step as u32;
+                    state.c_score_birth = c_score;
                     state.c_level_birth = c_level;
                     state.pending_birth = false;
                 }
                 state.ticks = state.ticks.saturating_add(1);
+                state.sum_c_score_tick += c_score;
+                state.sum_c_score_tick_sq += c_score * c_score;
                 state.sum_c_level_tick += c_level;
                 state.sum_c_level_tick_sq += c_level * c_level;
                 if state.firstk_count < first_k {
+                    state.sum_c_score_firstk += c_score;
                     state.sum_c_level_firstk += c_level;
                     state.firstk_count += 1;
                 }
@@ -623,6 +662,7 @@ pub fn run_e3_collect_deaths(cfg: &E3RunConfig) -> Vec<E3DeathRecord> {
                 // Attack-time consonance
                 if let AnyArticulationCore::Entrain(ref core) = agent.articulation.core {
                     if core.state == ArticulationState::Attack {
+                        state.sum_c_score_attack += c_score;
                         state.sum_c_level_attack += c_level;
                         state.attack_tick_count += 1;
                     }
@@ -636,6 +676,18 @@ pub fn run_e3_collect_deaths(cfg: &E3RunConfig) -> Vec<E3DeathRecord> {
                 } else {
                     0.0
                 };
+                let avg_c_score_tick = if state.ticks > 0 {
+                    state.sum_c_score_tick / state.ticks as f32
+                } else {
+                    0.0
+                };
+                let c_score_std_over_life = if state.ticks > 0 {
+                    let mean_sq = state.sum_c_score_tick_sq / state.ticks as f32;
+                    let var = (mean_sq - avg_c_score_tick * avg_c_score_tick).max(0.0);
+                    var.sqrt()
+                } else {
+                    0.0
+                };
                 let c_level_std_over_life = if state.ticks > 0 {
                     let mean_sq = state.sum_c_level_tick_sq / state.ticks as f32;
                     let var = (mean_sq - avg_c_level_tick * avg_c_level_tick).max(0.0);
@@ -643,10 +695,20 @@ pub fn run_e3_collect_deaths(cfg: &E3RunConfig) -> Vec<E3DeathRecord> {
                 } else {
                     0.0
                 };
+                let c_score_firstk = if state.firstk_count > 0 {
+                    state.sum_c_score_firstk / state.firstk_count as f32
+                } else {
+                    0.0
+                };
                 let c_level_firstk = if state.firstk_count > 0 {
                     state.sum_c_level_firstk / state.firstk_count as f32
                 } else {
                     0.0
+                };
+                let avg_c_score_attack = if state.attack_tick_count > 0 {
+                    state.sum_c_score_attack / state.attack_tick_count as f32
+                } else {
+                    avg_c_score_tick
                 };
                 let avg_c_level_attack = if state.attack_tick_count > 0 {
                     state.sum_c_level_attack / state.attack_tick_count as f32
@@ -663,6 +725,11 @@ pub fn run_e3_collect_deaths(cfg: &E3RunConfig) -> Vec<E3DeathRecord> {
                     birth_step: state.birth_step,
                     death_step: step as u32,
                     lifetime_steps: ticks,
+                    c_score_birth: state.c_score_birth,
+                    c_score_firstk,
+                    avg_c_score_tick,
+                    c_score_std_over_life,
+                    avg_c_score_attack,
                     c_level_birth: state.c_level_birth,
                     c_level_firstk,
                     avg_c_level_tick,
@@ -818,9 +885,9 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
             let c_level = selection_reference_landscape
                 .evaluate_pitch_level(agent.body.base_freq_hz())
                 .clamp(0.0, 1.0);
-                if cfg.selection_enabled {
-                    e6_apply_anchor_selection_recharge(agent, c_level, dt);
-                }
+            if cfg.selection_enabled {
+                apply_selection_recharge(agent, c_level, E6_SELECTION_RECHARGE_PER_SEC, dt);
+            }
         }
         pop.advance(E3_HOP, E3_FS, step as u64, dt, &landscape);
         if cfg.oracle_freeze_pitch_after_respawn {
@@ -953,6 +1020,18 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                 } else {
                     0.0
                 };
+                let avg_c_score_tick = if state.ticks > 0 {
+                    state.sum_c_score_tick / state.ticks as f32
+                } else {
+                    0.0
+                };
+                let c_score_std_over_life = if state.ticks > 0 {
+                    let mean_sq = state.sum_c_score_tick_sq / state.ticks as f32;
+                    let var = (mean_sq - avg_c_score_tick * avg_c_score_tick).max(0.0);
+                    var.sqrt()
+                } else {
+                    0.0
+                };
                 let c_level_std_over_life = if state.ticks > 0 {
                     let mean_sq = state.sum_c_level_tick_sq / state.ticks as f32;
                     let var = (mean_sq - avg_c_level_tick * avg_c_level_tick).max(0.0);
@@ -960,10 +1039,20 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                 } else {
                     0.0
                 };
+                let c_score_firstk = if state.firstk_count > 0 {
+                    state.sum_c_score_firstk / state.firstk_count as f32
+                } else {
+                    0.0
+                };
                 let c_level_firstk = if state.firstk_count > 0 {
                     state.sum_c_level_firstk / state.firstk_count as f32
                 } else {
                     0.0
+                };
+                let avg_c_score_attack = if state.attack_tick_count > 0 {
+                    state.sum_c_score_attack / state.attack_tick_count as f32
+                } else {
+                    avg_c_score_tick
                 };
                 let avg_c_level_attack = if state.attack_tick_count > 0 {
                     state.sum_c_level_attack / state.attack_tick_count as f32
@@ -980,6 +1069,11 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                     birth_step: state.birth_step,
                     death_step: step as u32,
                     lifetime_steps: ticks,
+                    c_score_birth: state.c_score_birth,
+                    c_score_firstk,
+                    avg_c_score_tick,
+                    c_score_std_over_life,
+                    avg_c_score_attack,
                     c_level_birth: state.c_level_birth,
                     c_level_firstk,
                     avg_c_level_tick,
@@ -2207,11 +2301,14 @@ fn make_landscape_params(
     fs: f32,
     _roughness_weight_scale: f32,
 ) -> LandscapeParams {
+    let mut harmonicity_params = HarmonicityParams::default();
+    harmonicity_params.rho_common_overtone = harmonicity_params.rho_common_root;
+    harmonicity_params.mirror_weight = 0.5;
     LandscapeParams {
         fs,
         max_hist_cols: 1,
         roughness_kernel: RoughnessKernel::new(KernelParams::default(), 0.005),
-        harmonicity_kernel: HarmonicityKernel::new(space, HarmonicityParams::default()),
+        harmonicity_kernel: HarmonicityKernel::new(space, harmonicity_params),
         consonance_kernel: ConsonanceKernel::default(),
         consonance_representation: ConsonanceRepresentationParams::default(),
         consonance_density_roughness_gain: 1.0,
@@ -2955,8 +3052,8 @@ fn e6_apply_exact_e2_aligned_local_search(
     }
 }
 
-fn e6_apply_anchor_selection_recharge(agent: &mut Individual, c_level: f32, dt_sec: f32) {
-    let delta = E6_SELECTION_RECHARGE_PER_SEC * c_level.clamp(0.0, 1.0) * dt_sec.max(0.0);
+fn apply_selection_recharge(agent: &mut Individual, c_level: f32, rate_per_sec: f32, dt_sec: f32) {
+    let delta = rate_per_sec * c_level.clamp(0.0, 1.0) * dt_sec.max(0.0);
     if delta <= 0.0 || !delta.is_finite() {
         return;
     }
@@ -3321,16 +3418,12 @@ fn e3_tessitura_bounds(anchor_hz: f32, space: &Log2Space) -> (f32, f32) {
     e3_tessitura_bounds_for_range(anchor_hz, space, E3_RANGE_OCT)
 }
 
-fn e3_lifecycle(condition: E3Condition) -> LifecycleConfig {
-    let recharge_rate = match condition {
-        E3Condition::Baseline => None,
-        E3Condition::NoRecharge => Some(0.0),
-    };
+fn e3_lifecycle(_condition: E3Condition) -> LifecycleConfig {
     LifecycleConfig::Sustain {
         initial_energy: 1.0,
         metabolism_rate: E3_METABOLISM_RATE,
-        recharge_rate,
-        action_cost: None,
+        recharge_rate: Some(0.0),
+        action_cost: Some(0.0),
         continuous_recharge_rate: None,
         envelope: EnvelopeConfig::default(),
     }
@@ -3356,6 +3449,10 @@ pub fn e3_policy_params(condition: E3Condition) -> E3PolicyParams {
         basal_cost_per_sec: policy.basal_cost_per_sec,
         action_cost_per_attack: policy.action_cost_per_attack,
         recharge_per_attack: policy.recharge_per_attack,
+        continuous_recharge_per_sec: match condition {
+            E3Condition::Baseline => E3_SELECTION_RECHARGE_PER_SEC,
+            E3Condition::NoRecharge => 0.0,
+        },
     }
 }
 

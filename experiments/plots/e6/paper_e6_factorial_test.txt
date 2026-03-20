@@ -1,12 +1,12 @@
 E6 Fig.5 2x2 Factorial (selection x heredity)
 ===========================================
 Final C_score means:
-heredity, no selection: 0.4680 +/- 0.0509
-random,   no selection: 0.3892 +/- 0.0202
-heredity, selection:    0.7062 +/- 0.0630
-random,   selection:    0.4390 +/- 0.0236
+heredity, no selection: 0.4065 +/- 0.0503
+random,   no selection: 0.3797 +/- 0.0222
+heredity, selection:    0.6937 +/- 0.0732
+random,   selection:    0.4391 +/- 0.0356
 
 Main effects and interaction (paired sign-flip permutation):
-selection main effect: 0.1440, p=p<0.001 (exact)
-heredity main effect:  0.1730, p=p<0.001 (exact)
-interaction:           0.1884, p=p=0.001 (exact)
+selection main effect: 0.1733, p=p<0.001 (exact)
+heredity main effect:  0.1407, p=p<0.001 (exact)
+interaction:           0.2278, p=p=0.001 (exact)

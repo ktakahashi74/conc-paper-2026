@@ -4,6 +4,6 @@ Topology Generalization — E6 Integration
 Varying number of environment partials (changes harmonicity structure)
 
 Topology                        H       HH      R       RH      Contrast  CI95          p
-3 partials                       0.879   0.879   0.778   0.778   0.000     [0.000, 0.000]  1.0000
-6 partials (default)             0.899   0.899   0.753   0.753   0.000     [0.000, 0.000]  1.0000
-10 partials                      0.885   0.885   0.743   0.743   0.000     [0.000, 0.000]  1.0000
+3 partials                       0.910   0.910   0.755   0.755   0.000     [0.000, 0.000]  1.0000
+6 partials (default)             0.885   0.885   0.787   0.787   0.000     [0.000, 0.000]  1.0000
+10 partials                      0.905   0.905   0.774   0.774   0.000     [0.000, 0.000]  1.0000

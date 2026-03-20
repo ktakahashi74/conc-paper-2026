@@ -360,7 +360,7 @@ const PAL_E7_SCRAMBLED: RGBColor = PAL_R;
 const PAL_E7_OFF: RGBColor = PAL_C;
 
 const E6_FIRST_K: usize = 20;
-const E6_POP_SIZE: usize = 32;
+const E6_POP_SIZE: usize = 24;
 const E6_MIN_DEATHS: usize = 2500;
 const E6_STEPS_CAP: usize = 10_000;
 const E6_HILL_LANDSCAPE_WEIGHT: f32 = 1.0;
@@ -1358,6 +1358,7 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
     let e4_dyn_step_cents = parse_e4_dyn_step_cents(&args).map_err(io::Error::other)?;
     let e2_phase_mode = E2PhaseMode::DissonanceThenConsonance;
     let e2_quick = args.iter().any(|a| a == "--e2-quick");
+    let e2_diagnostics = args.iter().any(|a| a == "--e2-diagnostics");
     let e2_dense_sweep = args.iter().any(|a| a == "--e2-dense-sweep");
     let e2_candidate_search = args.iter().any(|a| a == "--e2-candidate-search");
     let clean_all = parse_clean(&args).map_err(io::Error::other)?;
@@ -1416,6 +1417,7 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
                             anchor_hz,
                             e2_phase_mode,
                             e2_quick,
+                            e2_diagnostics,
                             e2_dense_sweep,
                             e2_candidate_search,
                         )
@@ -1516,6 +1518,8 @@ fn plot_e1_landscape_scan(
     let mut h_params_base = HarmonicityParams::default();
     h_params_base.gamma_root = 1.0;
     h_params_base.gamma_overtone = 1.0;
+    h_params_base.rho_common_overtone = h_params_base.rho_common_root;
+    h_params_base.mirror_weight = 0.5;
     let harmonicity_kernel = HarmonicityKernel::new(space, h_params_base);
     let mut h_params_m0 = h_params_base;
     h_params_m0.mirror_weight = 0.0;
@@ -1800,6 +1804,7 @@ fn plot_e2_emergent_harmony(
     anchor_hz: f32,
     phase_mode: E2PhaseMode,
     quick: bool,
+    diagnostics: bool,
     dense_sweep: bool,
     candidate_search: bool,
 ) -> Result<(), Box<dyn Error>> {
@@ -1851,18 +1856,20 @@ fn plot_e2_emergent_harmony(
                 E2_PAPER_RANGE_OCT,
             )
         });
-        let shuffled_handle = scope.spawn(|| {
-            e2_seed_sweep_cfg(
-                space,
-                anchor_hz,
-                E2Condition::ShuffledLandscape,
-                E2_STEP_SEMITONES,
-                phase_mode,
-                None,
-                0,
-                E2_PAPER_N_AGENTS,
-                E2_PAPER_RANGE_OCT,
-            )
+        let shuffled_handle = diagnostics.then(|| {
+            scope.spawn(|| {
+                e2_seed_sweep_cfg(
+                    space,
+                    anchor_hz,
+                    E2Condition::ShuffledLandscape,
+                    E2_STEP_SEMITONES,
+                    phase_mode,
+                    None,
+                    0,
+                    E2_PAPER_N_AGENTS,
+                    E2_PAPER_RANGE_OCT,
+                )
+            })
         });
         let (baseline_runs, baseline_stats) = baseline_handle
             .join()
@@ -1873,9 +1880,12 @@ fn plot_e2_emergent_harmony(
         let (norep_runs, norep_stats) = norep_handle
             .join()
             .expect("norep seed sweep thread panicked");
-        let (shuffled_runs, _shuffled_stats) = shuffled_handle
-            .join()
-            .expect("shuffled seed sweep thread panicked");
+        let shuffled_runs = shuffled_handle.map(|handle| {
+            handle
+                .join()
+                .expect("shuffled seed sweep thread panicked")
+                .0
+        });
         (
             baseline_runs,
             baseline_stats,
@@ -1904,6 +1914,7 @@ fn plot_e2_emergent_harmony(
     let nohill_ci95_c_level = std_series_to_ci95(&nohill_stats.std_c_level, nohill_stats.n);
     let norep_ci95_c_level = std_series_to_ci95(&norep_stats.std_c_level, norep_stats.n);
     let baseline_ci95_c = std_series_to_ci95(&baseline_stats.std_c_score_loo, baseline_stats.n);
+    let nohill_ci95_c = std_series_to_ci95(&nohill_stats.std_c_score_loo, nohill_stats.n);
     let baseline_ci95_g_scene = std_series_to_ci95(&baseline_stats.std_g_scene, baseline_stats.n);
     let nohill_ci95_g_scene = std_series_to_ci95(&nohill_stats.std_g_scene, nohill_stats.n);
 
@@ -1931,623 +1942,598 @@ fn plot_e2_emergent_harmony(
         ),
     )?;
 
-    let c_score_csv = series_csv("step,mean_c_score", &baseline_run.mean_c_series);
-    write_with_log(out_dir.join("paper_e2_c_score_timeseries.csv"), c_score_csv)?;
-    write_with_log(
-        out_dir.join("paper_e2_c_level_timeseries.csv"),
-        series_csv("step,mean_c_level", &baseline_run.mean_c_level_series),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_mean_c_score_loo_over_time.csv"),
-        series_csv(
-            "step,mean_c_score_loo",
-            &baseline_run.mean_c_score_loo_series,
-        ),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_mean_c_score_chosen_loo_over_time.csv"),
-        series_csv(
-            "step,mean_c_score_chosen_loo",
-            &baseline_run.mean_c_score_chosen_loo_series,
-        ),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_score_timeseries.csv"),
-        series_csv("step,mean_score", &baseline_run.mean_score_series),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_crowding_timeseries.csv"),
-        series_csv("step,mean_crowding", &baseline_run.mean_crowding_series),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_moved_frac_timeseries.csv"),
-        series_csv("step,moved_frac", &baseline_run.moved_frac_series),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_accepted_worse_frac_timeseries.csv"),
-        series_csv(
-            "step,accepted_worse_frac",
-            &baseline_run.accepted_worse_frac_series,
-        ),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_attempted_update_frac_timeseries.csv"),
-        series_csv(
-            "step,attempted_update_frac",
-            &baseline_run.attempted_update_frac_series,
-        ),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_moved_given_attempt_frac_timeseries.csv"),
-        series_csv(
-            "step,moved_given_attempt_frac",
-            &baseline_run.moved_given_attempt_frac_series,
-        ),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_mean_abs_delta_semitones_over_time.csv"),
-        series_csv(
-            "step,mean_abs_delta_semitones",
-            &baseline_run.mean_abs_delta_semitones_series,
-        ),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_mean_abs_delta_semitones_moved_over_time.csv"),
-        series_csv(
-            "step,mean_abs_delta_semitones_moved",
-            &baseline_run.mean_abs_delta_semitones_moved_series,
-        ),
-    )?;
-
-    write_with_log(
-        out_dir.join("paper_e2_agent_trajectories.csv"),
-        trajectories_csv(baseline_run),
-    )?;
-    if e2_anchor_shift_enabled() {
+    if diagnostics {
+        let c_score_csv = series_csv("step,mean_c_score", &baseline_run.mean_c_series);
+        write_with_log(out_dir.join("paper_e2_c_score_timeseries.csv"), c_score_csv)?;
         write_with_log(
-            out_dir.join("paper_e2_anchor_shift_stats.csv"),
-            anchor_shift_csv(baseline_run),
+            out_dir.join("paper_e2_c_level_timeseries.csv"),
+            series_csv("step,mean_c_level", &baseline_run.mean_c_level_series),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_mean_c_score_loo_over_time.csv"),
+            series_csv(
+                "step,mean_c_score_loo",
+                &baseline_run.mean_c_score_loo_series,
+            ),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_mean_c_score_chosen_loo_over_time.csv"),
+            series_csv(
+                "step,mean_c_score_chosen_loo",
+                &baseline_run.mean_c_score_chosen_loo_series,
+            ),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_score_timeseries.csv"),
+            series_csv("step,mean_score", &baseline_run.mean_score_series),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_crowding_timeseries.csv"),
+            series_csv("step,mean_crowding", &baseline_run.mean_crowding_series),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_moved_frac_timeseries.csv"),
+            series_csv("step,moved_frac", &baseline_run.moved_frac_series),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_accepted_worse_frac_timeseries.csv"),
+            series_csv(
+                "step,accepted_worse_frac",
+                &baseline_run.accepted_worse_frac_series,
+            ),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_attempted_update_frac_timeseries.csv"),
+            series_csv(
+                "step,attempted_update_frac",
+                &baseline_run.attempted_update_frac_series,
+            ),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_moved_given_attempt_frac_timeseries.csv"),
+            series_csv(
+                "step,moved_given_attempt_frac",
+                &baseline_run.moved_given_attempt_frac_series,
+            ),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_mean_abs_delta_semitones_over_time.csv"),
+            series_csv(
+                "step,mean_abs_delta_semitones",
+                &baseline_run.mean_abs_delta_semitones_series,
+            ),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_mean_abs_delta_semitones_moved_over_time.csv"),
+            series_csv(
+                "step,mean_abs_delta_semitones_moved",
+                &baseline_run.mean_abs_delta_semitones_moved_series,
+            ),
+        )?;
+
+        write_with_log(
+            out_dir.join("paper_e2_agent_trajectories.csv"),
+            trajectories_csv(baseline_run),
+        )?;
+        if e2_anchor_shift_enabled() {
+            write_with_log(
+                out_dir.join("paper_e2_anchor_shift_stats.csv"),
+                anchor_shift_csv(baseline_run),
+            )?;
+        }
+        write_with_log(
+            out_dir.join("paper_e2_final_agents.csv"),
+            final_agents_csv(baseline_run),
+        )?;
+
+        let baseline_g_scene = e2_scene_g_series(baseline_run, space);
+        let nohill_g_scene = e2_scene_g_series(nohill_rep, space);
+        write_with_log(
+            out_dir.join("paper_e2_scene_g_seed0.csv"),
+            e2_scene_g_pair_csv(&baseline_g_scene, &nohill_g_scene),
+        )?;
+        let g_scene_plot_path = out_dir.join("paper_e2_scene_g_seed0.svg");
+        render_e2_scene_g_pair_plot(
+            &g_scene_plot_path,
+            &baseline_g_scene,
+            &nohill_g_scene,
+            phase_mode,
+            baseline_run.n_agents,
+        )?;
+
+        let mean_plot_path = out_dir.join("paper_e2_mean_c_level_over_time.svg");
+        render_series_plot_fixed_y(
+            &mean_plot_path,
+            &format!("Mean C_level01 Over Time ({caption_suffix})"),
+            "mean C_level01",
+            &series_pairs(&baseline_run.mean_c_level_series),
+            &marker_steps,
+            0.0,
+            1.0,
+        )?;
+
+        let mean_c_score_path = out_dir.join("paper_e2_mean_c_score_over_time.svg");
+        render_series_plot_with_markers(
+            &mean_c_score_path,
+            &format!("Mean C Score Over Time ({caption_suffix})"),
+            "mean C score",
+            &series_pairs(&baseline_run.mean_c_series),
+            &marker_steps,
+        )?;
+
+        let mean_c_score_loo_path = out_dir.join("paper_e2_mean_c_score_loo_over_time.svg");
+        render_series_plot_with_markers(
+            &mean_c_score_loo_path,
+            &format!("Mean C Score (LOO Current) Over Time ({caption_suffix})"),
+            "mean C score (LOO current)",
+            &series_pairs(&baseline_run.mean_c_score_loo_series),
+            &marker_steps,
+        )?;
+
+        let mean_c_score_chosen_loo_path =
+            out_dir.join("paper_e2_mean_c_score_chosen_loo_over_time.svg");
+        render_series_plot_with_markers(
+            &mean_c_score_chosen_loo_path,
+            &format!("Mean C Score (LOO Chosen) Over Time ({caption_suffix})"),
+            "mean C score (LOO chosen)",
+            &series_pairs(&baseline_run.mean_c_score_chosen_loo_series),
+            &marker_steps,
+        )?;
+
+        let accept_worse_path = out_dir.join("paper_e2_accepted_worse_frac_over_time.svg");
+        render_series_plot_fixed_y(
+            &accept_worse_path,
+            &format!("Accepted Worse Fraction ({caption_suffix})"),
+            "accepted worse frac",
+            &series_pairs(&baseline_run.accepted_worse_frac_series),
+            &marker_steps,
+            0.0,
+            1.0,
+        )?;
+
+        let mean_score_path = out_dir.join("paper_e2_mean_score_over_time.svg");
+        render_series_plot_with_markers(
+            &mean_score_path,
+            &format!("Mean Score Over Time ({caption_suffix})"),
+            "mean score (C - λ_R·R - λ_C·K)",
+            &series_pairs(&baseline_run.mean_score_series),
+            &marker_steps,
+        )?;
+
+        let mean_crowding_path = out_dir.join("paper_e2_mean_crowding_over_time.svg");
+        render_series_plot_with_markers(
+            &mean_crowding_path,
+            &format!("Mean Crowding Over Time ({caption_suffix})"),
+            "mean crowding",
+            &series_pairs(&baseline_run.mean_crowding_series),
+            &marker_steps,
+        )?;
+
+        let moved_frac_path = out_dir.join("paper_e2_moved_frac_over_time.svg");
+        render_series_plot_with_markers(
+            &moved_frac_path,
+            &format!("Moved Fraction Over Time ({caption_suffix})"),
+            "moved fraction",
+            &series_pairs(&baseline_run.moved_frac_series),
+            &marker_steps,
+        )?;
+
+        let attempted_update_path = out_dir.join("paper_e2_attempted_update_frac_over_time.svg");
+        render_series_plot_fixed_y(
+            &attempted_update_path,
+            &format!("Attempted Update Fraction ({caption_suffix})"),
+            "attempted update frac",
+            &series_pairs(&baseline_run.attempted_update_frac_series),
+            &marker_steps,
+            0.0,
+            1.0,
+        )?;
+
+        let moved_given_attempt_path =
+            out_dir.join("paper_e2_moved_given_attempt_frac_over_time.svg");
+        render_series_plot_fixed_y(
+            &moved_given_attempt_path,
+            &format!("Moved Given Attempt ({caption_suffix})"),
+            "moved given attempt frac",
+            &series_pairs(&baseline_run.moved_given_attempt_frac_series),
+            &marker_steps,
+            0.0,
+            1.0,
+        )?;
+
+        let abs_delta_path = out_dir.join("paper_e2_mean_abs_delta_semitones_over_time.svg");
+        render_series_plot_with_markers(
+            &abs_delta_path,
+            &format!("Mean |Δ| Semitones Over Time ({caption_suffix})"),
+            "mean |Δ| semitones",
+            &series_pairs(&baseline_run.mean_abs_delta_semitones_series),
+            &marker_steps,
+        )?;
+
+        let abs_delta_moved_path =
+            out_dir.join("paper_e2_mean_abs_delta_semitones_moved_over_time.svg");
+        render_series_plot_with_markers(
+            &abs_delta_moved_path,
+            &format!("Mean |Δ| Semitones (Moved) Over Time ({caption_suffix})"),
+            "mean |Δ| semitones (moved only)",
+            &series_pairs(&baseline_run.mean_abs_delta_semitones_moved_series),
+            &marker_steps,
+        )?;
+
+        let trajectory_path = out_dir.join("paper_e2_agent_trajectories.svg");
+        render_agent_trajectories_plot(&trajectory_path, &baseline_run.trajectory_semitones)?;
+
+        let pairwise_intervals = pairwise_interval_samples(&baseline_run.final_semitones);
+        write_with_log(
+            out_dir.join("paper_e2_pairwise_intervals.csv"),
+            pairwise_intervals_csv(&pairwise_intervals),
+        )?;
+        emit_pairwise_interval_dumps_for_condition(out_dir, "baseline", &baseline_runs)?;
+        emit_pairwise_interval_dumps_for_condition(out_dir, "nohill", &nohill_runs)?;
+        emit_pairwise_interval_dumps_for_condition(out_dir, "nocrowd", &norep_runs)?;
+        let pairwise_hist_path = out_dir.join("paper_e2_pairwise_interval_histogram.svg");
+        render_interval_histogram(
+            &pairwise_hist_path,
+            "Pairwise Interval Histogram (Semitones, 12=octave)",
+            &pairwise_intervals,
+            0.0,
+            12.0,
+            E2_PAIRWISE_BIN_ST,
+            "semitones",
+        )?;
+
+        let hist_path = out_dir.join("paper_e2_interval_histogram.svg");
+        let hist_caption = format!("Interval Histogram ({post_label}, bin=0.50st)");
+        render_interval_histogram(
+            &hist_path,
+            &hist_caption,
+            &baseline_run.semitone_samples_post,
+            -12.0,
+            12.0,
+            E2_ANCHOR_BIN_ST,
+            "semitones",
         )?;
     }
-    write_with_log(
-        out_dir.join("paper_e2_final_agents.csv"),
-        final_agents_csv(baseline_run),
-    )?;
-
-    let baseline_g_scene = e2_scene_g_series(baseline_run, space);
-    let nohill_g_scene = e2_scene_g_series(nohill_rep, space);
-    write_with_log(
-        out_dir.join("paper_e2_scene_g_seed0.csv"),
-        e2_scene_g_pair_csv(&baseline_g_scene, &nohill_g_scene),
-    )?;
-    let g_scene_plot_path = out_dir.join("paper_e2_scene_g_seed0.svg");
-    render_e2_scene_g_pair_plot(
-        &g_scene_plot_path,
-        &baseline_g_scene,
-        &nohill_g_scene,
-        phase_mode,
-        baseline_run.n_agents,
-    )?;
-
-    let mean_plot_path = out_dir.join("paper_e2_mean_c_level_over_time.svg");
-    render_series_plot_fixed_y(
-        &mean_plot_path,
-        &format!("Mean C_level01 Over Time ({caption_suffix})"),
-        "mean C_level01",
-        &series_pairs(&baseline_run.mean_c_level_series),
-        &marker_steps,
-        0.0,
-        1.0,
-    )?;
-
-    let mean_c_score_path = out_dir.join("paper_e2_mean_c_score_over_time.svg");
-    render_series_plot_with_markers(
-        &mean_c_score_path,
-        &format!("Mean C Score Over Time ({caption_suffix})"),
-        "mean C score",
-        &series_pairs(&baseline_run.mean_c_series),
-        &marker_steps,
-    )?;
-
-    let mean_c_score_loo_path = out_dir.join("paper_e2_mean_c_score_loo_over_time.svg");
-    render_series_plot_with_markers(
-        &mean_c_score_loo_path,
-        &format!("Mean C Score (LOO Current) Over Time ({caption_suffix})"),
-        "mean C score (LOO current)",
-        &series_pairs(&baseline_run.mean_c_score_loo_series),
-        &marker_steps,
-    )?;
-
-    let mean_c_score_chosen_loo_path =
-        out_dir.join("paper_e2_mean_c_score_chosen_loo_over_time.svg");
-    render_series_plot_with_markers(
-        &mean_c_score_chosen_loo_path,
-        &format!("Mean C Score (LOO Chosen) Over Time ({caption_suffix})"),
-        "mean C score (LOO chosen)",
-        &series_pairs(&baseline_run.mean_c_score_chosen_loo_series),
-        &marker_steps,
-    )?;
-
-    let accept_worse_path = out_dir.join("paper_e2_accepted_worse_frac_over_time.svg");
-    render_series_plot_fixed_y(
-        &accept_worse_path,
-        &format!("Accepted Worse Fraction ({caption_suffix})"),
-        "accepted worse frac",
-        &series_pairs(&baseline_run.accepted_worse_frac_series),
-        &marker_steps,
-        0.0,
-        1.0,
-    )?;
-
-    let mean_score_path = out_dir.join("paper_e2_mean_score_over_time.svg");
-    render_series_plot_with_markers(
-        &mean_score_path,
-        &format!("Mean Score Over Time ({caption_suffix})"),
-        "mean score (C - λ_R·R - λ_C·K)",
-        &series_pairs(&baseline_run.mean_score_series),
-        &marker_steps,
-    )?;
-
-    let mean_crowding_path = out_dir.join("paper_e2_mean_crowding_over_time.svg");
-    render_series_plot_with_markers(
-        &mean_crowding_path,
-        &format!("Mean Crowding Over Time ({caption_suffix})"),
-        "mean crowding",
-        &series_pairs(&baseline_run.mean_crowding_series),
-        &marker_steps,
-    )?;
-
-    let moved_frac_path = out_dir.join("paper_e2_moved_frac_over_time.svg");
-    render_series_plot_with_markers(
-        &moved_frac_path,
-        &format!("Moved Fraction Over Time ({caption_suffix})"),
-        "moved fraction",
-        &series_pairs(&baseline_run.moved_frac_series),
-        &marker_steps,
-    )?;
-
-    let attempted_update_path = out_dir.join("paper_e2_attempted_update_frac_over_time.svg");
-    render_series_plot_fixed_y(
-        &attempted_update_path,
-        &format!("Attempted Update Fraction ({caption_suffix})"),
-        "attempted update frac",
-        &series_pairs(&baseline_run.attempted_update_frac_series),
-        &marker_steps,
-        0.0,
-        1.0,
-    )?;
-
-    let moved_given_attempt_path = out_dir.join("paper_e2_moved_given_attempt_frac_over_time.svg");
-    render_series_plot_fixed_y(
-        &moved_given_attempt_path,
-        &format!("Moved Given Attempt ({caption_suffix})"),
-        "moved given attempt frac",
-        &series_pairs(&baseline_run.moved_given_attempt_frac_series),
-        &marker_steps,
-        0.0,
-        1.0,
-    )?;
-
-    let abs_delta_path = out_dir.join("paper_e2_mean_abs_delta_semitones_over_time.svg");
-    render_series_plot_with_markers(
-        &abs_delta_path,
-        &format!("Mean |Δ| Semitones Over Time ({caption_suffix})"),
-        "mean |Δ| semitones",
-        &series_pairs(&baseline_run.mean_abs_delta_semitones_series),
-        &marker_steps,
-    )?;
-
-    let abs_delta_moved_path =
-        out_dir.join("paper_e2_mean_abs_delta_semitones_moved_over_time.svg");
-    render_series_plot_with_markers(
-        &abs_delta_moved_path,
-        &format!("Mean |Δ| Semitones (Moved) Over Time ({caption_suffix})"),
-        "mean |Δ| semitones (moved only)",
-        &series_pairs(&baseline_run.mean_abs_delta_semitones_moved_series),
-        &marker_steps,
-    )?;
-
-    let trajectory_path = out_dir.join("paper_e2_agent_trajectories.svg");
-    render_agent_trajectories_plot(&trajectory_path, &baseline_run.trajectory_semitones)?;
-
-    let pairwise_intervals = pairwise_interval_samples(&baseline_run.final_semitones);
-    write_with_log(
-        out_dir.join("paper_e2_pairwise_intervals.csv"),
-        pairwise_intervals_csv(&pairwise_intervals),
-    )?;
-    emit_pairwise_interval_dumps_for_condition(out_dir, "baseline", &baseline_runs)?;
-    emit_pairwise_interval_dumps_for_condition(out_dir, "nohill", &nohill_runs)?;
-    emit_pairwise_interval_dumps_for_condition(out_dir, "nocrowd", &norep_runs)?;
-    let pairwise_hist_path = out_dir.join("paper_e2_pairwise_interval_histogram.svg");
-    render_interval_histogram(
-        &pairwise_hist_path,
-        "Pairwise Interval Histogram (Semitones, 12=octave)",
-        &pairwise_intervals,
-        0.0,
-        12.0,
-        E2_PAIRWISE_BIN_ST,
-        "semitones",
-    )?;
-
-    let hist_path = out_dir.join("paper_e2_interval_histogram.svg");
-    let hist_caption = format!("Interval Histogram ({post_label}, bin=0.50st)");
-    render_interval_histogram(
-        &hist_path,
-        &hist_caption,
-        &baseline_run.semitone_samples_post,
-        -12.0,
-        12.0,
-        E2_ANCHOR_BIN_ST,
-        "semitones",
-    )?;
 
     write_with_log(
         out_dir.join("paper_e2_summary.csv"),
         e2_summary_csv(&baseline_runs),
     )?;
 
-    let flutter_segments = e2_flutter_segments(phase_mode, baseline_run.n_agents);
-    let mut flutter_csv = String::from(
-        "segment,start_step,end_step,pingpong_rate_moves,reversal_rate_moves,move_rate_stepwise,mean_abs_delta_moved,step_count,moved_step_count,move_count,pingpong_count_moves,reversal_count_moves\n",
-    );
-    for (label, start, end) in &flutter_segments {
-        let metrics =
-            flutter_metrics_for_trajectories(&baseline_run.trajectory_semitones, *start, *end);
-        flutter_csv.push_str(&format!(
-            "{label},{start},{end},{:.6},{:.6},{:.6},{:.6},{},{},{},{},{}\n",
-            metrics.pingpong_rate_moves,
-            metrics.reversal_rate_moves,
-            metrics.move_rate_stepwise,
-            metrics.mean_abs_delta_moved,
-            metrics.step_count,
-            metrics.moved_step_count,
-            metrics.move_count,
-            metrics.pingpong_count_moves,
-            metrics.reversal_count_moves
-        ));
-    }
-    write_with_log(out_dir.join("paper_e2_flutter_metrics.csv"), flutter_csv)?;
+    if diagnostics {
+        let flutter_segments = e2_flutter_segments(phase_mode, baseline_run.n_agents);
+        let mut flutter_csv = String::from(
+            "segment,start_step,end_step,pingpong_rate_moves,reversal_rate_moves,move_rate_stepwise,mean_abs_delta_moved,step_count,moved_step_count,move_count,pingpong_count_moves,reversal_count_moves\n",
+        );
+        for (label, start, end) in &flutter_segments {
+            let metrics =
+                flutter_metrics_for_trajectories(&baseline_run.trajectory_semitones, *start, *end);
+            flutter_csv.push_str(&format!(
+                "{label},{start},{end},{:.6},{:.6},{:.6},{:.6},{},{},{},{},{}\n",
+                metrics.pingpong_rate_moves,
+                metrics.reversal_rate_moves,
+                metrics.move_rate_stepwise,
+                metrics.mean_abs_delta_moved,
+                metrics.step_count,
+                metrics.moved_step_count,
+                metrics.move_count,
+                metrics.pingpong_count_moves,
+                metrics.reversal_count_moves
+            ));
+        }
+        write_with_log(out_dir.join("paper_e2_flutter_metrics.csv"), flutter_csv)?;
 
-    render_e2_histogram_sweep(out_dir, baseline_run)?;
+        render_e2_histogram_sweep(out_dir, baseline_run)?;
 
-    let mut flutter_rows = Vec::new();
-    for (cond, runs) in [
-        ("baseline", &baseline_runs),
-        ("nohill", &nohill_runs),
-        ("nocrowd", &norep_runs),
-    ] {
-        for run in runs.iter() {
-            for (segment, start, end) in &flutter_segments {
-                let metrics =
-                    flutter_metrics_for_trajectories(&run.trajectory_semitones, *start, *end);
-                flutter_rows.push(FlutterRow {
-                    condition: cond,
-                    seed: run.seed,
-                    segment,
-                    metrics,
-                });
+        let mut flutter_rows = Vec::new();
+        for (cond, runs) in [
+            ("baseline", &baseline_runs),
+            ("nohill", &nohill_runs),
+            ("nocrowd", &norep_runs),
+        ] {
+            for run in runs.iter() {
+                for (segment, start, end) in &flutter_segments {
+                    let metrics =
+                        flutter_metrics_for_trajectories(&run.trajectory_semitones, *start, *end);
+                    flutter_rows.push(FlutterRow {
+                        condition: cond,
+                        seed: run.seed,
+                        segment,
+                        metrics,
+                    });
+                }
             }
         }
-    }
-    write_with_log(
-        out_dir.join("paper_e2_flutter_by_seed.csv"),
-        flutter_by_seed_csv(&flutter_rows),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_flutter_summary.csv"),
-        flutter_summary_csv(&flutter_rows, &flutter_segments),
-    )?;
-
-    write_with_log(
-        out_dir.join("paper_e2_seed_sweep_mean_c.csv"),
-        sweep_csv(
-            "step,mean,std,n",
-            &baseline_stats.mean_c,
-            &baseline_stats.std_c,
-            baseline_stats.n,
-        ),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_seed_sweep_mean_c_ci95.csv"),
-        sweep_csv_with_ci95(
-            "step,mean,std,ci95,n\n",
-            &baseline_stats.mean_c,
-            &baseline_stats.std_c,
-            baseline_stats.n,
-        ),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_seed_sweep_mean_c_level.csv"),
-        sweep_csv(
-            "step,mean,std,n",
-            &baseline_stats.mean_c_level,
-            &baseline_stats.std_c_level,
-            baseline_stats.n,
-        ),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_seed_sweep_mean_c_level_ci95.csv"),
-        sweep_csv_with_ci95(
-            "step,mean,std,ci95,n\n",
-            &baseline_stats.mean_c_level,
-            &baseline_stats.std_c_level,
-            baseline_stats.n,
-        ),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_seed_sweep_mean_score.csv"),
-        sweep_csv(
-            "step,mean,std,n",
-            &baseline_stats.mean_score,
-            &baseline_stats.std_score,
-            baseline_stats.n,
-        ),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_seed_sweep_mean_crowding.csv"),
-        sweep_csv(
-            "step,mean,std,n",
-            &baseline_stats.mean_crowding,
-            &baseline_stats.std_crowding,
-            baseline_stats.n,
-        ),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_seed_sweep_mean_c_score_loo.csv"),
-        sweep_csv(
-            "step,mean,std,n",
-            &baseline_stats.mean_c_score_loo,
-            &baseline_stats.std_c_score_loo,
-            baseline_stats.n,
-        ),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_seed_sweep_mean_g_scene.csv"),
-        sweep_csv(
-            "step,mean,std,n",
-            &baseline_stats.mean_g_scene,
-            &baseline_stats.std_g_scene,
-            baseline_stats.n,
-        ),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_seed_sweep_mean_g_scene_ci95.csv"),
-        sweep_csv_with_ci95(
-            "step,mean,std,ci95,n\n",
-            &baseline_stats.mean_g_scene,
-            &baseline_stats.std_g_scene,
-            baseline_stats.n,
-        ),
-    )?;
-    if E2_EMIT_KBINS_SWEEP_SUMMARY {
         write_with_log(
-            out_dir.join("paper_e2_kbins_sweep_summary.csv"),
-            e2_kbins_sweep_csv(space, anchor_hz, phase_mode),
+            out_dir.join("paper_e2_flutter_by_seed.csv"),
+            flutter_by_seed_csv(&flutter_rows),
         )?;
-    }
+        write_with_log(
+            out_dir.join("paper_e2_flutter_summary.csv"),
+            flutter_summary_csv(&flutter_rows, &flutter_segments),
+        )?;
 
-    let sweep_mean_path = out_dir.join("paper_e2_mean_c_level_over_time_seeds.svg");
-    render_series_plot_with_band(
-        &sweep_mean_path,
-        "Mean C_level01 (seed sweep)",
-        "mean C_level01",
-        &baseline_stats.mean_c_level,
-        &baseline_stats.std_c_level,
-        &marker_steps,
-    )?;
-    let sweep_mean_ci_path = out_dir.join("paper_e2_mean_c_level_over_time_seeds_ci95.svg");
-    render_series_plot_with_band(
-        &sweep_mean_ci_path,
-        "Mean C_level01 (seed sweep, 95% CI)",
-        "mean C_level01",
-        &baseline_stats.mean_c_level,
-        &baseline_ci95_c_level,
-        &marker_steps,
-    )?;
-
-    let sweep_score_path = out_dir.join("paper_e2_mean_score_over_time_seeds.svg");
-    render_series_plot_with_band(
-        &sweep_score_path,
-        "Mean Score (seed sweep)",
-        "mean score",
-        &baseline_stats.mean_score,
-        &baseline_stats.std_score,
-        &marker_steps,
-    )?;
-
-    let sweep_c_score_loo_path = out_dir.join("paper_e2_mean_c_score_loo_over_time_seeds.svg");
-    render_series_plot_with_band(
-        &sweep_c_score_loo_path,
-        "Mean C Score (LOO current, seed sweep)",
-        "mean C score (LOO current)",
-        &baseline_stats.mean_c_score_loo,
-        &baseline_stats.std_c_score_loo,
-        &marker_steps,
-    )?;
-    let sweep_g_scene_path = out_dir.join("paper_e2_mean_g_scene_over_time_seeds.svg");
-    render_series_plot_multi_with_band(
-        &sweep_g_scene_path,
-        "Mean scene consonance G(F) (seed sweep, 95% CI)",
-        "mean G(F) (a.u.)",
-        &[
-            (
-                "baseline",
-                &baseline_stats.mean_g_scene,
-                &baseline_ci95_g_scene,
-                PAL_H,
-            ),
-            (
-                "no hill-climb",
-                &nohill_stats.mean_g_scene,
-                &nohill_ci95_g_scene,
-                PAL_R,
-            ),
-        ],
-        &marker_steps,
-    )?;
-
-    let sweep_crowding_path = out_dir.join("paper_e2_mean_crowding_over_time_seeds.svg");
-    render_series_plot_with_band(
-        &sweep_crowding_path,
-        "Mean Crowding (seed sweep)",
-        "mean crowding",
-        &baseline_stats.mean_crowding,
-        &baseline_stats.std_crowding,
-        &marker_steps,
-    )?;
-
-    write_with_log(
-        out_dir.join("paper_e2_control_mean_c.csv"),
-        e2_controls_csv_c(&baseline_stats, &nohill_stats, &norep_stats),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_control_mean_c_level.csv"),
-        e2_controls_csv_c_level(&baseline_stats, &nohill_stats, &norep_stats),
-    )?;
-
-    let control_plot_path = out_dir.join("paper_e2_mean_c_level_over_time_controls.svg");
-    render_series_plot_multi(
-        &control_plot_path,
-        "Mean C_level01 (controls)",
-        "mean C_level01",
-        &[
-            ("baseline", &baseline_stats.mean_c_level, PAL_H),
-            ("no hill-climb", &nohill_stats.mean_c_level, PAL_R),
-            ("no crowding", &norep_stats.mean_c_level, PAL_CD),
-        ],
-        &marker_steps,
-    )?;
-
-    let control_c_path = out_dir.join("paper_e2_mean_c_over_time_controls_seeds.svg");
-    render_series_plot_multi_with_band(
-        &control_c_path,
-        "Mean C score (controls, seed sweep)",
-        "mean C score",
-        &[
-            (
-                "baseline",
+        write_with_log(
+            out_dir.join("paper_e2_seed_sweep_mean_c.csv"),
+            sweep_csv(
+                "step,mean,std,n",
                 &baseline_stats.mean_c,
                 &baseline_stats.std_c,
-                PAL_H,
+                baseline_stats.n,
             ),
-            (
-                "no hill-climb",
-                &nohill_stats.mean_c,
-                &nohill_stats.std_c,
-                PAL_R,
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_seed_sweep_mean_c_ci95.csv"),
+            sweep_csv_with_ci95(
+                "step,mean,std,ci95,n\n",
+                &baseline_stats.mean_c,
+                &baseline_stats.std_c,
+                baseline_stats.n,
             ),
-            (
-                "no crowding",
-                &norep_stats.mean_c,
-                &norep_stats.std_c,
-                PAL_CD,
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_seed_sweep_mean_c_level.csv"),
+            sweep_csv(
+                "step,mean,std,n",
+                &baseline_stats.mean_c_level,
+                &baseline_stats.std_c_level,
+                baseline_stats.n,
             ),
-        ],
-        &marker_steps,
-    )?;
-
-    let control_c_score_loo_path =
-        out_dir.join("paper_e2_mean_c_score_loo_over_time_controls_seeds.svg");
-    render_series_plot_multi_with_band(
-        &control_c_score_loo_path,
-        "Mean C score (LOO current, controls, seed sweep)",
-        "mean C score (LOO current)",
-        &[
-            (
-                "baseline",
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_seed_sweep_mean_c_level_ci95.csv"),
+            sweep_csv_with_ci95(
+                "step,mean,std,ci95,n\n",
+                &baseline_stats.mean_c_level,
+                &baseline_stats.std_c_level,
+                baseline_stats.n,
+            ),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_seed_sweep_mean_score.csv"),
+            sweep_csv(
+                "step,mean,std,n",
+                &baseline_stats.mean_score,
+                &baseline_stats.std_score,
+                baseline_stats.n,
+            ),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_seed_sweep_mean_crowding.csv"),
+            sweep_csv(
+                "step,mean,std,n",
+                &baseline_stats.mean_crowding,
+                &baseline_stats.std_crowding,
+                baseline_stats.n,
+            ),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_seed_sweep_mean_c_score_loo.csv"),
+            sweep_csv(
+                "step,mean,std,n",
                 &baseline_stats.mean_c_score_loo,
                 &baseline_stats.std_c_score_loo,
-                PAL_H,
+                baseline_stats.n,
             ),
-            (
-                "no hill-climb",
-                &nohill_stats.mean_c_score_loo,
-                &nohill_stats.std_c_score_loo,
-                PAL_R,
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_seed_sweep_mean_g_scene.csv"),
+            sweep_csv(
+                "step,mean,std,n",
+                &baseline_stats.mean_g_scene,
+                &baseline_stats.std_g_scene,
+                baseline_stats.n,
             ),
-            (
-                "no crowding",
-                &norep_stats.mean_c_score_loo,
-                &norep_stats.std_c_score_loo,
-                PAL_CD,
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_seed_sweep_mean_g_scene_ci95.csv"),
+            sweep_csv_with_ci95(
+                "step,mean,std,ci95,n\n",
+                &baseline_stats.mean_g_scene,
+                &baseline_stats.std_g_scene,
+                baseline_stats.n,
             ),
-        ],
-        &marker_steps,
-    )?;
+        )?;
+        if E2_EMIT_KBINS_SWEEP_SUMMARY {
+            write_with_log(
+                out_dir.join("paper_e2_kbins_sweep_summary.csv"),
+                e2_kbins_sweep_csv(space, anchor_hz, phase_mode),
+            )?;
+        }
 
-    let annotated_mean_path = out_dir.join("paper_e2_mean_c_level_over_time_seeds_annotated.svg");
-    render_e2_mean_c_level_annotated(
-        &annotated_mean_path,
-        &baseline_stats.mean_c_level,
-        &baseline_ci95_c_level,
-        &nohill_stats.mean_c_level,
-        &nohill_ci95_c_level,
-        &norep_stats.mean_c_level,
-        &norep_ci95_c_level,
-        E2_BURN_IN,
-        phase_mode.switch_step(),
-    )?;
+        let sweep_mean_path = out_dir.join("paper_e2_mean_c_level_over_time_seeds.svg");
+        render_series_plot_with_band(
+            &sweep_mean_path,
+            "Mean C_level01 (seed sweep)",
+            "mean C_level01",
+            &baseline_stats.mean_c_level,
+            &baseline_stats.std_c_level,
+            &marker_steps,
+        )?;
+        let sweep_mean_ci_path = out_dir.join("paper_e2_mean_c_level_over_time_seeds_ci95.svg");
+        render_series_plot_with_band(
+            &sweep_mean_ci_path,
+            "Mean C_level01 (seed sweep, 95% CI)",
+            "mean C_level01",
+            &baseline_stats.mean_c_level,
+            &baseline_ci95_c_level,
+            &marker_steps,
+        )?;
+
+        let sweep_score_path = out_dir.join("paper_e2_mean_score_over_time_seeds.svg");
+        render_series_plot_with_band(
+            &sweep_score_path,
+            "Mean Score (seed sweep)",
+            "mean score",
+            &baseline_stats.mean_score,
+            &baseline_stats.std_score,
+            &marker_steps,
+        )?;
+
+        let sweep_c_score_loo_path = out_dir.join("paper_e2_mean_c_score_loo_over_time_seeds.svg");
+        render_series_plot_with_band(
+            &sweep_c_score_loo_path,
+            "Mean C Score (LOO current, seed sweep)",
+            "mean C score (LOO current)",
+            &baseline_stats.mean_c_score_loo,
+            &baseline_stats.std_c_score_loo,
+            &marker_steps,
+        )?;
+        let sweep_g_scene_path = out_dir.join("paper_e2_mean_g_scene_over_time_seeds.svg");
+        render_series_plot_multi_with_band(
+            &sweep_g_scene_path,
+            "Mean scene consonance G(F) (seed sweep, 95% CI)",
+            "mean G(F) (a.u.)",
+            &[
+                (
+                    "baseline",
+                    &baseline_stats.mean_g_scene,
+                    &baseline_ci95_g_scene,
+                    PAL_H,
+                ),
+                (
+                    "no hill-climb",
+                    &nohill_stats.mean_g_scene,
+                    &nohill_ci95_g_scene,
+                    PAL_R,
+                ),
+            ],
+            &marker_steps,
+        )?;
+
+        let sweep_crowding_path = out_dir.join("paper_e2_mean_crowding_over_time_seeds.svg");
+        render_series_plot_with_band(
+            &sweep_crowding_path,
+            "Mean Crowding (seed sweep)",
+            "mean crowding",
+            &baseline_stats.mean_crowding,
+            &baseline_stats.std_crowding,
+            &marker_steps,
+        )?;
+
+        write_with_log(
+            out_dir.join("paper_e2_control_mean_c.csv"),
+            e2_controls_csv_c(&baseline_stats, &nohill_stats, &norep_stats),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_control_mean_c_level.csv"),
+            e2_controls_csv_c_level(&baseline_stats, &nohill_stats, &norep_stats),
+        )?;
+
+        let control_plot_path = out_dir.join("paper_e2_mean_c_level_over_time_controls.svg");
+        render_series_plot_multi(
+            &control_plot_path,
+            "Mean C_level01 (controls)",
+            "mean C_level01",
+            &[
+                ("baseline", &baseline_stats.mean_c_level, PAL_H),
+                ("no hill-climb", &nohill_stats.mean_c_level, PAL_R),
+                ("no crowding", &norep_stats.mean_c_level, PAL_CD),
+            ],
+            &marker_steps,
+        )?;
+
+        let control_c_path = out_dir.join("paper_e2_mean_c_over_time_controls_seeds.svg");
+        render_series_plot_multi_with_band(
+            &control_c_path,
+            "Mean C score (controls, seed sweep)",
+            "mean C score",
+            &[
+                (
+                    "baseline",
+                    &baseline_stats.mean_c,
+                    &baseline_stats.std_c,
+                    PAL_H,
+                ),
+                (
+                    "no hill-climb",
+                    &nohill_stats.mean_c,
+                    &nohill_stats.std_c,
+                    PAL_R,
+                ),
+                (
+                    "no crowding",
+                    &norep_stats.mean_c,
+                    &norep_stats.std_c,
+                    PAL_CD,
+                ),
+            ],
+            &marker_steps,
+        )?;
+
+        let control_c_score_loo_path =
+            out_dir.join("paper_e2_mean_c_score_loo_over_time_controls_seeds.svg");
+        render_series_plot_multi_with_band(
+            &control_c_score_loo_path,
+            "Mean C score (LOO current, controls, seed sweep)",
+            "mean C score (LOO current)",
+            &[
+                (
+                    "baseline",
+                    &baseline_stats.mean_c_score_loo,
+                    &baseline_stats.std_c_score_loo,
+                    PAL_H,
+                ),
+                (
+                    "no hill-climb",
+                    &nohill_stats.mean_c_score_loo,
+                    &nohill_stats.std_c_score_loo,
+                    PAL_R,
+                ),
+                (
+                    "no crowding",
+                    &norep_stats.mean_c_score_loo,
+                    &norep_stats.std_c_score_loo,
+                    PAL_CD,
+                ),
+            ],
+            &marker_steps,
+        )?;
+
+        let annotated_mean_path =
+            out_dir.join("paper_e2_mean_c_level_over_time_seeds_annotated.svg");
+        render_e2_mean_c_level_annotated(
+            &annotated_mean_path,
+            &baseline_stats.mean_c_level,
+            &baseline_ci95_c_level,
+            &nohill_stats.mean_c_level,
+            &nohill_ci95_c_level,
+            &norep_stats.mean_c_level,
+            &norep_ci95_c_level,
+            E2_BURN_IN,
+            phase_mode.switch_step(),
+        )?;
+    }
 
     let mut diversity_rows_vec = Vec::new();
     diversity_rows_vec.extend(diversity_rows("baseline", &baseline_runs));
     diversity_rows_vec.extend(diversity_rows("nohill", &nohill_runs));
     diversity_rows_vec.extend(diversity_rows("nocrowd", &norep_runs));
-    write_with_log(
-        out_dir.join("paper_e2_diversity_by_seed.csv"),
-        diversity_by_seed_csv(&diversity_rows_vec),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_diversity_summary.csv"),
-        diversity_summary_csv(&diversity_rows_vec),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_diversity_summary_ci95.csv"),
-        diversity_summary_ci95_csv(&diversity_rows_vec),
-    )?;
-    let diversity_plot_path = out_dir.join("paper_e2_diversity_summary.svg");
-    render_diversity_summary_plot(&diversity_plot_path, &diversity_rows_vec)?;
-    let diversity_ci95_plot_path = out_dir.join("paper_e2_diversity_summary_ci95.svg");
-    render_diversity_summary_ci95_plot(&diversity_ci95_plot_path, &diversity_rows_vec)?;
-    let fixed_drone = e2_fixed_drone(space, anchor_hz);
-    let (_, du_scan) = erb_grid(space);
-    let workspace = build_consonance_workspace(space);
-    let baseline_panel_a_runs: Vec<Vec<f32>> = baseline_runs
-        .iter()
-        .map(|run| {
-            compute_e2_trajectory_mean_c_score_loo(
-                space,
-                &workspace,
-                &du_scan,
-                fixed_drone.idx,
-                anchor_hz,
-                &run.trajectory_semitones,
-            )
-        })
-        .collect();
-    let nohill_panel_a_runs: Vec<Vec<f32>> = nohill_runs
-        .iter()
-        .map(|run| {
-            compute_e2_trajectory_mean_c_score_loo(
-                space,
-                &workspace,
-                &du_scan,
-                fixed_drone.idx,
-                anchor_hz,
-                &run.trajectory_semitones,
-            )
-        })
-        .collect();
-    let (baseline_panel_a_mean, baseline_panel_a_ci95) =
-        mean_ci95_series(baseline_panel_a_runs.iter().collect::<Vec<_>>());
-    let (nohill_panel_a_mean, nohill_panel_a_ci95) =
-        mean_ci95_series(nohill_panel_a_runs.iter().collect::<Vec<_>>());
+    if diagnostics {
+        write_with_log(
+            out_dir.join("paper_e2_diversity_by_seed.csv"),
+            diversity_by_seed_csv(&diversity_rows_vec),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_diversity_summary.csv"),
+            diversity_summary_csv(&diversity_rows_vec),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_diversity_summary_ci95.csv"),
+            diversity_summary_ci95_csv(&diversity_rows_vec),
+        )?;
+        let diversity_plot_path = out_dir.join("paper_e2_diversity_summary.svg");
+        render_diversity_summary_plot(&diversity_plot_path, &diversity_rows_vec)?;
+        let diversity_ci95_plot_path = out_dir.join("paper_e2_diversity_summary_ci95.svg");
+        render_diversity_summary_ci95_plot(&diversity_ci95_plot_path, &diversity_rows_vec)?;
+    }
     let figure1_path = out_dir.join("paper_e2_figure_e2_1.svg");
     render_e2_figure1(
         &figure1_path,
-        &baseline_panel_a_mean,
-        &baseline_panel_a_ci95,
-        &nohill_panel_a_mean,
-        &nohill_panel_a_ci95,
+        &baseline_stats.mean_c_score_loo,
+        &baseline_ci95_c,
+        &nohill_stats.mean_c_score_loo,
+        &nohill_ci95_c,
         &baseline_stats,
         &nohill_stats,
         &baseline_ci95_g_scene,
@@ -2561,90 +2547,94 @@ fn plot_e2_emergent_harmony(
     hist_rows.extend(hist_structure_rows("baseline", &baseline_runs));
     hist_rows.extend(hist_structure_rows("nohill", &nohill_runs));
     hist_rows.extend(hist_structure_rows("nocrowd", &norep_runs));
-    write_with_log(
-        out_dir.join("paper_e2_hist_structure_by_seed.csv"),
-        hist_structure_by_seed_csv(&hist_rows),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_hist_structure_summary.csv"),
-        hist_structure_summary_csv(&hist_rows),
-    )?;
-    let hist_plot_path = out_dir.join("paper_e2_hist_structure_summary.svg");
-    render_hist_structure_summary_plot(&hist_plot_path, &hist_rows)?;
+    if diagnostics {
+        write_with_log(
+            out_dir.join("paper_e2_hist_structure_by_seed.csv"),
+            hist_structure_by_seed_csv(&hist_rows),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_hist_structure_summary.csv"),
+            hist_structure_summary_csv(&hist_rows),
+        )?;
+        let hist_plot_path = out_dir.join("paper_e2_hist_structure_summary.svg");
+        render_hist_structure_summary_plot(&hist_plot_path, &hist_rows)?;
 
-    let rep_seed = E2_SEEDS[E2_PAPER_REP_SEED_INDEX];
-    let norep_rep = &norep_runs[norep_runs
-        .iter()
-        .position(|run| run.seed == rep_seed)
-        .unwrap_or_else(|| pick_representative_run_index(&norep_runs))];
-    render_e2_control_histograms(out_dir, baseline_run, nohill_rep, norep_rep)?;
+        let rep_seed = E2_SEEDS[E2_PAPER_REP_SEED_INDEX];
+        let norep_rep = &norep_runs[norep_runs
+            .iter()
+            .position(|run| run.seed == rep_seed)
+            .unwrap_or_else(|| pick_representative_run_index(&norep_runs))];
+        render_e2_control_histograms(out_dir, baseline_run, nohill_rep, norep_rep)?;
+    }
 
     let hist_min = -12.0f32;
     let hist_max = 12.0f32;
     let hist_stats_05 = e2_hist_seed_sweep(&baseline_runs, 0.5, hist_min, hist_max);
-    write_with_log(
-        out_dir.join("paper_e2_interval_hist_post_seed_sweep_bw0p50.csv"),
-        e2_hist_seed_sweep_csv(&hist_stats_05),
-    )?;
-    let hist_plot_05 = out_dir.join("paper_e2_interval_hist_post_seed_sweep_bw0p50.svg");
-    render_hist_mean_std(
-        &hist_plot_05,
-        &format!("{post_label_title} Interval Histogram (seed sweep, mean frac, bin=0.50st)"),
-        &hist_stats_05.centers,
-        &hist_stats_05.mean_frac,
-        &hist_stats_05.std_frac,
-        0.5,
-        "mean fraction",
-    )?;
+    if diagnostics {
+        write_with_log(
+            out_dir.join("paper_e2_interval_hist_post_seed_sweep_bw0p50.csv"),
+            e2_hist_seed_sweep_csv(&hist_stats_05),
+        )?;
+        let hist_plot_05 = out_dir.join("paper_e2_interval_hist_post_seed_sweep_bw0p50.svg");
+        render_hist_mean_std(
+            &hist_plot_05,
+            &format!("{post_label_title} Interval Histogram (seed sweep, mean frac, bin=0.50st)"),
+            &hist_stats_05.centers,
+            &hist_stats_05.mean_frac,
+            &hist_stats_05.std_frac,
+            0.5,
+            "mean fraction",
+        )?;
 
-    let hist_stats_025 = e2_hist_seed_sweep(&baseline_runs, 0.25, hist_min, hist_max);
-    write_with_log(
-        out_dir.join("paper_e2_interval_hist_post_seed_sweep_bw0p25.csv"),
-        e2_hist_seed_sweep_csv(&hist_stats_025),
-    )?;
-    let hist_plot_025 = out_dir.join("paper_e2_interval_hist_post_seed_sweep_bw0p25.svg");
-    render_hist_mean_std(
-        &hist_plot_025,
-        &format!("{post_label_title} Interval Histogram (seed sweep, mean frac, bin=0.25st)"),
-        &hist_stats_025.centers,
-        &hist_stats_025.mean_frac,
-        &hist_stats_025.std_frac,
-        0.25,
-        "mean fraction",
-    )?;
-    let hist_plot_025_paper =
-        out_dir.join("paper_e2_interval_hist_post_seed_sweep_bw0p25_paper.svg");
-    render_hist_mean_std_fraction_auto_y(
-        &hist_plot_025_paper,
-        &format!("{post_label_title} Interval Histogram (paper, bin=0.25st)"),
-        &hist_stats_025.centers,
-        &hist_stats_025.mean_frac,
-        &hist_stats_025.std_frac,
-        0.25,
-        "semitones",
-        &[-7.0, -4.0, -3.0, 3.0, 4.0, 7.0],
-    )?;
-    let (folded_centers, folded_mean, folded_std) = fold_hist_abs_semitones(
-        &hist_stats_025.centers,
-        &hist_stats_025.mean_frac,
-        &hist_stats_025.std_frac,
-        0.25,
-    );
-    write_with_log(
-        out_dir.join("paper_e2_anchor_interval_hist_post_folded.csv"),
-        folded_hist_csv(&folded_centers, &folded_mean, &folded_std, hist_stats_025.n),
-    )?;
-    let folded_hist_plot = out_dir.join("paper_e2_anchor_interval_hist_post_folded.svg");
-    render_anchor_hist_post_folded(
-        &folded_hist_plot,
-        &hist_stats_025.centers,
-        &hist_stats_025.mean_frac,
-        &hist_stats_025.std_frac,
-        &folded_centers,
-        &folded_mean,
-        &folded_std,
-        0.25,
-    )?;
+        let hist_stats_025 = e2_hist_seed_sweep(&baseline_runs, 0.25, hist_min, hist_max);
+        write_with_log(
+            out_dir.join("paper_e2_interval_hist_post_seed_sweep_bw0p25.csv"),
+            e2_hist_seed_sweep_csv(&hist_stats_025),
+        )?;
+        let hist_plot_025 = out_dir.join("paper_e2_interval_hist_post_seed_sweep_bw0p25.svg");
+        render_hist_mean_std(
+            &hist_plot_025,
+            &format!("{post_label_title} Interval Histogram (seed sweep, mean frac, bin=0.25st)"),
+            &hist_stats_025.centers,
+            &hist_stats_025.mean_frac,
+            &hist_stats_025.std_frac,
+            0.25,
+            "mean fraction",
+        )?;
+        let hist_plot_025_paper =
+            out_dir.join("paper_e2_interval_hist_post_seed_sweep_bw0p25_paper.svg");
+        render_hist_mean_std_fraction_auto_y(
+            &hist_plot_025_paper,
+            &format!("{post_label_title} Interval Histogram (paper, bin=0.25st)"),
+            &hist_stats_025.centers,
+            &hist_stats_025.mean_frac,
+            &hist_stats_025.std_frac,
+            0.25,
+            "semitones",
+            &[-7.0, -4.0, -3.0, 3.0, 4.0, 7.0],
+        )?;
+        let (folded_centers, folded_mean, folded_std) = fold_hist_abs_semitones(
+            &hist_stats_025.centers,
+            &hist_stats_025.mean_frac,
+            &hist_stats_025.std_frac,
+            0.25,
+        );
+        write_with_log(
+            out_dir.join("paper_e2_anchor_interval_hist_post_folded.csv"),
+            folded_hist_csv(&folded_centers, &folded_mean, &folded_std, hist_stats_025.n),
+        )?;
+        let folded_hist_plot = out_dir.join("paper_e2_anchor_interval_hist_post_folded.svg");
+        render_anchor_hist_post_folded(
+            &folded_hist_plot,
+            &hist_stats_025.centers,
+            &hist_stats_025.mean_frac,
+            &hist_stats_025.std_frac,
+            &folded_centers,
+            &folded_mean,
+            &folded_std,
+            0.25,
+        )?;
+    }
 
     let (pairwise_hist_stats, pairwise_n_pairs) =
         e2_pairwise_hist_seed_sweep(&baseline_runs, E2_PAIRWISE_BIN_ST, 0.0, 12.0);
@@ -2655,91 +2645,95 @@ fn plot_e2_emergent_harmony(
     let pairwise_n_pairs_controls = pairwise_n_pairs
         .min(pairwise_n_pairs_nohill)
         .min(pairwise_n_pairs_norep);
-    write_with_log(
-        out_dir.join("paper_e2_pairwise_interval_histogram_seeds.csv"),
-        e2_pairwise_hist_seed_sweep_csv(&pairwise_hist_stats, pairwise_n_pairs),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_pairwise_interval_histogram_seeds_ci95.csv"),
-        e2_pairwise_hist_seed_sweep_ci95_csv(&pairwise_hist_stats, pairwise_n_pairs),
-    )?;
-    let pairwise_hist_plot = out_dir.join("paper_e2_pairwise_interval_histogram_seeds.svg");
-    render_hist_mean_std(
-        &pairwise_hist_plot,
-        &format!(
-            "Pairwise Interval Histogram (final snapshot, seed sweep, mean frac, bin={:.2}st)",
-            E2_PAIRWISE_BIN_ST
-        ),
-        &pairwise_hist_stats.centers,
-        &pairwise_hist_stats.mean_frac,
-        &pairwise_hist_stats.std_frac,
-        E2_PAIRWISE_BIN_ST,
-        "mean fraction",
-    )?;
     let pairwise_ci95_frac =
         std_series_to_ci95(&pairwise_hist_stats.std_frac, pairwise_hist_stats.n);
-    let pairwise_hist_plot_paper =
-        out_dir.join("paper_e2_pairwise_interval_histogram_seeds_paper.svg");
-    render_pairwise_histogram_paper(
-        &pairwise_hist_plot_paper,
-        "Pairwise Interval Histogram (paper style, 95% CI)",
-        &pairwise_hist_stats.centers,
-        &pairwise_hist_stats.mean_frac,
-        &pairwise_ci95_frac,
-        E2_PAIRWISE_BIN_ST,
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_pairwise_interval_histogram_controls_seeds.csv"),
-        e2_pairwise_hist_controls_seed_sweep_csv(
-            &pairwise_hist_stats,
-            &pairwise_hist_nohill,
-            &pairwise_hist_norep,
-            pairwise_n_pairs_controls,
-        ),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_pairwise_interval_histogram_controls_seeds_ci95.csv"),
-        e2_pairwise_hist_controls_seed_sweep_ci95_csv(
-            &pairwise_hist_stats,
-            &pairwise_hist_nohill,
-            &pairwise_hist_norep,
-            pairwise_n_pairs_controls,
-        ),
-    )?;
-    let pairwise_controls_plot =
-        out_dir.join("paper_e2_pairwise_interval_histogram_controls_seeds.svg");
-    render_pairwise_histogram_controls_overlay(
-        &pairwise_controls_plot,
-        "Pairwise Interval Histogram (controls overlay)",
-        &pairwise_hist_stats.centers,
-        &pairwise_hist_stats.mean_frac,
-        &pairwise_hist_nohill.mean_frac,
-        &pairwise_hist_norep.mean_frac,
-    )?;
-
-    let mut consonant_rows = Vec::new();
-    consonant_rows.extend(consonant_mass_rows_for_condition(
-        "baseline",
-        &baseline_runs,
-    ));
-    consonant_rows.extend(consonant_mass_rows_for_condition("nohill", &nohill_runs));
-    consonant_rows.extend(consonant_mass_rows_for_condition("nocrowd", &norep_runs));
-    write_with_log(
-        out_dir.join("paper_e2_consonant_mass_by_seed.csv"),
-        consonant_mass_by_seed_csv(&consonant_rows),
-    )?;
-    write_with_log(
-        out_dir.join("paper_e2_consonant_mass_summary.csv"),
-        consonant_mass_summary_csv(&consonant_rows),
-    )?;
-    if E2_EMIT_CONSONANT_MASS_STATS {
+    if diagnostics {
         write_with_log(
-            out_dir.join("paper_e2_consonant_mass_stats.csv"),
-            consonant_mass_stats_csv(&consonant_rows),
+            out_dir.join("paper_e2_pairwise_interval_histogram_seeds.csv"),
+            e2_pairwise_hist_seed_sweep_csv(&pairwise_hist_stats, pairwise_n_pairs),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_pairwise_interval_histogram_seeds_ci95.csv"),
+            e2_pairwise_hist_seed_sweep_ci95_csv(&pairwise_hist_stats, pairwise_n_pairs),
+        )?;
+        let pairwise_hist_plot = out_dir.join("paper_e2_pairwise_interval_histogram_seeds.svg");
+        render_hist_mean_std(
+            &pairwise_hist_plot,
+            &format!(
+                "Pairwise Interval Histogram (final snapshot, seed sweep, mean frac, bin={:.2}st)",
+                E2_PAIRWISE_BIN_ST
+            ),
+            &pairwise_hist_stats.centers,
+            &pairwise_hist_stats.mean_frac,
+            &pairwise_hist_stats.std_frac,
+            E2_PAIRWISE_BIN_ST,
+            "mean fraction",
+        )?;
+        let pairwise_hist_plot_paper =
+            out_dir.join("paper_e2_pairwise_interval_histogram_seeds_paper.svg");
+        render_pairwise_histogram_paper(
+            &pairwise_hist_plot_paper,
+            "Pairwise Interval Histogram (paper style, 95% CI)",
+            &pairwise_hist_stats.centers,
+            &pairwise_hist_stats.mean_frac,
+            &pairwise_ci95_frac,
+            E2_PAIRWISE_BIN_ST,
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_pairwise_interval_histogram_controls_seeds.csv"),
+            e2_pairwise_hist_controls_seed_sweep_csv(
+                &pairwise_hist_stats,
+                &pairwise_hist_nohill,
+                &pairwise_hist_norep,
+                pairwise_n_pairs_controls,
+            ),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_pairwise_interval_histogram_controls_seeds_ci95.csv"),
+            e2_pairwise_hist_controls_seed_sweep_ci95_csv(
+                &pairwise_hist_stats,
+                &pairwise_hist_nohill,
+                &pairwise_hist_norep,
+                pairwise_n_pairs_controls,
+            ),
+        )?;
+        let pairwise_controls_plot =
+            out_dir.join("paper_e2_pairwise_interval_histogram_controls_seeds.svg");
+        render_pairwise_histogram_controls_overlay(
+            &pairwise_controls_plot,
+            "Pairwise Interval Histogram (controls overlay)",
+            &pairwise_hist_stats.centers,
+            &pairwise_hist_stats.mean_frac,
+            &pairwise_hist_nohill.mean_frac,
+            &pairwise_hist_norep.mean_frac,
         )?;
     }
-    let consonant_mass_plot = out_dir.join("paper_e2_consonant_mass_summary.svg");
-    render_consonant_mass_summary_plot(&consonant_mass_plot, &consonant_rows)?;
+
+    if diagnostics {
+        let mut consonant_rows = Vec::new();
+        consonant_rows.extend(consonant_mass_rows_for_condition(
+            "baseline",
+            &baseline_runs,
+        ));
+        consonant_rows.extend(consonant_mass_rows_for_condition("nohill", &nohill_runs));
+        consonant_rows.extend(consonant_mass_rows_for_condition("nocrowd", &norep_runs));
+        write_with_log(
+            out_dir.join("paper_e2_consonant_mass_by_seed.csv"),
+            consonant_mass_by_seed_csv(&consonant_rows),
+        )?;
+        write_with_log(
+            out_dir.join("paper_e2_consonant_mass_summary.csv"),
+            consonant_mass_summary_csv(&consonant_rows),
+        )?;
+        if E2_EMIT_CONSONANT_MASS_STATS {
+            write_with_log(
+                out_dir.join("paper_e2_consonant_mass_stats.csv"),
+                consonant_mass_stats_csv(&consonant_rows),
+            )?;
+        }
+        let consonant_mass_plot = out_dir.join("paper_e2_consonant_mass_summary.svg");
+        render_consonant_mass_summary_plot(&consonant_mass_plot, &consonant_rows)?;
+    }
 
     let figure2_path = out_dir.join("paper_e2_figure_e2_2.svg");
     render_e2_figure2(
@@ -2749,7 +2743,6 @@ fn plot_e2_emergent_harmony(
         &pairwise_ci95_frac,
         &pairwise_hist_nohill.mean_frac,
         &pairwise_hist_norep.mean_frac,
-        &consonant_rows,
         &hist_rows,
         &diversity_rows_vec,
     )?;
@@ -2758,6 +2751,10 @@ fn plot_e2_emergent_harmony(
     }
     if candidate_search {
         plot_e2_candidate_search(out_dir, space, anchor_hz, phase_mode, quick)?;
+    }
+
+    if !diagnostics {
+        return Ok(());
     }
 
     let nohill_hist_05 = e2_hist_seed_sweep(&nohill_runs, 0.5, hist_min, hist_max);
@@ -3174,9 +3171,9 @@ fn plot_e2_emergent_harmony(
     }
 
     // ── Shuffled-landscape control (supplementary) ──
-    {
+    if let Some(shuffled_runs) = shuffled_runs.as_ref() {
         eprintln!("  Writing shuffled-landscape comparison...");
-        let shuf_diversity: Vec<DiversityRow> = diversity_rows("shuffled", &shuffled_runs);
+        let shuf_diversity: Vec<DiversityRow> = diversity_rows("shuffled", shuffled_runs);
         let base_diversity: Vec<DiversityRow> = diversity_rows("baseline", &baseline_runs);
 
         fn div_summary_ctrl(rows: &[DiversityRow]) -> (f32, f32, f32, f32) {
@@ -3205,7 +3202,7 @@ fn plot_e2_emergent_harmony(
                 })
                 .collect()
         }
-        let shuf_c_scores = post_mean_c_ctrl(&shuffled_runs, half, burn);
+        let shuf_c_scores = post_mean_c_ctrl(shuffled_runs, half, burn);
         let base_c_scores = post_mean_c_ctrl(&baseline_runs, half, burn);
         let (shuf_c_m, shuf_c_s) = mean_std_scalar(&shuf_c_scores);
         let (base_c_m, base_c_s) = mean_std_scalar(&base_c_scores);
@@ -3244,7 +3241,7 @@ fn plot_e2_emergent_harmony(
                 })
                 .collect()
         }
-        let shuf_ent = entropy_from_runs_ctrl(&shuffled_runs);
+        let shuf_ent = entropy_from_runs_ctrl(shuffled_runs);
         let base_ent = entropy_from_runs_ctrl(&baseline_runs);
         let (shuf_ent_m, shuf_ent_s) = mean_std_scalar(&shuf_ent);
         let (base_ent_m, base_ent_s) = mean_std_scalar(&base_ent);
@@ -4860,23 +4857,24 @@ fn plot_e3_metabolic_selection(
     let conditions = [E3Condition::Baseline, E3Condition::NoRecharge];
 
     let mut long_csv = String::from(
-        "condition,seed,life_id,agent_id,birth_step,death_step,lifetime_steps,c_level01_birth,c_level01_firstk,avg_c_level01_tick,c_level01_std_over_life,avg_c_level01_attack,attack_tick_count\n",
+        "condition,seed,life_id,agent_id,birth_step,death_step,lifetime_steps,c_score_birth,c_score_firstk,avg_c_score_tick,c_score_std_over_life,avg_c_score_attack,c_level01_birth,c_level01_firstk,avg_c_level01_tick,c_level01_std_over_life,avg_c_level01_attack,attack_tick_count\n",
     );
     let mut summary_csv = String::from(
         "condition,seed,n_deaths,pearson_r_firstk,pearson_p_firstk,spearman_rho_firstk,spearman_p_firstk,logrank_p_firstk,logrank_p_firstk_q25q75,median_high_firstk,median_low_firstk,pearson_r_birth,pearson_p_birth,spearman_rho_birth,spearman_p_birth,pearson_r_attack,pearson_p_attack,spearman_rho_attack,spearman_p_attack,n_attack_lives\n",
     );
     let mut policy_csv = String::from(
-        "condition,dt_sec,basal_cost_per_sec,action_cost_per_attack,recharge_per_attack\n",
+        "condition,dt_sec,basal_cost_per_sec,action_cost_per_attack,recharge_per_attack,continuous_recharge_per_sec\n",
     );
     for condition in conditions {
         let params = e3_policy_params(condition);
         policy_csv.push_str(&format!(
-            "{},{:.6},{:.6},{:.6},{:.6}\n",
+            "{},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
             params.condition,
             params.dt_sec,
             params.basal_cost_per_sec,
             params.action_cost_per_attack,
-            params.recharge_per_attack
+            params.recharge_per_attack,
+            params.continuous_recharge_per_sec
         ));
     }
     write_with_log(out_dir.join("paper_e3_policy_params.csv"), policy_csv)?;
@@ -4902,7 +4900,7 @@ fn plot_e3_metabolic_selection(
 
             for rec in &deaths {
                 long_csv.push_str(&format!(
-                    "{},{},{},{},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{}\n",
+                    "{},{},{},{},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{}\n",
                     rec.condition,
                     rec.seed,
                     rec.life_id,
@@ -4910,6 +4908,11 @@ fn plot_e3_metabolic_selection(
                     rec.birth_step,
                     rec.death_step,
                     rec.lifetime_steps,
+                    rec.c_score_birth,
+                    rec.c_score_firstk,
+                    rec.avg_c_score_tick,
+                    rec.c_score_std_over_life,
+                    rec.avg_c_score_attack,
                     rec.c_level_birth,
                     rec.c_level_firstk,
                     rec.avg_c_level_tick,
@@ -5097,20 +5100,20 @@ fn plot_e3_metabolic_selection(
             .find(|o| o.condition == E3Condition::NoRecharge && o.seed == rep_seed);
         if let (Some(base), Some(norecharge)) = (base, norecharge) {
             let base_scatter = build_scatter_data(
-                &base.arrays.c_level_firstk,
+                &base.arrays.c_score_firstk,
                 &base.arrays.lifetimes,
                 rep_seed ^ 0xE301_u64,
             );
             let norecharge_scatter = build_scatter_data(
-                &norecharge.arrays.c_level_firstk,
+                &norecharge.arrays.c_score_firstk,
                 &norecharge.arrays.lifetimes,
                 rep_seed ^ 0xE301_u64,
             );
             let compare_scatter = out_dir.join("paper_e3_firstk_scatter_compare.svg");
             render_scatter_compare(
                 &compare_scatter,
-                "C_level01_firstK vs Lifetime",
-                "C_level01_firstK",
+                "C_score_firstK vs Lifetime",
+                "C_score_firstK",
                 "Baseline",
                 &base_scatter,
                 "NoRecharge",
@@ -5167,19 +5170,19 @@ fn plot_e3_metabolic_selection(
     let pooled_norecharge = e3_pooled_arrays(&seed_outputs, E3Condition::NoRecharge);
     let pooled_scatter_path = out_dir.join("paper_e3_firstk_scatter_compare_pooled.svg");
     let pooled_base_scatter = build_scatter_data(
-        &pooled_baseline.c_level_firstk,
+        &pooled_baseline.c_score_firstk,
         &pooled_baseline.lifetimes,
         0xE3B0_u64,
     );
     let pooled_nore_scatter = build_scatter_data(
-        &pooled_norecharge.c_level_firstk,
+        &pooled_norecharge.c_score_firstk,
         &pooled_norecharge.lifetimes,
         0xE3B1_u64,
     );
     render_scatter_compare(
         &pooled_scatter_path,
-        "C_level01_firstK vs Lifetime (pooled)",
-        "C_level01_firstK",
+        "C_score_firstK vs Lifetime (pooled)",
+        "C_score_firstK",
         "Baseline",
         &pooled_base_scatter,
         "NoRecharge",
@@ -5521,21 +5524,30 @@ fn plot_e3_metabolic_selection(
 
 fn e3_extract_arrays(deaths: &[E3DeathRecord]) -> E3Arrays {
     let mut lifetimes = Vec::with_capacity(deaths.len());
+    let mut c_score_birth = Vec::with_capacity(deaths.len());
+    let mut c_score_firstk = Vec::with_capacity(deaths.len());
     let mut c_level_birth = Vec::with_capacity(deaths.len());
     let mut c_level_firstk = Vec::with_capacity(deaths.len());
+    let mut avg_score_attack = Vec::with_capacity(deaths.len());
     let mut avg_attack = Vec::with_capacity(deaths.len());
     let mut attack_tick_count = Vec::with_capacity(deaths.len());
     for d in deaths {
         lifetimes.push(d.lifetime_steps);
+        c_score_birth.push(d.c_score_birth);
+        c_score_firstk.push(d.c_score_firstk);
         c_level_birth.push(d.c_level_birth);
         c_level_firstk.push(d.c_level_firstk);
+        avg_score_attack.push(d.avg_c_score_attack);
         avg_attack.push(d.avg_c_level_attack);
         attack_tick_count.push(d.attack_tick_count);
     }
     E3Arrays {
         lifetimes,
+        c_score_birth,
+        c_score_firstk,
         c_level_birth,
         c_level_firstk,
+        avg_score_attack,
         avg_attack,
         attack_tick_count,
     }
@@ -5543,21 +5555,30 @@ fn e3_extract_arrays(deaths: &[E3DeathRecord]) -> E3Arrays {
 
 fn e3_pooled_arrays(outputs: &[E3SeedOutput], condition: E3Condition) -> E3Arrays {
     let mut lifetimes = Vec::new();
+    let mut c_score_birth = Vec::new();
+    let mut c_score_firstk = Vec::new();
     let mut c_level_birth = Vec::new();
     let mut c_level_firstk = Vec::new();
+    let mut avg_score_attack = Vec::new();
     let mut avg_attack = Vec::new();
     let mut attack_tick_count = Vec::new();
     for output in outputs.iter().filter(|o| o.condition == condition) {
         lifetimes.extend(output.arrays.lifetimes.iter().copied());
+        c_score_birth.extend(output.arrays.c_score_birth.iter().copied());
+        c_score_firstk.extend(output.arrays.c_score_firstk.iter().copied());
         c_level_birth.extend(output.arrays.c_level_birth.iter().copied());
         c_level_firstk.extend(output.arrays.c_level_firstk.iter().copied());
+        avg_score_attack.extend(output.arrays.avg_score_attack.iter().copied());
         avg_attack.extend(output.arrays.avg_attack.iter().copied());
         attack_tick_count.extend(output.arrays.attack_tick_count.iter().copied());
     }
     E3Arrays {
         lifetimes,
+        c_score_birth,
+        c_score_firstk,
         c_level_birth,
         c_level_firstk,
+        avg_score_attack,
         avg_attack,
         attack_tick_count,
     }
@@ -5639,16 +5660,21 @@ fn render_e3_firstk_histogram(
 
 fn e3_lifetimes_csv(deaths: &[E3DeathRecord]) -> String {
     let mut out = String::from(
-        "life_id,agent_id,birth_step,death_step,lifetime_steps,c_level01_birth,c_level01_firstk,avg_c_level01_tick,c_level01_std_over_life,avg_c_level01_attack,attack_tick_count\n",
+        "life_id,agent_id,birth_step,death_step,lifetime_steps,c_score_birth,c_score_firstk,avg_c_score_tick,c_score_std_over_life,avg_c_score_attack,c_level01_birth,c_level01_firstk,avg_c_level01_tick,c_level01_std_over_life,avg_c_level01_attack,attack_tick_count\n",
     );
     for d in deaths {
         out.push_str(&format!(
-            "{},{},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{}\n",
+            "{},{},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{}\n",
             d.life_id,
             d.agent_id,
             d.birth_step,
             d.death_step,
             d.lifetime_steps,
+            d.c_score_birth,
+            d.c_score_firstk,
+            d.avg_c_score_tick,
+            d.c_score_std_over_life,
+            d.avg_c_score_attack,
             d.c_level_birth,
             d.c_level_firstk,
             d.avg_c_level_tick,
@@ -6570,8 +6596,22 @@ fn plot_e6_hereditary_adaptation(
     };
 
     let all_results = run_jobs(&[
-        ("heredity_nosel", E6Condition::Heredity, false, None, false, false),
-        ("random_nosel", E6Condition::Random, false, None, false, false),
+        (
+            "heredity_nosel",
+            E6Condition::Heredity,
+            false,
+            None,
+            false,
+            false,
+        ),
+        (
+            "random_nosel",
+            E6Condition::Random,
+            false,
+            None,
+            false,
+            false,
+        ),
         ("heredity", E6Condition::Heredity, true, None, false, false),
         ("random", E6Condition::Random, true, None, false, false),
     ]);
@@ -6772,9 +6812,9 @@ fn plot_e6_hereditary_adaptation(
     let mut heat_counts: HashMap<(usize, i32), f32> = HashMap::new();
     let mut hered_seed_last_step: HashMap<u64, usize> = HashMap::new();
     let mut hered_seed_last_bins: HashMap<u64, Vec<i32>> = HashMap::new();
+    let mut final_occ_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut endpoint_metrics_csv =
         String::from("condition,seed,anchor_ji_mass,pairwise_ji_score\n");
-    let mut final_anchor_ji_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut final_pairwise_ji_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
 
     for (cond_label, _condition, _selection_enabled, seed, result) in &all_results {
@@ -6953,8 +6993,7 @@ fn plot_e6_hereditary_adaptation(
                 ));
                 if *cond_label == "heredity" {
                     let half_range_st = 0.5 * E2_PAPER_RANGE_OCT * 12.0;
-                    let clamped =
-                        semitone.clamp(-half_range_st, half_range_st - f32::EPSILON);
+                    let clamped = semitone.clamp(-half_range_st, half_range_st - f32::EPSILON);
                     let bin = ((clamped + half_range_st) / E6_INTERVAL_BIN_ST).floor() as i32;
                     *heat_counts.entry((snap.step, bin)).or_insert(0.0) += 1.0;
                     let entry = hered_seed_last_bins.entry(*seed).or_default();
@@ -6989,10 +7028,10 @@ fn plot_e6_hereditary_adaptation(
         } else {
             run_points.iter().map(|p| p.n_alive as f32).sum::<f32>() / run_points.len() as f32
         };
-        final_anchor_ji_by_label
+        final_occ_by_label
             .entry(*cond_label)
             .or_default()
-            .push(final_anchor_ji_mass);
+            .push(end.consonant_occupation);
         final_pairwise_ji_by_label
             .entry(*cond_label)
             .or_default()
@@ -7024,7 +7063,13 @@ fn plot_e6_hereditary_adaptation(
         ));
     }
 
-    let write_life_checks_csv = |results: &[(&'static str, E6Condition, bool, u64, E6RunResult)],
+    let write_life_checks_csv = |results: &[(
+        &'static str,
+        E6Condition,
+        bool,
+        u64,
+        E6RunResult,
+    )],
                                  path: &Path|
      -> Result<(), Box<dyn Error>> {
         let mut csv = String::from(
@@ -8780,20 +8825,24 @@ fn plot_e6_hereditary_adaptation(
         }
     }
 
-    let c_heredity_nosel =
-        e6_series_stats(mean_c_by_cond_seed.get("heredity_nosel"), E6_SNAPSHOT_INTERVAL);
-    let c_random_nosel =
-        e6_series_stats(mean_c_by_cond_seed.get("random_nosel"), E6_SNAPSHOT_INTERVAL);
+    let c_heredity_nosel = e6_series_stats(
+        mean_c_by_cond_seed.get("heredity_nosel"),
+        E6_SNAPSHOT_INTERVAL,
+    );
+    let c_random_nosel = e6_series_stats(
+        mean_c_by_cond_seed.get("random_nosel"),
+        E6_SNAPSHOT_INTERVAL,
+    );
     let c_heredity = e6_series_stats(mean_c_by_cond_seed.get("heredity"), E6_SNAPSHOT_INTERVAL);
     let c_random = e6_series_stats(mean_c_by_cond_seed.get("random"), E6_SNAPSHOT_INTERVAL);
-    let final_anchor_ji_heredity_nosel = final_anchor_ji_by_label
+    let final_occ_heredity_nosel = final_occ_by_label
         .remove("heredity_nosel")
         .unwrap_or_default();
-    let final_anchor_ji_random_nosel = final_anchor_ji_by_label
+    let final_occ_random_nosel = final_occ_by_label
         .remove("random_nosel")
         .unwrap_or_default();
-    let final_anchor_ji_heredity = final_anchor_ji_by_label.remove("heredity").unwrap_or_default();
-    let final_anchor_ji_random = final_anchor_ji_by_label.remove("random").unwrap_or_default();
+    let final_occ_heredity = final_occ_by_label.remove("heredity").unwrap_or_default();
+    let final_occ_random = final_occ_by_label.remove("random").unwrap_or_default();
     let final_pairwise_ji_heredity_nosel = final_pairwise_ji_by_label
         .remove("heredity_nosel")
         .unwrap_or_default();
@@ -8803,7 +8852,9 @@ fn plot_e6_hereditary_adaptation(
     let final_pairwise_ji_heredity = final_pairwise_ji_by_label
         .remove("heredity")
         .unwrap_or_default();
-    let final_pairwise_ji_random = final_pairwise_ji_by_label.remove("random").unwrap_or_default();
+    let final_pairwise_ji_random = final_pairwise_ji_by_label
+        .remove("random")
+        .unwrap_or_default();
     render_e6_figure(
         &out_dir.join("paper_e6_figure.svg"),
         &c_heredity_nosel,
@@ -8811,10 +8862,10 @@ fn plot_e6_hereditary_adaptation(
         &c_heredity,
         &c_random,
         &heat_counts,
-        &final_anchor_ji_heredity_nosel,
-        &final_anchor_ji_random_nosel,
-        &final_anchor_ji_heredity,
-        &final_anchor_ji_random,
+        &final_occ_heredity_nosel,
+        &final_occ_random_nosel,
+        &final_occ_heredity,
+        &final_occ_random,
         &final_pairwise_ji_heredity_nosel,
         &final_pairwise_ji_random_nosel,
         &final_pairwise_ji_heredity,
@@ -8866,8 +8917,7 @@ fn plot_e6_hereditary_adaptation(
             permutation_pvalue_one_sample(&main_selection, 100_000, 0xE6F5_2101);
         let (her_p, her_method) =
             permutation_pvalue_one_sample(&main_heredity, 100_000, 0xE6F5_2102);
-        let (int_p, int_method) =
-            permutation_pvalue_one_sample(&interaction, 100_000, 0xE6F5_2103);
+        let (int_p, int_method) = permutation_pvalue_one_sample(&interaction, 100_000, 0xE6F5_2103);
         let report = format!(
             "E6 Fig.5 2x2 Factorial (selection x heredity)\n\
              ===========================================\n\
@@ -8958,8 +9008,7 @@ fn plot_e6_hereditary_adaptation(
             permutation_pvalue_one_sample(&main_selection, 100_000, 0xC1E6_0101);
         let (her_p, her_method) =
             permutation_pvalue_one_sample(&main_heredity, 100_000, 0xC1E6_0102);
-        let (int_p, int_method) =
-            permutation_pvalue_one_sample(&interaction, 100_000, 0xC1E6_0103);
+        let (int_p, int_method) = permutation_pvalue_one_sample(&interaction, 100_000, 0xC1E6_0103);
         let (h0_mean, h0_ci) = mean_ci(&ji_h0);
         let (r0_mean, r0_ci) = mean_ci(&ji_r0);
         let (h1_mean, h1_ci) = mean_ci(&ji_h1);
@@ -9186,10 +9235,10 @@ fn render_e6_figure(
     c_heredity: &[(f32, f32, f32)],
     c_random: &[(f32, f32, f32)],
     heat_counts: &HashMap<(usize, i32), f32>,
-    final_anchor_ji_heredity_nosel: &[f32],
-    final_anchor_ji_random_nosel: &[f32],
-    final_anchor_ji_heredity: &[f32],
-    final_anchor_ji_random: &[f32],
+    final_occ_heredity_nosel: &[f32],
+    final_occ_random_nosel: &[f32],
+    final_occ_heredity: &[f32],
+    final_occ_random: &[f32],
     final_pairwise_ji_heredity_nosel: &[f32],
     final_pairwise_ji_random_nosel: &[f32],
     final_pairwise_ji_heredity: &[f32],
@@ -9234,12 +9283,12 @@ fn render_e6_figure(
     draw_e6_heatmap_panel(&left_panels[1], heat_counts)?;
     draw_e6_factorial_metric_panel(
         &right_panels[0],
-        "C. Anchor JI mass",
-        "JI mass",
-        final_anchor_ji_heredity_nosel,
-        final_anchor_ji_random_nosel,
-        final_anchor_ji_heredity,
-        final_anchor_ji_random,
+        "C. Consonant occupation",
+        "occupation",
+        final_occ_heredity_nosel,
+        final_occ_random_nosel,
+        final_occ_heredity,
+        final_occ_random,
         0.0,
         Some(1.0),
         64,
@@ -9399,9 +9448,14 @@ where
     let (h1_mean, h1_ci) = mean_ci(heredity_sel);
     let (r1_mean, r1_ci) = mean_ci(random_sel);
     let y_hi = y_hi_override.unwrap_or_else(|| {
-        [h0_mean + h0_ci, r0_mean + r0_ci, h1_mean + h1_ci, r1_mean + r1_ci]
-            .into_iter()
-            .fold(y_lo + 1e-6, f32::max)
+        [
+            h0_mean + h0_ci,
+            r0_mean + r0_ci,
+            h1_mean + h1_ci,
+            r1_mean + r1_ci,
+        ]
+        .into_iter()
+        .fold(y_lo + 1e-6, f32::max)
             * 1.15
     });
 
@@ -9477,10 +9531,7 @@ where
         .margin(20)
         .x_label_area_size(90)
         .y_label_area_size(120)
-        .build_cartesian_2d(
-            0.0f32..x_max.max(1.0),
-            -half_range_cents..half_range_cents,
-        )?;
+        .build_cartesian_2d(0.0f32..x_max.max(1.0), -half_range_cents..half_range_cents)?;
 
     chart
         .configure_mesh()
@@ -11905,8 +11956,11 @@ struct E2SweepStats {
 
 struct E3Arrays {
     lifetimes: Vec<u32>,
+    c_score_birth: Vec<f32>,
+    c_score_firstk: Vec<f32>,
     c_level_birth: Vec<f32>,
     c_level_firstk: Vec<f32>,
+    avg_score_attack: Vec<f32>,
     avg_attack: Vec<f32>,
     attack_tick_count: Vec<u32>,
 }
@@ -21103,6 +21157,7 @@ fn render_e4_kernel_gate(out_path: &Path, anchor_hz: f32) -> Result<(), Box<dyn 
     let mut points: Vec<(f32, f32)> = Vec::new();
     for weight in build_weight_grid(E4_WEIGHT_FINE_STEP) {
         let params = HarmonicityParams {
+            rho_common_overtone: 0.4,
             mirror_weight: weight,
             ..HarmonicityParams::default()
         };
@@ -21211,7 +21266,10 @@ fn build_env_scans(
 
 fn build_consonance_workspace(space: &Log2Space) -> ConsonanceWorkspace {
     let roughness_kernel = RoughnessKernel::new(KernelParams::default(), 0.005);
-    let harmonicity_kernel = HarmonicityKernel::new(space, HarmonicityParams::default());
+    let mut harmonicity_params = HarmonicityParams::default();
+    harmonicity_params.rho_common_overtone = harmonicity_params.rho_common_root;
+    harmonicity_params.mirror_weight = 0.5;
+    let harmonicity_kernel = HarmonicityKernel::new(space, harmonicity_params);
     let params = LandscapeParams {
         fs: 48_000.0,
         max_hist_cols: 1,
@@ -23560,19 +23618,15 @@ fn e3_metric_definition_text() -> String {
     );
     out.push_str("C_firstK definition: mean over first K=20 ticks after birth (0..1).\n");
     out.push_str("Metabolism update (conceptual):\n");
-    out.push_str("  E <- E - basal_cost_per_sec * dt\n");
-    out.push_str("  Attack tick: E <- E - action_cost + recharge_per_attack * C\n");
+    out.push_str("  E <- E - basal_cost_per_sec * dt + continuous_recharge_per_sec * C * dt\n");
     out.push_str(
-        "C is clamped to [0,1] in the metabolism step (defensive), so recharge is continuous.\n",
-    );
-    out.push_str(
-        "NoRecharge sets recharge_per_attack=0, so the C-dependent recharge term is removed.\n",
+        "C is clamped to [0,1] before applying recharge. NoRecharge sets continuous_recharge_per_sec=0, so the C-dependent recharge term is removed.\n",
     );
     out.push_str(
         "Representative seed is chosen by the median Pearson r of baseline C_firstK vs lifetime; pooled plots concatenate all seeds.\n",
     );
     out.push_str(
-        "c_level01_birth=first tick value; c_level01_firstk=mean of first K ticks; avg_c_level01_tick=mean over life; c_level01_std_over_life=std over life; avg_c_level01_attack=mean over attack ticks.\n",
+        "c_level01_birth=first tick value; c_level01_firstk=mean of first K ticks; avg_c_level01_tick=mean over life; c_level01_std_over_life=std over life; avg_c_level01_attack=mean over attack ticks (reported descriptively only; recharge is no longer attack-coupled).\n",
     );
     out
 }
@@ -27271,7 +27325,6 @@ fn render_e2_figure2(
     pairwise_baseline_std: &[f32],
     pairwise_nohill_mean: &[f32],
     _pairwise_norep_mean: &[f32],
-    _consonant_rows: &[ConsonantMassRow],
     hist_rows: &[HistStructureRow],
     diversity_rows: &[DiversityRow],
 ) -> Result<(), Box<dyn Error>> {
@@ -28349,10 +28402,17 @@ fn render_scatter_on_area(
                 .map(|(x, y)| Circle::new((*x, *y), 3, PAL_H.mix(0.5).filled())),
         )?;
     }
-    if data.x_min <= 0.5 && data.x_max >= 0.5 {
+    let ref_x = if data.x_min <= 0.0 && data.x_max >= 0.0 {
+        Some(0.0)
+    } else if data.x_min <= 0.5 && data.x_max >= 0.5 {
+        Some(0.5)
+    } else {
+        None
+    };
+    if let Some(ref_x) = ref_x {
         let y_top = data.y_max * 1.05;
         chart.draw_series(std::iter::once(PathElement::new(
-            vec![(0.5, 0.0), (0.5, y_top)],
+            vec![(ref_x, 0.0), (ref_x, y_top)],
             BLACK.mix(0.3),
         )))?;
     }
@@ -28737,8 +28797,8 @@ fn render_scatter_compare(
     let root = bitmap_root(out_path, (1400, 700)).into_drawing_area();
     root.fill(&WHITE)?;
     let areas = root.split_evenly((1, 2));
-    let x_min = 0.0;
-    let x_max = 1.0;
+    let x_min = left_data.x_min.min(right_data.x_min);
+    let x_max = left_data.x_max.max(right_data.x_max);
     let y_max = left_data.y_max.max(right_data.y_max);
     let left_common = scatter_with_ranges(left_data, x_min, x_max, y_max);
     let right_common = scatter_with_ranges(right_data, x_min, x_max, y_max);
@@ -28797,13 +28857,13 @@ fn render_e3_figure4(
     render_survival_on_area_compact(&panels[0], "A. Baseline", &left_surv_common)?;
     render_survival_on_area_compact(&panels[1], "B. No recharge", &right_surv_common)?;
 
-    let x_min = 0.0f32;
-    let x_max_s = 1.0f32;
+    let x_min = left_scatter.x_min.min(right_scatter.x_min);
+    let x_max_s = left_scatter.x_max.max(right_scatter.x_max);
     let y_max_s = left_scatter.y_max.max(right_scatter.y_max);
     let left_sc = scatter_with_ranges(left_scatter, x_min, x_max_s, y_max_s);
     let right_sc = scatter_with_ranges(right_scatter, x_min, x_max_s, y_max_s);
-    render_scatter_on_area_compact(&panels[2], "C. Baseline", "early consonance", &left_sc)?;
-    render_scatter_on_area_compact(&panels[3], "D. No recharge", "early consonance", &right_sc)?;
+    render_scatter_on_area_compact(&panels[2], "C. Baseline", "early C_score", &left_sc)?;
+    render_scatter_on_area_compact(&panels[3], "D. No recharge", "early C_score", &right_sc)?;
 
     root.present()?;
     Ok(())

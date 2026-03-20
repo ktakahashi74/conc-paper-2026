@@ -45,15 +45,14 @@
 
 \subsection{S1.2 Metabolic Policy (Experiment 2)}
 
-\noindent\textbf{Parameters:} $c_b\!=\!0.5$/s, $c_a\!=\!0.02$, $r_E\!=\!0.5$, $\Delta t = 512/48000$\,s.
+\noindent\textbf{Parameters:} $c_b\!=\!0.5$/s, $r_E\!=\!0.4$/s, $\Delta t = 512/48000$\,s.
 
 \smallskip
 \noindent\texttt{for} each time step:\\
 \hspace*{1em}\texttt{for} each agent $a_i$:\\
+\hspace*{2em}$C_{\text{level01}} \gets \sigma\!\bigl(2 \cdot C_{\text{field}}(x_i)\bigr)$\\
 \hspace*{2em}$E_i \gets E_i - c_b \cdot \Delta t$ \hfill\textit{(basal drain)}\\
-\hspace*{2em}\texttt{if} phase $\phi_i$ crosses zero \texttt{and} $E_i > 0$: \hfill\textit{(attack event)}\\
-\hspace*{3em}$C_{\text{level01}} \gets \sigma\!\bigl(2 \cdot C_{\text{field}}(x_i)\bigr)$\\
-\hspace*{3em}$E_i \gets E_i - c_a + r_E \cdot C_{\text{level01}}$\\
+\hspace*{2em}$E_i \gets E_i + r_E \cdot C_{\text{level01}} \cdot \Delta t$ \hfill\textit{(continuous recharge)}\\
 \hspace*{2em}\texttt{if} $E_i \leq 0$: agent dies; respawn at random pitch within $\pm 1$\,oct
 
 \subsection{S1.3 Shared Rhythm Scaffold (Experiment 3)}
@@ -150,8 +149,7 @@ Burn-in discarded & & 10 steps & --- & --- & --- \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{Metabolism}} \\
 Basal cost & $c_b$ & --- & 0.5/s & --- & 0.5/s \\
-Attack cost & $c_a$ & --- & 0.02 & --- & 0.02 \\
-Recharge coefficient & $r_E$ & --- & 0.5/att & --- & 0.5/att \\
+Recharge coefficient & $r_E$ & --- & 0.4/s & --- & 0.10/s \\
 Energy cap & $E_{\text{cap}}$ & --- & 1.0 & --- & 1.0 \\
 Time step & $\Delta t$ & --- & 512/48k\,s & 0.02\,s & 512/48k\,s \\
 Termination & & --- & 200 deaths & 40\,s & 4000 deaths \\
