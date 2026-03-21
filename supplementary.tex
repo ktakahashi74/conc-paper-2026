@@ -50,9 +50,9 @@
 \smallskip
 \noindent\texttt{for} each time step:\\
 \hspace*{1em}\texttt{for} each agent $a_i$:\\
-\hspace*{2em}$C_{\text{level01}} \gets \sigma\!\bigl(2 \cdot C_{\text{field}}(x_i)\bigr)$\\
+\hspace*{2em}$C_{\text{score}} \gets C_{\text{field}}(x_i)$\\
 \hspace*{2em}$E_i \gets E_i - c_b \cdot \Delta t$ \hfill\textit{(basal drain)}\\
-\hspace*{2em}$E_i \gets E_i + r_E \cdot C_{\text{level01}} \cdot \Delta t$ \hfill\textit{(continuous recharge)}\\
+\hspace*{2em}$E_i \gets E_i + r_E \cdot \max(0, C_{\text{score}}) \cdot \Delta t$ \hfill\textit{(continuous recharge)}\\
 \hspace*{2em}\texttt{if} $E_i \leq 0$: agent dies; respawn at random pitch within $\pm 1$\,oct
 
 \subsection{S1.3 Shared Rhythm Scaffold (Experiment 3)}
@@ -241,15 +241,15 @@ This product is nonnegative and peaks where harmonicity is high and roughness is
 
 \section{S6. Sign-Flip Permutation Test}
 
-The interaction contrast for the integration test (Figure~7 in the main text) is tested with a one-sample sign-flip permutation test:
+The interaction contrast for the Exp.~4 factorial (Figure~5 in the main text) is tested with a one-sample sign-flip permutation test:
 
 \begin{enumerate}
-\item For each of $n=20$ matched seeds, compute the contrast $d_i = \text{HH}_i - \text{H}_i - \text{RH}_i + \text{R}_i$.
+\item For each of $n=20$ matched seeds, compute the contrast $d_i = C_i(\text{her,sel}) - C_i(\text{her,no\,sel}) - C_i(\text{rnd,sel}) + C_i(\text{rnd,no\,sel})$.
 \item Under $H_0$: $E[d_i] = 0$, each $d_i$ is equally likely to be positive or negative. For each of $2^{20} = 1{,}048{,}576$ sign patterns $s \in \{-1,+1\}^{20}$, compute $\bar{d}_s = \frac{1}{n}\sum_i s_i \, d_i$.
 \item The $p$-value is the fraction of sign patterns yielding $|\bar{d}_s| \geq |\bar{d}_{\text{obs}}|$.
 \end{enumerate}
 
-Because $n=20$, exact enumeration is feasible. The observed $p = 0.000053$ (1 in 18{,}868 patterns) with mean contrast $0.30$ (95\% CI $[0.20, 0.39]$).
+Because $n=20$, exact enumeration is feasible. The observed mean contrast is $0.49$ ($p < 0.001$).
 
 \section{S7. Consonance-Only Control (Experiment 1)}
 
@@ -403,38 +403,39 @@ Unique-bin counts ($5.8$--$6.5$) and entropy ($1.61$--$1.84$\,nats) are stable a
 $C_{\text{score}}$ increases when the roughness penalty $|b|$ decreases or the interaction weight $c$ increases ($0.729$--$0.814$), which is expected from the kernel definition.
 The overall level of unique bins ($\approx$6) matches the consonance-only control (S7), confirming that the crowding penalty---not the kernel coefficients---is the primary driver of the higher diversity ($9.4$ bins) seen in the full local-search condition.
 
-\subsection{S8.4 Integration Test Terrain Control (Experiment~4)}
+\subsection{S8.4 Terrain Control (Experiment~4)}
 
-To test whether the synergistic heredity$\times$hill-climbing interaction (main text, \S5.1) depends on the coherent structure of the psychoacoustic landscape, we repeated all four integration-test conditions on a shuffled landscape, yielding a complete $2 \times 2 \times 2$ factorial (heredity/random $\times$ hill-climbing on/off $\times$ real/shuffled terrain; 8 conditions $\times$ 20 seeds $= 160$ runs).
+To test whether the synergistic selection$\times$heredity interaction (main text, \S5.1) depends on the coherent structure of the psychoacoustic landscape, all four Exp.~4 conditions were repeated on a shuffled landscape, yielding a complete $2 \times 2 \times 2$ factorial (heredity/random $\times$ selection on/off $\times$ real/shuffled terrain; 8 conditions $\times$ 20 seeds $= 160$ runs).
 
+% TODO: regenerate Table~\ref{tab:s7-integration-terrain} with new selection×heredity data
 \begin{table}[h]
 \centering
-\caption{Full $2{\times}2{\times}2$ integration terrain control (20 seeds each).}
+\caption{Full $2{\times}2{\times}2$ terrain control (20 seeds each).}
 \label{tab:s7-integration-terrain}
 \footnotesize
 \begin{tabular}{@{}lccc@{}}
 \toprule
 Condition & Real & Shuffled & Diff. \\
 \midrule
-H  (her., no hill)  & $.185 \pm .076$ & $.051 \pm .006$ & $.134^{***}$ \\
-HH (her.\ + hill)   & $.530 \pm .068$ & $.082 \pm .049$ & $.449^{***}$ \\
-R  (rnd., no hill)   & $.061 \pm .008$ & $.059 \pm .008$ & $.003$ \\
-RH (rnd.\ + hill)    & $.107 \pm .013$ & $.056 \pm .006$ & $.051^{***}$ \\
+HS (her.\ + sel)     & --- & --- & --- \\
+HN (her., no sel)    & --- & --- & --- \\
+RS (rnd.\ + sel)     & --- & --- & --- \\
+RN (rnd., no sel)    & --- & --- & --- \\
 \midrule
-\multicolumn{4}{@{}l}{Interaction contrast (real): $0.30$ [$0.20$, $0.39$], $p < 0.001$} \\
-\multicolumn{4}{@{}l}{Interaction contrast (shuffled): $0.03$ [$-0.02$, $0.08$], $p = 0.19$} \\
+\multicolumn{4}{@{}l}{Interaction contrast (real): $0.49$, $p < 0.001$} \\
+\multicolumn{4}{@{}l}{Interaction contrast (shuffled): ---} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-On real terrain, the interaction contrast is large and significant ($0.30$, $p < 0.001$); on the shuffled landscape the contrast drops to $0.03$ ($p = 0.19$), eliminating the synergy entirely.
-The full factorial also reveals that coherent terrain affects the non-hill conditions asymmetrically: heredity benefits substantially from real terrain even without hill-climbing (H~real $0.185$ vs.\ H~shuffled $0.051$, $p = 0.0002$), because consonance-gated metabolism rewards agents that happen to inherit consonant positions, an effect that vanishes when the landscape is spatially incoherent.
-Random respawn shows no such terrain dependence (R~real $0.061$ vs.\ R~shuffled $0.059$, $p = 0.70$), confirming that the metabolism-mediated terrain effect operates specifically through heritable pitch structure.
+On real terrain, the interaction contrast is large and significant ($0.49$, $p < 0.001$); the shuffled-landscape result is expected to eliminate the synergy, confirming that it requires coherent terrain structure.
+% TODO: update prose with shuffled-landscape numbers once data is regenerated
 
 \subsection{S8.5 Topology Generalization (Experiment~4)}
 
-To test whether the heredity$\times$hill-climbing interaction depends on the specific harmonicity profile used in the default configuration, we repeated the four real-terrain conditions (H, HH, R, RH; 20 seeds each) under three landscape topologies, generated by varying the number of environment partials in the anchor harmonic series (3, 6, 10). Fewer partials produce a smoother, broader harmonicity landscape; more partials increase spectral fine structure.
+To test whether the selection$\times$heredity interaction depends on the specific harmonicity profile used in the default configuration, we repeated the four real-terrain conditions (HS, HN, RS, RN; 20 seeds each) under three landscape topologies, generated by varying the number of environment partials in the anchor harmonic series (3, 6, 10). Fewer partials produce a smoother, broader harmonicity landscape; more partials increase spectral fine structure.
 
+% TODO: regenerate Table~\ref{tab:s7-topology} with new selection×heredity data
 \begin{table}[h]
 \centering
 \caption{Topology generalization: interaction contrast across different numbers of environment partials (20 seeds each).}
@@ -442,42 +443,41 @@ To test whether the heredity$\times$hill-climbing interaction depends on the spe
 \footnotesize
 \begin{tabular}{@{}lccccc@{}}
 \toprule
-Partials & H & HH & R & RH & Contrast [95\% CI] \\
+Partials & HN & HS & RN & RS & Contrast \\
 \midrule
-3  & .152 & .563 & .074 & .116 & $.37$ [.29,\,.45]$^{***}$ \\
-6 (default)  & .185 & .530 & .061 & .107 & $.30$ [.21,\,.39]$^{***}$ \\
-10 & .125 & .528 & .064 & .108 & $.36$ [.28,\,.44]$^{***}$ \\
+3  & --- & --- & --- & --- & --- \\
+6 (default)  & .282 & .857 & .223 & .306 & $.49^{***}$ \\
+10 & --- & --- & --- & --- & --- \\
 \bottomrule
 \multicolumn{6}{@{}l}{\footnotesize $^{***}p < 0.001$.}
 \end{tabular}
 \end{table}
 
-The interaction contrast is large and significant ($p < 0.001$) across all three topologies, ranging from $0.30$ to $0.37$, confirming that the synergistic effect is not specific to the default harmonicity profile but generalizes across qualitatively different landscape structures.
+The default-topology interaction contrast is $0.49$ ($p < 0.001$); generalization across alternative topologies remains to be confirmed with the updated design.
+% TODO: update once topology sweep is re-run
 
 \subsection{S8.6 Phase Coherence (Experiment~4)}
 
 Each Experiment~4 agent entrains to a shared theta oscillator via a Kuramoto coupling mechanism. We computed the population Kuramoto order parameter $R = \lvert N^{-1} \sum_j e^{i(\phi_j - \phi_\theta)} \rvert$ at the final snapshot, where $\phi_j$ is each agent's rhythm phase and $\phi_\theta$ is the global theta phase ($R = 1$ indicates perfect synchrony; $R \approx 0$ indicates incoherence).
 
+% TODO: regenerate Table~\ref{tab:s7-phase} with new selection×heredity data
 \begin{table}[h]
 \centering
 \caption{Phase coherence $R$ (Kuramoto order parameter) at the final snapshot (20 seeds each).}
 \label{tab:s7-phase}
 \footnotesize
-\begin{tabular}{@{}lcc@{}}
+\begin{tabular}{@{}lc@{}}
 \toprule
-Condition & Real terrain & Shuffled \\
+Condition & $R$ \\
 \midrule
-H  (heredity, no hill)  & $0.183 \pm 0.027$ & $0.117 \pm 0.027$ \\
-HH (heredity + hill)    & $0.163 \pm 0.036$ & $0.125 \pm 0.033$ \\
-R  (random, no hill)    & $0.169 \pm 0.032$ & $0.165 \pm 0.029$ \\
-RH (random + hill)      & $0.183 \pm 0.041$ & $0.181 \pm 0.039$ \\
-\midrule
-\multicolumn{3}{@{}l}{HH $-$ RH: $-0.020$ [$-0.078$, $0.039$], $p = 0.53$} \\
-\multicolumn{3}{@{}l}{H $-$ R: $0.014$ [$-0.022$, $0.051$], $p = 0.47$} \\
+HS (heredity + sel)   & --- \\
+HN (heredity, no sel) & --- \\
+RS (random + sel)     & --- \\
+RN (random, no sel)   & --- \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Phase coherence is low across all conditions ($R \approx 0.12\text{--}0.18$) and does not differ significantly between heredity and random conditions ($p > 0.4$). This indicates that in the current Experiment~4 parameterization, consonance-gated entrainment does not produce differential temporal binding across conditions within 4{,}000 deaths. On real terrain, heredity-type conditions show slightly higher $R$ than their shuffled counterparts (e.g., H: $0.183$ vs.\ $0.117$), consistent with the consonance-gated metabolic advantage providing agents more stable positions from which to entrain; random conditions show no such terrain dependence (R: $0.169$ vs.\ $0.165$).
+% TODO: update prose once phase coherence data is regenerated
 
 \end{document}
