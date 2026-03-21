@@ -18,9 +18,9 @@ use crate::sim::{
     E4RuntimeOverrides, E4TailSamples, E6AgentSnapshot, E6Condition, E6PitchSnapshot,
     E6RespawnRecord, E6RunConfig, E6RunResult, configure_shared_hillclimb_core, e3_policy_params,
     e3_reference_landscape, e3_reference_landscape_with_partials, e3_tessitura_bounds_for_range,
-    e4_paper_meta, e6_sampler_debug_scan, run_e3_collect_deaths, run_e4_condition_tail_samples,
-    run_e4_condition_tail_samples_with_wr, run_e4_mirror_schedule_samples, run_e6,
-    set_e4_runtime_overrides, shared_hill_move_cost_coeff,
+    e4_paper_meta, e6_mean_selection_score_for_freqs, e6_sampler_debug_scan, run_e3_collect_deaths,
+    run_e4_condition_tail_samples, run_e4_condition_tail_samples_with_wr,
+    run_e4_mirror_schedule_samples, run_e6, set_e4_runtime_overrides, shared_hill_move_cost_coeff,
 };
 use conchordal::core::consonance_kernel::{ConsonanceKernel, ConsonanceRepresentationParams};
 use conchordal::core::erb::hz_to_erb;
@@ -6620,7 +6620,7 @@ fn plot_e6_hereditary_adaptation(
             .collect::<Vec<_>>()
     };
 
-    let all_results = run_jobs(&[
+    let anchor_baseline_results = run_jobs(&[
         (
             "heredity_nosel",
             E6Condition::Heredity,
@@ -6649,6 +6649,44 @@ fn plot_e6_hereditary_adaptation(
             0.0,
         ),
         ("random", E6Condition::Random, true, None, false, false, 0.0),
+    ]);
+    let all_results = run_jobs(&[
+        (
+            "heredity_nosel",
+            E6Condition::Heredity,
+            false,
+            None,
+            false,
+            false,
+            0.0,
+        ),
+        (
+            "random_nosel",
+            E6Condition::Random,
+            false,
+            None,
+            false,
+            false,
+            0.0,
+        ),
+        (
+            "heredity",
+            E6Condition::Heredity,
+            true,
+            None,
+            false,
+            false,
+            0.25,
+        ),
+        (
+            "random",
+            E6Condition::Random,
+            true,
+            None,
+            false,
+            false,
+            0.25,
+        ),
     ]);
     let contextual_selection_results = run_jobs(&[
         (
@@ -6886,20 +6924,21 @@ fn plot_e6_hereditary_adaptation(
         "condition,seed,total_deaths,n_snapshots,mean_c_start,mean_c_end,delta_mean_c,occ_start,occ_end,delta_occ,entropy_start,entropy_end,delta_entropy,mean_n_alive\n",
     );
 
-    let mut mean_c_by_cond_seed: HashMap<&'static str, HashMap<u64, Vec<(usize, f32)>>> =
+    let mut mean_selection_by_cond_seed: HashMap<&'static str, HashMap<u64, Vec<(usize, f32)>>> =
         HashMap::new();
-    let mut final_c_by_label_seed: HashMap<&'static str, HashMap<u64, f32>> = HashMap::new();
+    let mut final_selection_by_label_seed: HashMap<&'static str, HashMap<u64, f32>> =
+        HashMap::new();
     let mut deaths_by_cond: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut heat_counts: HashMap<(usize, i32), f32> = HashMap::new();
     let mut hered_seed_last_step: HashMap<u64, usize> = HashMap::new();
     let mut hered_seed_last_bins: HashMap<u64, Vec<i32>> = HashMap::new();
     let (e6_min_range_st, e6_max_range_st) = e6_effective_range_bounds_st();
-    let mut final_occ_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut endpoint_metrics_csv =
         String::from("condition,seed,anchor_ji_mass,pairwise_ji_score\n");
     let mut contextual_endpoint_metrics_csv =
         String::from("condition,seed,mean_c_score_loo,g_scene\n");
-    let mut final_pairwise_ji_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
+    let mut final_contextual_loo_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
+    let mut final_contextual_g_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
 
     for (cond_label, _condition, _selection_enabled, seed, result) in &all_results {
         deaths_by_cond
@@ -7047,15 +7086,26 @@ fn plot_e6_hereditary_adaptation(
         }
 
         let mut run_points: Vec<E6SnapshotPoint> = Vec::with_capacity(result.snapshots.len());
+        let mainline_mix_weight = match *cond_label {
+            "heredity" | "random" => 0.25,
+            _ => 0.0,
+        };
         for snap in &result.snapshots {
             let point = e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape);
+            let selection_score = e6_mean_selection_score_for_freqs(
+                &snap.freqs_hz,
+                anchor_hz,
+                mainline_mix_weight,
+                None,
+                None,
+            );
             run_points.push(point);
-            mean_c_by_cond_seed
+            mean_selection_by_cond_seed
                 .entry(cond_label)
                 .or_default()
                 .entry(*seed)
                 .or_default()
-                .push((snap.step, point.mean_c_score));
+                .push((snap.step, selection_score));
 
             for (agent_idx, &freq) in snap.freqs_hz.iter().enumerate() {
                 if !freq.is_finite() || freq <= 0.0 {
@@ -7124,14 +7174,14 @@ fn plot_e6_hereditary_adaptation(
         } else {
             run_points.iter().map(|p| p.n_alive as f32).sum::<f32>() / run_points.len() as f32
         };
-        final_occ_by_label
+        final_contextual_loo_by_label
             .entry(*cond_label)
             .or_default()
-            .push(end.consonant_occupation);
-        final_pairwise_ji_by_label
+            .push(final_contextual_loo);
+        final_contextual_g_by_label
             .entry(*cond_label)
             .or_default()
-            .push(final_pairwise_ji_score);
+            .push(final_contextual_g);
         endpoint_metrics_csv.push_str(&format!(
             "{},{},{:.6},{:.6}\n",
             cond_label, seed, final_anchor_ji_mass, final_pairwise_ji_score
@@ -7140,10 +7190,25 @@ fn plot_e6_hereditary_adaptation(
             "{},{},{:.6},{:.6}\n",
             cond_label, seed, final_contextual_loo, final_contextual_g
         ));
-        final_c_by_label_seed
+        final_selection_by_label_seed
             .entry(*cond_label)
             .or_default()
-            .insert(*seed, end.mean_c_score);
+            .insert(
+                *seed,
+                result
+                    .snapshots
+                    .last()
+                    .map(|snap| {
+                        e6_mean_selection_score_for_freqs(
+                            &snap.freqs_hz,
+                            anchor_hz,
+                            mainline_mix_weight,
+                            None,
+                            None,
+                        )
+                    })
+                    .unwrap_or(0.0),
+            );
         summary_csv.push_str(&format!(
             "{},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.3}\n",
             cond_label,
@@ -8933,33 +8998,43 @@ fn plot_e6_hereditary_adaptation(
     }
 
     let c_heredity_nosel = e6_series_stats(
-        mean_c_by_cond_seed.get("heredity_nosel"),
+        mean_selection_by_cond_seed.get("heredity_nosel"),
         E6_SNAPSHOT_INTERVAL,
     );
     let c_random_nosel = e6_series_stats(
-        mean_c_by_cond_seed.get("random_nosel"),
+        mean_selection_by_cond_seed.get("random_nosel"),
         E6_SNAPSHOT_INTERVAL,
     );
-    let c_heredity = e6_series_stats(mean_c_by_cond_seed.get("heredity"), E6_SNAPSHOT_INTERVAL);
-    let c_random = e6_series_stats(mean_c_by_cond_seed.get("random"), E6_SNAPSHOT_INTERVAL);
-    let final_occ_heredity_nosel = final_occ_by_label
+    let c_heredity = e6_series_stats(
+        mean_selection_by_cond_seed.get("heredity"),
+        E6_SNAPSHOT_INTERVAL,
+    );
+    let c_random = e6_series_stats(
+        mean_selection_by_cond_seed.get("random"),
+        E6_SNAPSHOT_INTERVAL,
+    );
+    let final_loo_heredity_nosel = final_contextual_loo_by_label
         .remove("heredity_nosel")
         .unwrap_or_default();
-    let final_occ_random_nosel = final_occ_by_label
+    let final_loo_random_nosel = final_contextual_loo_by_label
         .remove("random_nosel")
         .unwrap_or_default();
-    let final_occ_heredity = final_occ_by_label.remove("heredity").unwrap_or_default();
-    let final_occ_random = final_occ_by_label.remove("random").unwrap_or_default();
-    let final_pairwise_ji_heredity_nosel = final_pairwise_ji_by_label
-        .remove("heredity_nosel")
-        .unwrap_or_default();
-    let final_pairwise_ji_random_nosel = final_pairwise_ji_by_label
-        .remove("random_nosel")
-        .unwrap_or_default();
-    let final_pairwise_ji_heredity = final_pairwise_ji_by_label
+    let final_loo_heredity = final_contextual_loo_by_label
         .remove("heredity")
         .unwrap_or_default();
-    let final_pairwise_ji_random = final_pairwise_ji_by_label
+    let final_loo_random = final_contextual_loo_by_label
+        .remove("random")
+        .unwrap_or_default();
+    let final_g_heredity_nosel = final_contextual_g_by_label
+        .remove("heredity_nosel")
+        .unwrap_or_default();
+    let final_g_random_nosel = final_contextual_g_by_label
+        .remove("random_nosel")
+        .unwrap_or_default();
+    let final_g_heredity = final_contextual_g_by_label
+        .remove("heredity")
+        .unwrap_or_default();
+    let final_g_random = final_contextual_g_by_label
         .remove("random")
         .unwrap_or_default();
     render_e6_figure(
@@ -8969,14 +9044,14 @@ fn plot_e6_hereditary_adaptation(
         &c_heredity,
         &c_random,
         &heat_counts,
-        &final_occ_heredity_nosel,
-        &final_occ_random_nosel,
-        &final_occ_heredity,
-        &final_occ_random,
-        &final_pairwise_ji_heredity_nosel,
-        &final_pairwise_ji_random_nosel,
-        &final_pairwise_ji_heredity,
-        &final_pairwise_ji_random,
+        &final_loo_heredity_nosel,
+        &final_loo_random_nosel,
+        &final_loo_heredity,
+        &final_loo_random,
+        &final_g_heredity_nosel,
+        &final_g_random_nosel,
+        &final_g_heredity,
+        &final_g_random,
     )?;
 
     {
@@ -8987,10 +9062,10 @@ fn plot_e6_hereditary_adaptation(
                     .filter_map(|seed| by_label_seed.get(label)?.get(seed).copied())
                     .collect::<Vec<_>>()
             };
-        let h0 = collect_seed_values("heredity_nosel", &final_c_by_label_seed);
-        let r0 = collect_seed_values("random_nosel", &final_c_by_label_seed);
-        let h1 = collect_seed_values("heredity", &final_c_by_label_seed);
-        let r1 = collect_seed_values("random", &final_c_by_label_seed);
+        let h0 = collect_seed_values("heredity_nosel", &final_selection_by_label_seed);
+        let r0 = collect_seed_values("random_nosel", &final_selection_by_label_seed);
+        let h1 = collect_seed_values("heredity", &final_selection_by_label_seed);
+        let r1 = collect_seed_values("random", &final_selection_by_label_seed);
         let interaction: Vec<f32> = h1
             .iter()
             .zip(&r1)
@@ -9028,7 +9103,7 @@ fn plot_e6_hereditary_adaptation(
         let report = format!(
             "E6 Fig.5 2x2 Factorial (selection x heredity)\n\
              ===========================================\n\
-             Final C_score means:\n\
+             Final selection-score means:\n\
              heredity, no selection: {:.4} +/- {:.4}\n\
              random,   no selection: {:.4} +/- {:.4}\n\
              heredity, selection:    {:.4} +/- {:.4}\n\
@@ -9281,7 +9356,8 @@ fn plot_e6_hereditary_adaptation(
         let contextual_text = format!(
             "E6 Contextual Readout Diagnostic\n\
              =============================\n\
-             Readout-only: dynamics remain anchor-based; metrics below are evaluated from the final population context.\n\
+             Mainline dynamics: no-selection runs use anchor-only recharge; selection-on runs use mixed anchor/contextual recharge (lambda=0.25).\n\
+             Metrics below are evaluated from the final population context.\n\
              \n\
              Mean LOO C_score by 2x2 condition:\n\
              heredity, no selection: {:.4} +/- {:.4}\n\
@@ -9609,10 +9685,10 @@ fn plot_e6_hereditary_adaptation(
              No-selection conditions are shared from the anchor-baseline 2x2.\n\
              Selection variants only modify the recharge field during the selection-on runs.\n\
              \n\
-             {}{}{}",
+            {}{}{}",
             render_mode(
                 "Anchor baseline (lambda = 0.00)",
-                &all_results,
+                &anchor_baseline_results,
                 "heredity",
                 "random"
             ),
@@ -9863,14 +9939,14 @@ fn render_e6_figure(
     c_heredity: &[(f32, f32, f32)],
     c_random: &[(f32, f32, f32)],
     heat_counts: &HashMap<(usize, i32), f32>,
-    final_occ_heredity_nosel: &[f32],
-    final_occ_random_nosel: &[f32],
-    final_occ_heredity: &[f32],
-    final_occ_random: &[f32],
-    final_pairwise_ji_heredity_nosel: &[f32],
-    final_pairwise_ji_random_nosel: &[f32],
-    final_pairwise_ji_heredity: &[f32],
-    final_pairwise_ji_random: &[f32],
+    final_loo_heredity_nosel: &[f32],
+    final_loo_random_nosel: &[f32],
+    final_loo_heredity: &[f32],
+    final_loo_random: &[f32],
+    final_g_heredity_nosel: &[f32],
+    final_g_random_nosel: &[f32],
+    final_g_heredity: &[f32],
+    final_g_random: &[f32],
 ) -> Result<(), Box<dyn Error>> {
     let root = bitmap_root(out_path, (3720, 935)).into_drawing_area();
     root.fill(&WHITE)?;
@@ -9902,8 +9978,8 @@ fn render_e6_figure(
     ];
     draw_e6_series_panel(
         &left_panels[0],
-        "A. Mean consonance",
-        "C_score",
+        "A. Mean selection score",
+        "selection score",
         &series_specs,
         0.0,
         1.0,
@@ -9911,12 +9987,12 @@ fn render_e6_figure(
     draw_e6_heatmap_panel(&left_panels[1], heat_counts)?;
     draw_e6_factorial_metric_panel(
         &right_panels[0],
-        "C. Consonant occupation",
-        "occupation",
-        final_occ_heredity_nosel,
-        final_occ_random_nosel,
-        final_occ_heredity,
-        final_occ_random,
+        "C. Mean LOO C_score",
+        "LOO C_score",
+        final_loo_heredity_nosel,
+        final_loo_random_nosel,
+        final_loo_heredity,
+        final_loo_random,
         0.0,
         Some(1.0),
         64,
@@ -9926,14 +10002,14 @@ fn render_e6_figure(
     )?;
     draw_e6_factorial_metric_panel(
         &right_panels[1],
-        "D. Pairwise JI score",
-        "JI_score",
-        final_pairwise_ji_heredity_nosel,
-        final_pairwise_ji_random_nosel,
-        final_pairwise_ji_heredity,
-        final_pairwise_ji_random,
-        0.0,
-        Some(1.0),
+        "D. Scene coherence G(F)",
+        "G(F)",
+        final_g_heredity_nosel,
+        final_g_random_nosel,
+        final_g_heredity,
+        final_g_random,
+        -35.0,
+        Some(0.0),
         64,
         48,
         50,
@@ -10100,19 +10176,26 @@ where
         .y_desc(y_desc)
         .x_labels(2)
         .x_label_formatter(&|v| match v.round() as i32 {
-            0 => "no selection".to_string(),
-            1 => "selection".to_string(),
+            0 => "selection".to_string(),
+            1 => "no selection".to_string(),
             _ => String::new(),
         })
         .label_style(("sans-serif", label_size).into_font())
         .axis_desc_style(("sans-serif", axis_desc_size).into_font())
         .draw()?;
 
+    if y_lo < 0.0 && y_hi > 0.0 {
+        chart.draw_series(std::iter::once(PathElement::new(
+            vec![(-0.5f32, 0.0), (1.5f32, 0.0)],
+            BLACK.mix(0.25),
+        )))?;
+    }
+
     let bar_specs = [
-        (0.0f32 - 0.16, h0_mean, h0_ci, PAL_H.mix(0.75)),
-        (0.0f32 + 0.16, r0_mean, r0_ci, PAL_R.mix(0.75)),
-        (1.0f32 - 0.16, h1_mean, h1_ci, PAL_H.to_rgba()),
-        (1.0f32 + 0.16, r1_mean, r1_ci, PAL_R.to_rgba()),
+        (0.0f32 - 0.16, h1_mean, h1_ci, PAL_H.to_rgba()),
+        (0.0f32 + 0.16, r1_mean, r1_ci, PAL_R.to_rgba()),
+        (1.0f32 - 0.16, h0_mean, h0_ci, PAL_H.mix(0.75)),
+        (1.0f32 + 0.16, r0_mean, r0_ci, PAL_R.mix(0.75)),
     ];
     for (center, mean, ci, color) in bar_specs {
         let x0 = center - 0.12;

@@ -6,87 +6,87 @@ Selection variants only modify the recharge field during the selection-on runs.
 Anchor baseline (lambda = 0.00)
 ----------------------------------------
 Anchor readout (final C_score):
-heredity, no selection: 0.2822 +/- 0.0527
+heredity, no selection: 0.2690 +/- 0.0436
 random,   no selection: 0.2233 +/- 0.0129
-heredity, selection:    0.8574 +/- 0.0477
+heredity, selection:    0.8901 +/- 0.0320
 random,   selection:    0.3063 +/- 0.0196
-selection main effect: 0.3291, p=p<0.001 (exact)
-heredity main effect:  0.3050, p=p<0.001 (exact)
-interaction:           0.4923, p=p<0.001 (exact)
+selection main effect: 0.3521, p=p<0.001 (exact)
+heredity main effect:  0.3148, p=p<0.001 (exact)
+interaction:           0.5381, p=p<0.001 (exact)
 
 Contextual local readout (mean LOO C_score):
-heredity, no selection: 0.5465 +/- 0.0367
+heredity, no selection: 0.5385 +/- 0.0313
 random,   no selection: 0.4010 +/- 0.0231
-heredity, selection:    0.8425 +/- 0.0444
+heredity, selection:    0.8695 +/- 0.0376
 random,   selection:    0.4020 +/- 0.0154
-selection main effect: 0.1485, p=p<0.001 (exact)
-heredity main effect:  0.2930, p=p<0.001 (exact)
-interaction:           0.2951, p=p<0.001 (exact)
+selection main effect: 0.1660, p=p<0.001 (exact)
+heredity main effect:  0.3025, p=p<0.001 (exact)
+interaction:           0.3301, p=p<0.001 (exact)
 
 Contextual global readout (G_scene):
-heredity, no selection: -29.1301 +/- 5.3984
+heredity, no selection: -28.9268 +/- 4.4784
 random,   no selection: -19.3932 +/- 1.3574
-heredity, selection:    -9.8189 +/- 4.1332
+heredity, selection:    -6.7914 +/- 3.0277
 random,   selection:    -16.8486 +/- 1.4718
-selection main effect: 10.9279, p=p<0.001 (exact)
-heredity main effect:  -1.3536, p=p=0.498 (exact)
-interaction:           16.7666, p=p<0.001 (exact)
+selection main effect: 12.3400, p=p<0.001 (exact)
+heredity main effect:  0.2619, p=p=0.876 (exact)
+interaction:           19.5908, p=p<0.001 (exact)
 
 Mixed selection field (lambda = 0.25)
 ----------------------------------------
 Anchor readout (final C_score):
-heredity, no selection: 0.2822 +/- 0.0527
+heredity, no selection: 0.2690 +/- 0.0436
 random,   no selection: 0.2233 +/- 0.0129
-heredity, selection:    0.9050 +/- 0.0395
+heredity, selection:    0.8830 +/- 0.0483
 random,   selection:    0.3028 +/- 0.0233
-selection main effect: 0.3512, p=p<0.001 (exact)
-heredity main effect:  0.3306, p=p<0.001 (exact)
-interaction:           0.5434, p=p<0.001 (exact)
+selection main effect: 0.3468, p=p<0.001 (exact)
+heredity main effect:  0.3130, p=p<0.001 (exact)
+interaction:           0.5346, p=p<0.001 (exact)
 
 Contextual local readout (mean LOO C_score):
-heredity, no selection: 0.5465 +/- 0.0367
+heredity, no selection: 0.5385 +/- 0.0313
 random,   no selection: 0.4010 +/- 0.0231
-heredity, selection:    0.8904 +/- 0.0403
+heredity, selection:    0.8751 +/- 0.0365
 random,   selection:    0.4075 +/- 0.0225
-selection main effect: 0.1752, p=p<0.001 (exact)
-heredity main effect:  0.3142, p=p<0.001 (exact)
-interaction:           0.3373, p=p<0.001 (exact)
+selection main effect: 0.1715, p=p<0.001 (exact)
+heredity main effect:  0.3025, p=p<0.001 (exact)
+interaction:           0.3301, p=p<0.001 (exact)
 
 Contextual global readout (G_scene):
-heredity, no selection: -29.1301 +/- 5.3984
+heredity, no selection: -28.9268 +/- 4.4784
 random,   no selection: -19.3932 +/- 1.3574
-heredity, selection:    -5.2360 +/- 2.2228
+heredity, selection:    -7.0910 +/- 2.7222
 random,   selection:    -17.0476 +/- 1.3682
-selection main effect: 13.1199, p=p<0.001 (exact)
-heredity main effect:  1.0373, p=p=0.476 (exact)
-interaction:           21.5485, p=p<0.001 (exact)
+selection main effect: 12.0907, p=p<0.001 (exact)
+heredity main effect:  0.2115, p=p=0.885 (exact)
+interaction:           19.4901, p=p<0.001 (exact)
 
 Pure contextual selection field (lambda = 1.00)
 ----------------------------------------
 Anchor readout (final C_score):
-heredity, no selection: 0.2822 +/- 0.0527
+heredity, no selection: 0.2690 +/- 0.0436
 random,   no selection: 0.2233 +/- 0.0129
-heredity, selection:    0.2868 +/- 0.0789
+heredity, selection:    0.3046 +/- 0.0880
 random,   selection:    0.3004 +/- 0.0355
-selection main effect: 0.0409, p=p=0.162 (exact)
-heredity main effect:  0.0227, p=p=0.414 (exact)
-interaction:           -0.0724, p=p=0.179 (exact)
+selection main effect: 0.0564, p=p=0.053 (exact)
+heredity main effect:  0.0250, p=p=0.410 (exact)
+interaction:           -0.0414, p=p=0.491 (exact)
 
 Contextual local readout (mean LOO C_score):
-heredity, no selection: 0.5465 +/- 0.0367
+heredity, no selection: 0.5385 +/- 0.0313
 random,   no selection: 0.4010 +/- 0.0231
-heredity, selection:    0.8969 +/- 0.0346
+heredity, selection:    0.8927 +/- 0.0438
 random,   selection:    0.4479 +/- 0.0252
-selection main effect: 0.1986, p=p<0.001 (exact)
-heredity main effect:  0.2973, p=p<0.001 (exact)
-interaction:           0.3036, p=p<0.001 (exact)
+selection main effect: 0.2005, p=p<0.001 (exact)
+heredity main effect:  0.2912, p=p<0.001 (exact)
+interaction:           0.3073, p=p<0.001 (exact)
 
 Contextual global readout (G_scene):
-heredity, no selection: -29.1301 +/- 5.3984
+heredity, no selection: -28.9268 +/- 4.4784
 random,   no selection: -19.3932 +/- 1.3574
-heredity, selection:    -7.5743 +/- 3.7278
+heredity, selection:    -8.3069 +/- 3.6956
 random,   selection:    -15.8688 +/- 1.5174
-selection main effect: 12.5401, p=p<0.001 (exact)
-heredity main effect:  -0.7212, p=p=0.688 (exact)
-interaction:           18.0314, p=p<0.001 (exact)
+selection main effect: 12.0721, p=p<0.001 (exact)
+heredity main effect:  -0.9859, p=p=0.537 (exact)
+interaction:           17.0954, p=p<0.001 (exact)
 

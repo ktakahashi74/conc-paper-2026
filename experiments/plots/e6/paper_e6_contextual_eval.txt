@@ -1,25 +1,26 @@
 E6 Contextual Readout Diagnostic
 =============================
-Readout-only: dynamics remain anchor-based; metrics below are evaluated from the final population context.
+Mainline dynamics: no-selection runs use anchor-only recharge; selection-on runs use mixed anchor/contextual recharge (lambda=0.25).
+Metrics below are evaluated from the final population context.
 
 Mean LOO C_score by 2x2 condition:
-heredity, no selection: 0.5465 +/- 0.0367
+heredity, no selection: 0.5385 +/- 0.0313
 random,   no selection: 0.4010 +/- 0.0231
-heredity, selection:    0.8425 +/- 0.0444
-random,   selection:    0.4020 +/- 0.0154
+heredity, selection:    0.8751 +/- 0.0365
+random,   selection:    0.4075 +/- 0.0225
 
 Mean G_scene by 2x2 condition:
-heredity, no selection: -29.1301 +/- 5.3984
+heredity, no selection: -28.9268 +/- 4.4784
 random,   no selection: -19.3932 +/- 1.3574
-heredity, selection:    -9.8189 +/- 4.1332
-random,   selection:    -16.8486 +/- 1.4718
+heredity, selection:    -7.0910 +/- 2.7222
+random,   selection:    -17.0476 +/- 1.3682
 
 LOO main effects and interaction:
-selection main effect: 0.1485, p=p<0.001 (exact)
-heredity main effect:  0.2930, p=p<0.001 (exact)
-interaction:           0.2951, p=p<0.001 (exact)
+selection main effect: 0.1715, p=p<0.001 (exact)
+heredity main effect:  0.3025, p=p<0.001 (exact)
+interaction:           0.3301, p=p<0.001 (exact)
 
 G_scene main effects and interaction:
-selection main effect: 10.9279, p=p<0.001 (exact)
-heredity main effect:  -1.3536, p=p=0.498 (exact)
-interaction:           16.7666, p=p<0.001 (exact)
+selection main effect: 12.0907, p=p<0.001 (exact)
+heredity main effect:  0.2115, p=p=0.885 (exact)
+interaction:           19.4901, p=p<0.001 (exact)

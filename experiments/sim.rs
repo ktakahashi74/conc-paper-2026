@@ -2492,7 +2492,7 @@ fn build_e6_parent_harmonicity_landscape(
 }
 
 const E6_HEREDITY_PARENT_WINDOW_SIGMA_OCT: f32 = 0.35;
-const E6_HEREDITY_SOCIAL_ROUGHNESS_WEIGHT: f32 = 0.25;
+const E6_HEREDITY_SOCIAL_ROUGHNESS_WEIGHT: f32 = 0.0;
 
 fn parent_window_and_notch_weights(
     space: &Log2Space,
@@ -3165,6 +3165,64 @@ fn e6_selection_score(
     }
     let contextual_score = contextual_landscape.evaluate_pitch_score(freq_hz);
     (1.0 - w) * anchor_score + w * contextual_score
+}
+
+pub fn e6_mean_selection_score_for_freqs(
+    freqs_hz: &[f32],
+    anchor_hz: f32,
+    contextual_mix_weight: f32,
+    env_partials: Option<u32>,
+    env_partial_decay: Option<f32>,
+) -> f32 {
+    let clean_freqs: Vec<f32> = freqs_hz
+        .iter()
+        .copied()
+        .filter(|f| f.is_finite() && *f > 0.0)
+        .collect();
+    if clean_freqs.is_empty() {
+        return 0.0;
+    }
+
+    let partials = sanitize_env_partials(env_partials.unwrap_or(E4_ENV_PARTIALS_DEFAULT));
+    let decay =
+        sanitize_env_partial_decay(env_partial_decay.unwrap_or(E4_ENV_PARTIAL_DECAY_DEFAULT));
+    let selection_reference_landscape = e3_reference_landscape_with_partials(anchor_hz, partials);
+    let space = selection_reference_landscape.space.clone();
+    let params = make_landscape_params(&space, E3_FS, 1.0);
+    let mut contextual_landscape = e3_reference_landscape_with_partials(anchor_hz, partials);
+
+    let mut env_scan = vec![0.0f32; space.n_bins()];
+    for &freq in &clean_freqs {
+        add_harmonic_partials_to_env(&space, &mut env_scan, freq, 1.0, partials, decay);
+    }
+    let h_dual = params
+        .harmonicity_kernel
+        .potential_h_dual_from_log2_spectrum(&env_scan, &space);
+    contextual_landscape.subjective_intensity = env_scan.clone();
+    contextual_landscape.nsgt_power = env_scan;
+    contextual_landscape.harmonicity = h_dual.blended;
+    contextual_landscape.harmonicity_path_a = h_dual.path_a;
+    contextual_landscape.harmonicity_path_b = h_dual.path_b;
+    contextual_landscape.root_affinity = h_dual.metrics.root_affinity;
+    contextual_landscape.overtone_affinity = h_dual.metrics.overtone_affinity;
+    contextual_landscape.binding_strength = h_dual.metrics.binding_strength;
+    contextual_landscape.harmonic_tilt = h_dual.metrics.harmonic_tilt;
+    contextual_landscape.harmonicity_mirror_weight = params.harmonicity_kernel.params.mirror_weight;
+    compute_roughness_for_landscape(&space, &params, &mut contextual_landscape);
+
+    clean_freqs
+        .iter()
+        .copied()
+        .map(|freq| {
+            e6_selection_score(
+                &selection_reference_landscape,
+                &contextual_landscape,
+                freq,
+                contextual_mix_weight,
+            )
+        })
+        .sum::<f32>()
+        / clean_freqs.len() as f32
 }
 
 fn e6_agent_energy(agent: &Individual) -> Option<f32> {
