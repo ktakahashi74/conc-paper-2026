@@ -60,7 +60,15 @@ const E6_HEREDITY_PEAK_MIN_RELATIVE_MASS: f32 = 0.20;
 const E6_HEREDITY_INHERIT_SAME_FAMILY_PROB: f32 = 0.80;
 const E6_HEREDITY_AZIMUTH_SIGMA_ST: f32 = 0.25;
 const E6_HEREDITY_AZIMUTH_CLIP_ST: f32 = 1.5;
+const E6_HEREDITY_FAMILY_OCCUPANCY_SIGMA_ST: f32 = 0.5;
+const E6_HEREDITY_FAMILY_OCCUPANCY_STRENGTH: f32 = 0.0;
+const E6_HEREDITY_FAMILY_CONTEXTUAL_BETA: f32 = 2.5;
 const E6_POST_RESPAWN_AZIMUTH_TUNING_RADIUS_ST: f32 = 0.5;
+const E6_JUVENILE_CONTEXTUAL_TUNING_RADIUS_ST: f32 = 0.5;
+const E6_JUVENILE_CONTEXTUAL_TUNING_GRID_ST: f32 = 0.25;
+const E6_JUVENILE_CONTEXTUAL_TUNING_TICKS: u32 = 96;
+const E6_JUVENILE_CONTEXTUAL_TUNING_CROWDING_WEIGHT: f32 = 0.05;
+const E6_JUVENILE_CONTEXTUAL_TUNING_IMPROVEMENT_THRESHOLD: f32 = 0.01;
 const E6_JUVENILE_CULL_TICKS: u32 = 20;
 const E6_JUVENILE_CULL_C_LEVEL_THRESHOLD: f32 = 0.75;
 const E6_JUVENILE_CULL_PROB_PER_TICK: f32 = 0.25;
@@ -71,6 +79,11 @@ const E2_E6_HILL_EXPLORATION: f32 = 0.0;
 const E2_E6_HILL_PERSISTENCE: f32 = 0.5;
 const E2_E6_HILL_MOVE_COST_COEFF: f32 = 0.75;
 const E2_E6_HILL_IMPROVEMENT_THRESHOLD: f32 = 0.04;
+const E6_HARD_ANTI_FUSION_EPS: f32 = 1e-6;
+const E6_NICHE_PARENT_PRIOR_FLOOR: f32 = 0.05;
+const E6_NICHE_PARENT_PRIOR_EXPONENT: f32 = 2.0;
+pub const E6B_DEFAULT_RANGE_OCT: f32 = 4.0;
+pub const E6B_DEFAULT_POP_SIZE: usize = 16;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct E4RuntimeOverrides {
@@ -140,6 +153,35 @@ impl E6Condition {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum E6FamilyNfdMode {
+    Off,
+    SameFamilyOnly,
+    SameFamilyAndAlt,
+}
+
+impl E6FamilyNfdMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            E6FamilyNfdMode::Off => "off",
+            E6FamilyNfdMode::SameFamilyOnly => "same_only",
+            E6FamilyNfdMode::SameFamilyAndAlt => "same_plus_alt",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum E6SelectionScoreMode {
+    LegacyAnchorContextMix,
+    PolyphonicLooCrowding,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum E6RespawnMode {
+    LegacyFamilyAzimuth,
+    VacantNicheByParentPrior,
+}
+
 #[derive(Clone, Debug)]
 pub struct E6RunConfig {
     pub seed: u64,
@@ -162,7 +204,13 @@ pub struct E6RunConfig {
     pub disable_within_life_pitch_movement: bool,
     pub selection_enabled: bool,
     pub selection_contextual_mix_weight: f32,
+    pub selection_score_mode: E6SelectionScoreMode,
+    pub juvenile_contextual_settlement_enabled: bool,
     pub juvenile_cull_enabled: bool,
+    pub record_life_diagnostics: bool,
+    pub family_occupancy_strength_override: Option<f32>,
+    pub family_nfd_mode: E6FamilyNfdMode,
+    pub respawn_mode: E6RespawnMode,
 }
 
 #[derive(Clone, Debug)]
@@ -188,6 +236,41 @@ pub struct E6RunResult {
     pub snapshots: Vec<E6PitchSnapshot>,
     pub respawns: Vec<E6RespawnRecord>,
     pub total_deaths: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct E6bRunConfig {
+    pub seed: u64,
+    pub steps_cap: usize,
+    pub min_deaths: usize,
+    pub pop_size: usize,
+    pub first_k: usize,
+    pub condition: E6Condition,
+    pub snapshot_interval: usize,
+    pub selection_enabled: bool,
+    pub shuffle_landscape: bool,
+}
+
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct E6bRunResult {
+    pub deaths: Vec<E3DeathRecord>,
+    pub life_checks: Vec<E6LifeCheckRecord>,
+    pub snapshots: Vec<E6PitchSnapshot>,
+    pub respawns: Vec<E6RespawnRecord>,
+    pub total_deaths: usize,
+}
+
+impl From<E6RunResult> for E6bRunResult {
+    fn from(value: E6RunResult) -> Self {
+        Self {
+            deaths: value.deaths,
+            life_checks: value.life_checks,
+            snapshots: value.snapshots,
+            respawns: value.respawns,
+            total_deaths: value.total_deaths,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -848,6 +931,14 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
     let dt = E3_HOP as f32 / E3_FS;
     let first_k = cfg.first_k as u32;
     let snapshot_interval = cfg.snapshot_interval.max(1);
+    let family_occupancy_strength = cfg
+        .family_occupancy_strength_override
+        .unwrap_or(E6_HEREDITY_FAMILY_OCCUPANCY_STRENGTH)
+        .max(0.0);
+    let family_nfd_mode = cfg.family_nfd_mode;
+    let selection_score_mode = cfg.selection_score_mode;
+    let respawn_mode = cfg.respawn_mode;
+    let record_life_diagnostics = cfg.record_life_diagnostics;
     let mut rng = SmallRng::seed_from_u64(cfg.seed ^ 0xE600_5EED_u64);
     let (tessitura_min_hz, tessitura_max_hz) =
         e3_tessitura_bounds_for_range(anchor_hz, &space, range_oct);
@@ -877,19 +968,116 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                 tessitura_max_hz,
             );
         }
-        for agent in pop.individuals.iter_mut() {
-            if !agent.is_alive() {
+        let selection_scene_landscape = if matches!(
+            selection_score_mode,
+            E6SelectionScoreMode::PolyphonicLooCrowding
+        ) {
+            Some(build_e6_scene_landscape_with_anchor(
+                &space,
+                &params,
+                &selection_reference_landscape,
+                &collect_alive_freqs(&pop),
+                partials,
+                E4_ENV_PARTIAL_DECAY_DEFAULT,
+            ))
+        } else {
+            None
+        };
+        if cfg.disable_within_life_pitch_movement
+            && cfg.e2_aligned_exact_local_search_radius_st.is_none()
+            && cfg.selection_enabled
+            && cfg.juvenile_contextual_settlement_enabled
+        {
+            match selection_score_mode {
+                E6SelectionScoreMode::LegacyAnchorContextMix
+                    if cfg.selection_contextual_mix_weight > 0.0 =>
+                {
+                    e6_apply_juvenile_contextual_local_search(
+                        &mut pop,
+                        &states,
+                        &selection_reference_landscape,
+                        &landscape,
+                        &space,
+                        &params,
+                        partials,
+                        E4_ENV_PARTIAL_DECAY_DEFAULT,
+                        step,
+                        tessitura_min_hz,
+                        tessitura_max_hz,
+                        cfg.selection_contextual_mix_weight,
+                    );
+                }
+                E6SelectionScoreMode::PolyphonicLooCrowding => {
+                    e6_apply_juvenile_polyphonic_local_search(
+                        &mut pop,
+                        &states,
+                        selection_scene_landscape
+                            .as_ref()
+                            .expect("polyphonic juvenile scene landscape"),
+                        &space,
+                        &params,
+                        partials,
+                        E4_ENV_PARTIAL_DECAY_DEFAULT,
+                        step,
+                        tessitura_min_hz,
+                        tessitura_max_hz,
+                    );
+                }
+                _ => {}
+            }
+        }
+        for agent_idx in 0..pop.individuals.len() {
+            if !cfg.selection_enabled || !pop.individuals[agent_idx].is_alive() {
                 continue;
             }
-            let c_score = e6_selection_score(
-                &selection_reference_landscape,
-                &landscape,
-                agent.body.base_freq_hz(),
-                cfg.selection_contextual_mix_weight,
-            );
-            if cfg.selection_enabled {
-                apply_selection_recharge(agent, c_score, E6_SELECTION_RECHARGE_PER_SEC, dt);
-            }
+            let freq_hz = pop.individuals[agent_idx].body.base_freq_hz();
+            let c_score = match selection_score_mode {
+                E6SelectionScoreMode::LegacyAnchorContextMix => {
+                    if cfg.selection_contextual_mix_weight > 0.0 {
+                        let loo_contextual_landscape = build_e6_contextual_loo_landscape(
+                            &space,
+                            &params,
+                            &landscape,
+                            freq_hz,
+                            partials,
+                            E4_ENV_PARTIAL_DECAY_DEFAULT,
+                        );
+                        e6_selection_score(
+                            &selection_reference_landscape,
+                            &loo_contextual_landscape,
+                            freq_hz,
+                            cfg.selection_contextual_mix_weight,
+                        )
+                    } else {
+                        selection_reference_landscape.evaluate_pitch_score(freq_hz)
+                    }
+                }
+                E6SelectionScoreMode::PolyphonicLooCrowding => {
+                    let mut other_freqs_hz = Vec::new();
+                    for (other_idx, other_agent) in pop.individuals.iter().enumerate() {
+                        if other_idx == agent_idx || !other_agent.is_alive() {
+                            continue;
+                        }
+                        let other_freq_hz = other_agent.body.base_freq_hz();
+                        if other_freq_hz.is_finite() && other_freq_hz > 0.0 {
+                            other_freqs_hz.push(other_freq_hz);
+                        }
+                    }
+                    let loo_scene_landscape = build_e6_contextual_loo_landscape(
+                        &space,
+                        &params,
+                        selection_scene_landscape
+                            .as_ref()
+                            .expect("polyphonic scene landscape"),
+                        freq_hz,
+                        partials,
+                        E4_ENV_PARTIAL_DECAY_DEFAULT,
+                    );
+                    e6_polyphonic_selection_score(&loo_scene_landscape, freq_hz, &other_freqs_hz)
+                }
+            };
+            let agent = &mut pop.individuals[agent_idx];
+            apply_selection_recharge(agent, c_score, E6_SELECTION_RECHARGE_PER_SEC, dt);
         }
         pop.advance(E3_HOP, E3_FS, step as u64, dt, &landscape);
         if cfg.oracle_freeze_pitch_after_respawn {
@@ -951,6 +1139,84 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
             });
         }
 
+        let (post_advance_c_scores, post_advance_c_levels) = if record_life_diagnostics {
+            let post_advance_selection_scene_landscape = if matches!(
+                selection_score_mode,
+                E6SelectionScoreMode::PolyphonicLooCrowding
+            ) {
+                Some(build_e6_scene_landscape_with_anchor(
+                    &space,
+                    &params,
+                    &selection_reference_landscape,
+                    &collect_alive_freqs(&pop),
+                    partials,
+                    E4_ENV_PARTIAL_DECAY_DEFAULT,
+                ))
+            } else {
+                None
+            };
+            let c_scores: Vec<Option<f32>> = pop
+                .individuals
+                .iter()
+                .enumerate()
+                .map(|(agent_idx, agent)| {
+                    if !agent.is_alive() {
+                        return None;
+                    }
+                    let freq_hz = agent.body.base_freq_hz();
+                    let score = match selection_score_mode {
+                        E6SelectionScoreMode::LegacyAnchorContextMix => {
+                            selection_reference_landscape.evaluate_pitch_score(freq_hz)
+                        }
+                        E6SelectionScoreMode::PolyphonicLooCrowding => {
+                            let other_freqs_hz = pop
+                                .individuals
+                                .iter()
+                                .enumerate()
+                                .filter_map(|(other_idx, other)| {
+                                    if other_idx == agent_idx || !other.is_alive() {
+                                        return None;
+                                    }
+                                    let other_freq_hz = other.body.base_freq_hz();
+                                    (other_freq_hz.is_finite() && other_freq_hz > 0.0)
+                                        .then_some(other_freq_hz)
+                                })
+                                .collect::<Vec<_>>();
+                            let loo_scene_landscape = build_e6_contextual_loo_landscape(
+                                &space,
+                                &params,
+                                post_advance_selection_scene_landscape
+                                    .as_ref()
+                                    .expect("polyphonic post-advance scene landscape"),
+                                freq_hz,
+                                partials,
+                                E4_ENV_PARTIAL_DECAY_DEFAULT,
+                            );
+                            e6_polyphonic_selection_score(
+                                &loo_scene_landscape,
+                                freq_hz,
+                                &other_freqs_hz,
+                            )
+                        }
+                    };
+                    Some(score)
+                })
+                .collect();
+            let c_levels: Vec<Option<f32>> = pop
+                .individuals
+                .iter()
+                .map(|agent| {
+                    agent.is_alive().then_some(
+                        selection_reference_landscape
+                            .evaluate_pitch_level(agent.body.base_freq_hz())
+                            .clamp(0.0, 1.0),
+                    )
+                })
+                .collect();
+            (Some(c_scores), Some(c_levels))
+        } else {
+            (None, None)
+        };
         let mut respawn_ids: Vec<u64> = Vec::new();
         for agent in pop.individuals.iter_mut() {
             let id = agent.id();
@@ -962,142 +1228,190 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
             let alive = agent.is_alive();
 
             if alive {
-                let c_score =
-                    selection_reference_landscape.evaluate_pitch_score(agent.body.base_freq_hz());
-                let c_level = selection_reference_landscape
-                    .evaluate_pitch_level(agent.body.base_freq_hz())
-                    .clamp(0.0, 1.0);
-                if cfg.juvenile_cull_enabled
-                    && state.ticks < E6_JUVENILE_CULL_TICKS
-                    && c_level < E6_JUVENILE_CULL_C_LEVEL_THRESHOLD
-                    && rng.random::<f32>() < E6_JUVENILE_CULL_PROB_PER_TICK
-                {
-                    agent.start_remove_fade(0.0);
-                }
-                if state.pending_birth {
-                    state.birth_step = step as u32;
-                    state.c_level_birth = c_level;
-                    state.pending_birth = false;
-                }
-                state.ticks = state.ticks.saturating_add(1);
-                state.sum_c_level_tick += c_level;
-                state.sum_c_level_tick_sq += c_level * c_level;
-                if state.step1_c_level.is_none() {
-                    state.step1_c_score = Some(c_score);
-                    state.step1_c_level = Some(c_level);
-                }
-                if state.ticks >= 10 && state.step10_c_level.is_none() {
-                    state.step10_c_score = Some(c_score);
-                    state.step10_c_level = Some(c_level);
-                }
-                if state.ticks >= 100 && state.step100_c_level.is_none() {
-                    state.step100_c_score = Some(c_score);
-                    state.step100_c_level = Some(c_level);
-                }
-                if state.firstk_count < first_k {
-                    state.sum_c_level_firstk += c_level;
-                    state.firstk_count += 1;
-                }
-
-                // Attack-time consonance
-                if let AnyArticulationCore::Entrain(ref core) = agent.articulation.core {
-                    if core.state == ArticulationState::Attack {
-                        state.sum_c_level_attack += c_level;
-                        state.attack_tick_count += 1;
+                if record_life_diagnostics {
+                    let c_score = post_advance_c_scores
+                        .as_ref()
+                        .and_then(|scores| scores.get(idx))
+                        .and_then(|score| *score)
+                        .unwrap_or(0.0);
+                    let c_level = post_advance_c_levels
+                        .as_ref()
+                        .and_then(|levels| levels.get(idx))
+                        .and_then(|level| *level)
+                        .unwrap_or(0.0);
+                    if cfg.juvenile_cull_enabled
+                        && state.ticks < E6_JUVENILE_CULL_TICKS
+                        && c_level < E6_JUVENILE_CULL_C_LEVEL_THRESHOLD
+                        && rng.random::<f32>() < E6_JUVENILE_CULL_PROB_PER_TICK
+                    {
+                        agent.start_remove_fade(0.0);
                     }
+                    if state.pending_birth {
+                        state.birth_step = step as u32;
+                        state.c_score_birth = c_score;
+                        state.c_level_birth = c_level;
+                        state.pending_birth = false;
+                    }
+                    state.ticks = state.ticks.saturating_add(1);
+                    state.sum_c_score_tick += c_score;
+                    state.sum_c_score_tick_sq += c_score * c_score;
+                    state.sum_c_level_tick += c_level;
+                    state.sum_c_level_tick_sq += c_level * c_level;
+                    if state.step1_c_level.is_none() {
+                        state.step1_c_score = Some(c_score);
+                        state.step1_c_level = Some(c_level);
+                    }
+                    if state.ticks >= 10 && state.step10_c_level.is_none() {
+                        state.step10_c_score = Some(c_score);
+                        state.step10_c_level = Some(c_level);
+                    }
+                    if state.ticks >= 100 && state.step100_c_level.is_none() {
+                        state.step100_c_score = Some(c_score);
+                        state.step100_c_level = Some(c_level);
+                    }
+                    if state.firstk_count < first_k {
+                        state.sum_c_score_firstk += c_score;
+                        state.sum_c_level_firstk += c_level;
+                        state.firstk_count += 1;
+                    }
+
+                    if let AnyArticulationCore::Entrain(ref core) = agent.articulation.core {
+                        if core.state == ArticulationState::Attack {
+                            state.sum_c_score_attack += c_score;
+                            state.sum_c_level_attack += c_level;
+                            state.attack_tick_count += 1;
+                        }
+                    }
+                } else {
+                    if state.pending_birth {
+                        state.birth_step = step as u32;
+                        state.c_score_birth = state.spawn_c_score.unwrap_or(0.0);
+                        state.c_level_birth = state.spawn_c_level.unwrap_or(0.0);
+                        state.pending_birth = false;
+                    }
+                    state.ticks = state.ticks.saturating_add(1);
                 }
             }
 
             if !alive && state.was_alive {
-                if state.pending_birth {
-                    state.birth_step = step as u32;
-                    state.c_level_birth = selection_reference_landscape
-                        .evaluate_pitch_level(agent.body.base_freq_hz())
-                        .clamp(0.0, 1.0);
-                    state.pending_birth = false;
-                }
-                let ticks = state.ticks.max(1);
-                let avg_c_level_tick = if state.ticks > 0 {
-                    state.sum_c_level_tick / state.ticks as f32
-                } else {
-                    0.0
-                };
-                let avg_c_score_tick = if state.ticks > 0 {
-                    state.sum_c_score_tick / state.ticks as f32
-                } else {
-                    0.0
-                };
-                let c_score_std_over_life = if state.ticks > 0 {
-                    let mean_sq = state.sum_c_score_tick_sq / state.ticks as f32;
-                    let var = (mean_sq - avg_c_score_tick * avg_c_score_tick).max(0.0);
-                    var.sqrt()
-                } else {
-                    0.0
-                };
-                let c_level_std_over_life = if state.ticks > 0 {
-                    let mean_sq = state.sum_c_level_tick_sq / state.ticks as f32;
-                    let var = (mean_sq - avg_c_level_tick * avg_c_level_tick).max(0.0);
-                    var.sqrt()
-                } else {
-                    0.0
-                };
-                let c_score_firstk = if state.firstk_count > 0 {
-                    state.sum_c_score_firstk / state.firstk_count as f32
-                } else {
-                    0.0
-                };
-                let c_level_firstk = if state.firstk_count > 0 {
-                    state.sum_c_level_firstk / state.firstk_count as f32
-                } else {
-                    0.0
-                };
-                let avg_c_score_attack = if state.attack_tick_count > 0 {
-                    state.sum_c_score_attack / state.attack_tick_count as f32
-                } else {
-                    avg_c_score_tick
-                };
-                let avg_c_level_attack = if state.attack_tick_count > 0 {
-                    state.sum_c_level_attack / state.attack_tick_count as f32
-                } else {
-                    avg_c_level_tick // fallback
-                };
-                let attack_tick_count = state.attack_tick_count;
+                if record_life_diagnostics {
+                    if state.pending_birth {
+                        state.birth_step = step as u32;
+                        state.c_level_birth = selection_reference_landscape
+                            .evaluate_pitch_level(agent.body.base_freq_hz())
+                            .clamp(0.0, 1.0);
+                        state.pending_birth = false;
+                    }
+                    let ticks = state.ticks.max(1);
+                    let avg_c_level_tick = if state.ticks > 0 {
+                        state.sum_c_level_tick / state.ticks as f32
+                    } else {
+                        0.0
+                    };
+                    let avg_c_score_tick = if state.ticks > 0 {
+                        state.sum_c_score_tick / state.ticks as f32
+                    } else {
+                        0.0
+                    };
+                    let c_score_std_over_life = if state.ticks > 0 {
+                        let mean_sq = state.sum_c_score_tick_sq / state.ticks as f32;
+                        let var = (mean_sq - avg_c_score_tick * avg_c_score_tick).max(0.0);
+                        var.sqrt()
+                    } else {
+                        0.0
+                    };
+                    let c_level_std_over_life = if state.ticks > 0 {
+                        let mean_sq = state.sum_c_level_tick_sq / state.ticks as f32;
+                        let var = (mean_sq - avg_c_level_tick * avg_c_level_tick).max(0.0);
+                        var.sqrt()
+                    } else {
+                        0.0
+                    };
+                    let c_score_firstk = if state.firstk_count > 0 {
+                        state.sum_c_score_firstk / state.firstk_count as f32
+                    } else {
+                        0.0
+                    };
+                    let c_level_firstk = if state.firstk_count > 0 {
+                        state.sum_c_level_firstk / state.firstk_count as f32
+                    } else {
+                        0.0
+                    };
+                    let avg_c_score_attack = if state.attack_tick_count > 0 {
+                        state.sum_c_score_attack / state.attack_tick_count as f32
+                    } else {
+                        avg_c_score_tick
+                    };
+                    let avg_c_level_attack = if state.attack_tick_count > 0 {
+                        state.sum_c_level_attack / state.attack_tick_count as f32
+                    } else {
+                        avg_c_level_tick
+                    };
+                    let attack_tick_count = state.attack_tick_count;
 
-                out.deaths.push(E3DeathRecord {
-                    condition: cfg.condition.label().to_string(),
-                    seed: cfg.seed,
-                    life_id: state.life_id,
-                    agent_id: idx,
-                    birth_step: state.birth_step,
-                    death_step: step as u32,
-                    lifetime_steps: ticks,
-                    c_score_birth: state.c_score_birth,
-                    c_score_firstk,
-                    avg_c_score_tick,
-                    c_score_std_over_life,
-                    avg_c_score_attack,
-                    c_level_birth: state.c_level_birth,
-                    c_level_firstk,
-                    avg_c_level_tick,
-                    c_level_std_over_life,
-                    avg_c_level_attack,
-                    attack_tick_count,
-                });
-                out.life_checks.push(E6LifeCheckRecord {
-                    life_id: state.life_id,
-                    agent_id: idx,
-                    birth_step: state.birth_step,
-                    death_step: step as u32,
-                    lifetime_steps: ticks,
-                    spawn_c_score: state.spawn_c_score.unwrap_or(0.0),
-                    spawn_c_level: state.spawn_c_level.unwrap_or(0.0),
-                    step1_c_score: state.step1_c_score,
-                    step1_c_level: state.step1_c_level,
-                    step10_c_score: state.step10_c_score,
-                    step10_c_level: state.step10_c_level,
-                    step100_c_score: state.step100_c_score,
-                    step100_c_level: state.step100_c_level,
-                });
+                    out.deaths.push(E3DeathRecord {
+                        condition: cfg.condition.label().to_string(),
+                        seed: cfg.seed,
+                        life_id: state.life_id,
+                        agent_id: idx,
+                        birth_step: state.birth_step,
+                        death_step: step as u32,
+                        lifetime_steps: ticks,
+                        c_score_birth: state.c_score_birth,
+                        c_score_firstk,
+                        avg_c_score_tick,
+                        c_score_std_over_life,
+                        avg_c_score_attack,
+                        c_level_birth: state.c_level_birth,
+                        c_level_firstk,
+                        avg_c_level_tick,
+                        c_level_std_over_life,
+                        avg_c_level_attack,
+                        attack_tick_count,
+                    });
+                    out.life_checks.push(E6LifeCheckRecord {
+                        life_id: state.life_id,
+                        agent_id: idx,
+                        birth_step: state.birth_step,
+                        death_step: step as u32,
+                        lifetime_steps: ticks,
+                        spawn_c_score: state.spawn_c_score.unwrap_or(0.0),
+                        spawn_c_level: state.spawn_c_level.unwrap_or(0.0),
+                        step1_c_score: state.step1_c_score,
+                        step1_c_level: state.step1_c_level,
+                        step10_c_score: state.step10_c_score,
+                        step10_c_level: state.step10_c_level,
+                        step100_c_score: state.step100_c_score,
+                        step100_c_level: state.step100_c_level,
+                    });
+                } else {
+                    if state.pending_birth {
+                        state.birth_step = step as u32;
+                        state.c_score_birth = state.spawn_c_score.unwrap_or(0.0);
+                        state.c_level_birth = state.spawn_c_level.unwrap_or(0.0);
+                        state.pending_birth = false;
+                    }
+                    out.deaths.push(E3DeathRecord {
+                        condition: cfg.condition.label().to_string(),
+                        seed: cfg.seed,
+                        life_id: state.life_id,
+                        agent_id: idx,
+                        birth_step: state.birth_step,
+                        death_step: step as u32,
+                        lifetime_steps: state.ticks.max(1),
+                        c_score_birth: state.c_score_birth,
+                        c_score_firstk: 0.0,
+                        avg_c_score_tick: 0.0,
+                        c_score_std_over_life: 0.0,
+                        avg_c_score_attack: 0.0,
+                        c_level_birth: state.c_level_birth,
+                        c_level_firstk: 0.0,
+                        avg_c_level_tick: 0.0,
+                        c_level_std_over_life: 0.0,
+                        avg_c_level_attack: 0.0,
+                        attack_tick_count: 0,
+                    });
+                }
 
                 respawn_ids.push(id);
                 state.reset_for_new_life(next_life_id);
@@ -1121,6 +1435,7 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
             let post_respawn_azimuth_tuning_radius_st = if oracle_global_anchor_c
                 || oracle_radius_st.is_some()
                 || cfg.e2_aligned_exact_local_search_radius_st.is_some()
+                || matches!(respawn_mode, E6RespawnMode::VacantNicheByParentPrior)
             {
                 None
             } else {
@@ -1129,9 +1444,44 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
 
             let offspring_strategy = match cfg.condition {
                 E6Condition::Random => {
+                    let vacant_niche_sample =
+                        if matches!(respawn_mode, E6RespawnMode::VacantNicheByParentPrior) {
+                            let alive_freqs_hz = collect_alive_freqs(&pop);
+                            let scene_landscape = build_e6_scene_landscape_with_anchor(
+                                &space,
+                                &params,
+                                &selection_reference_landscape,
+                                &alive_freqs_hz,
+                                partials,
+                                E4_ENV_PARTIAL_DECAY_DEFAULT,
+                            );
+                            let niches = e6_extract_vacant_niches(
+                                &space,
+                                &scene_landscape,
+                                &alive_freqs_hz,
+                                None,
+                                tessitura_min_hz,
+                                tessitura_max_hz,
+                            );
+                            Some(sample_from_vacant_niches(
+                                &niches,
+                                sample_random_log_freq(
+                                    &mut rng,
+                                    tessitura_min_hz,
+                                    tessitura_max_hz,
+                                ),
+                                false,
+                                &mut rng,
+                            ))
+                        } else {
+                            None
+                        };
+                    let offspring_freq = vacant_niche_sample
+                        .map(|sample| sample.offspring_freq_hz)
+                        .unwrap_or_else(|| {
+                            sample_random_log_freq(&mut rng, tessitura_min_hz, tessitura_max_hz)
+                        });
                     if oracle_global_anchor_c {
-                        let offspring_freq =
-                            sample_random_log_freq(&mut rng, tessitura_min_hz, tessitura_max_hz);
                         let (spawn_freq, oracle_c_score, oracle_c_level) =
                             oracle_global_anchor_search(
                                 &selection_reference_landscape,
@@ -1156,10 +1506,14 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                             offspring_freq_hz: offspring_freq,
                             spawn_freq_hz: spawn_freq,
                             spawn_c_level: oracle_c_level,
-                            parent_family_center_hz: None,
-                            parent_azimuth_st: None,
-                            child_family_center_hz: None,
-                            child_azimuth_st: None,
+                            parent_family_center_hz: vacant_niche_sample
+                                .map(|sample| sample.parent_family_center_hz),
+                            parent_azimuth_st: vacant_niche_sample
+                                .map(|sample| sample.parent_azimuth_st),
+                            child_family_center_hz: vacant_niche_sample
+                                .map(|sample| sample.child_family_center_hz),
+                            child_azimuth_st: vacant_niche_sample
+                                .map(|sample| sample.child_azimuth_st),
                             family_inherited: None,
                             family_mutated: None,
                             oracle_applied: true,
@@ -1191,8 +1545,6 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                         continue;
                     }
                     if let Some(radius_st) = oracle_radius_st {
-                        let offspring_freq =
-                            sample_random_log_freq(&mut rng, tessitura_min_hz, tessitura_max_hz);
                         let (spawn_freq, oracle_c_score, oracle_c_level) = oracle_azimuth_search(
                             &selection_reference_landscape,
                             offspring_freq,
@@ -1218,10 +1570,14 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                             offspring_freq_hz: offspring_freq,
                             spawn_freq_hz: spawn_freq,
                             spawn_c_level: oracle_c_level,
-                            parent_family_center_hz: None,
-                            parent_azimuth_st: None,
-                            child_family_center_hz: None,
-                            child_azimuth_st: None,
+                            parent_family_center_hz: vacant_niche_sample
+                                .map(|sample| sample.parent_family_center_hz),
+                            parent_azimuth_st: vacant_niche_sample
+                                .map(|sample| sample.parent_azimuth_st),
+                            child_family_center_hz: vacant_niche_sample
+                                .map(|sample| sample.child_family_center_hz),
+                            child_azimuth_st: vacant_niche_sample
+                                .map(|sample| sample.child_azimuth_st),
                             family_inherited: None,
                             family_mutated: None,
                             oracle_applied: true,
@@ -1253,8 +1609,6 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                         continue;
                     }
                     if let Some(radius_st) = post_respawn_azimuth_tuning_radius_st {
-                        let offspring_freq =
-                            sample_random_log_freq(&mut rng, tessitura_min_hz, tessitura_max_hz);
                         let (spawn_freq, _, _) = oracle_azimuth_search(
                             &selection_reference_landscape,
                             offspring_freq,
@@ -1282,10 +1636,14 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                             offspring_freq_hz: offspring_freq,
                             spawn_freq_hz: spawn_freq,
                             spawn_c_level,
-                            parent_family_center_hz: None,
-                            parent_azimuth_st: None,
-                            child_family_center_hz: None,
-                            child_azimuth_st: None,
+                            parent_family_center_hz: vacant_niche_sample
+                                .map(|sample| sample.parent_family_center_hz),
+                            parent_azimuth_st: vacant_niche_sample
+                                .map(|sample| sample.parent_azimuth_st),
+                            child_family_center_hz: vacant_niche_sample
+                                .map(|sample| sample.child_family_center_hz),
+                            child_azimuth_st: vacant_niche_sample
+                                .map(|sample| sample.child_azimuth_st),
                             family_inherited: None,
                             family_mutated: None,
                             oracle_applied: false,
@@ -1314,6 +1672,64 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                             &selection_reference_landscape,
                             oracle_freeze_pitch_after_respawn,
                         );
+                        continue;
+                    }
+                    if matches!(respawn_mode, E6RespawnMode::VacantNicheByParentPrior) {
+                        pop.apply_action(
+                            Action::Spawn {
+                                group_id: E3_GROUP_AGENTS,
+                                ids: vec![id],
+                                spec: spec.clone(),
+                                strategy: Some(SpawnStrategy::RandomLog {
+                                    min_freq: offspring_freq,
+                                    max_freq: offspring_freq,
+                                }),
+                            },
+                            &landscape,
+                            None,
+                        );
+                        let _ = e6_record_child_spawn_state(
+                            &mut states,
+                            child_idx,
+                            offspring_freq,
+                            &selection_reference_landscape,
+                            oracle_freeze_pitch_after_respawn,
+                        );
+                        out.respawns.push(E6RespawnRecord {
+                            step,
+                            dead_agent_id: id as usize,
+                            child_life_id,
+                            parent_agent_id: None,
+                            parent_life_id: None,
+                            parent_freq_hz: None,
+                            parent_energy: None,
+                            parent_c_level: None,
+                            candidate_count: 0,
+                            candidate_energy_mean: 0.0,
+                            candidate_energy_std: 0.0,
+                            candidate_c_level_mean: 0.0,
+                            chosen_selection_prob: None,
+                            offspring_freq_hz: offspring_freq,
+                            spawn_freq_hz: offspring_freq,
+                            spawn_c_level: selection_reference_landscape
+                                .evaluate_pitch_level(offspring_freq)
+                                .clamp(0.0, 1.0),
+                            parent_family_center_hz: vacant_niche_sample
+                                .map(|sample| sample.parent_family_center_hz),
+                            parent_azimuth_st: vacant_niche_sample
+                                .map(|sample| sample.parent_azimuth_st),
+                            child_family_center_hz: vacant_niche_sample
+                                .map(|sample| sample.child_family_center_hz),
+                            child_azimuth_st: vacant_niche_sample
+                                .map(|sample| sample.child_azimuth_st),
+                            family_inherited: None,
+                            family_mutated: None,
+                            oracle_applied: false,
+                            oracle_freq_hz: None,
+                            oracle_c_score: None,
+                            oracle_c_level: None,
+                            oracle_delta_st: None,
+                        });
                         continue;
                     }
                     strategy.clone()
@@ -1407,15 +1823,40 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                         if let Some(ref perm) = shuffle_perm {
                             apply_e6_shuffle_permutation(&mut parent_landscape, perm);
                         }
-                        let heredity_sample = sample_from_parent_harmonicity(
-                            &parent_landscape,
-                            &landscape,
-                            parent_freq,
-                            spec.control.pitch.crowding_sigma_cents,
-                            tessitura_min_hz,
-                            tessitura_max_hz,
-                            &mut rng,
-                        );
+                        let alive_freqs_hz = collect_alive_freqs(&pop);
+                        let heredity_sample = match respawn_mode {
+                            E6RespawnMode::LegacyFamilyAzimuth => sample_from_parent_harmonicity(
+                                &parent_landscape,
+                                &landscape,
+                                &alive_freqs_hz,
+                                parent_freq,
+                                spec.control.pitch.crowding_sigma_cents,
+                                tessitura_min_hz,
+                                tessitura_max_hz,
+                                &mut rng,
+                                family_occupancy_strength,
+                                family_nfd_mode,
+                            ),
+                            E6RespawnMode::VacantNicheByParentPrior => {
+                                let scene_landscape = build_e6_scene_landscape_with_anchor(
+                                    &space,
+                                    &params,
+                                    &selection_reference_landscape,
+                                    &alive_freqs_hz,
+                                    partials,
+                                    E4_ENV_PARTIAL_DECAY_DEFAULT,
+                                );
+                                let niches = e6_extract_vacant_niches(
+                                    &space,
+                                    &scene_landscape,
+                                    &alive_freqs_hz,
+                                    Some(&parent_landscape),
+                                    tessitura_min_hz,
+                                    tessitura_max_hz,
+                                );
+                                sample_from_vacant_niches(&niches, parent_freq, true, &mut rng)
+                            }
+                        };
                         let offspring_freq = heredity_sample.offspring_freq_hz;
                         let (spawn_freq, oracle_applied, oracle_c_score, oracle_c_level) =
                             if oracle_global_anchor_c {
@@ -1573,6 +2014,39 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
 
     out.total_deaths = out.deaths.len();
     out
+}
+
+pub fn run_e6b(cfg: &E6bRunConfig) -> E6bRunResult {
+    let shared_cfg = E6RunConfig {
+        seed: cfg.seed,
+        steps_cap: cfg.steps_cap,
+        min_deaths: cfg.min_deaths,
+        pop_size: cfg.pop_size,
+        first_k: cfg.first_k,
+        condition: cfg.condition,
+        snapshot_interval: cfg.snapshot_interval,
+        landscape_weight: 0.0,
+        shuffle_landscape: cfg.shuffle_landscape,
+        env_partials: None,
+        oracle_azimuth_radius_st: None,
+        oracle_global_anchor_c: false,
+        oracle_freeze_pitch_after_respawn: false,
+        crowding_strength_override: Some(0.0),
+        adaptation_enabled_override: Some(false),
+        range_oct_override: Some(E6B_DEFAULT_RANGE_OCT),
+        e2_aligned_exact_local_search_radius_st: None,
+        disable_within_life_pitch_movement: true,
+        selection_enabled: cfg.selection_enabled,
+        selection_contextual_mix_weight: 0.0,
+        selection_score_mode: E6SelectionScoreMode::PolyphonicLooCrowding,
+        juvenile_contextual_settlement_enabled: true,
+        juvenile_cull_enabled: false,
+        record_life_diagnostics: false,
+        family_occupancy_strength_override: None,
+        family_nfd_mode: E6FamilyNfdMode::Off,
+        respawn_mode: E6RespawnMode::VacantNicheByParentPrior,
+    };
+    run_e6(&shared_cfg).into()
 }
 
 pub fn e3_reference_landscape(anchor_hz: f32) -> Landscape {
@@ -2364,6 +2838,34 @@ fn add_harmonic_partials_to_env(
     }
 }
 
+fn subtract_harmonic_partials_from_env(
+    space: &Log2Space,
+    env_scan: &mut [f32],
+    f0_hz: f32,
+    base_gain: f32,
+    partials: u32,
+    partial_decay: f32,
+) {
+    if !f0_hz.is_finite() || f0_hz <= 0.0 || !base_gain.is_finite() || base_gain <= 0.0 {
+        return;
+    }
+    let decay = sanitize_env_partial_decay(partial_decay);
+    let partials = sanitize_env_partials(partials);
+    for k in 1..=partials {
+        let freq = f0_hz * k as f32;
+        if !freq.is_finite() || freq <= 0.0 {
+            continue;
+        }
+        let Some(idx) = space.index_of_freq(freq) else {
+            continue;
+        };
+        let weight = base_gain / (k as f32).powf(decay);
+        if weight.is_finite() && weight > 0.0 {
+            env_scan[idx] = (env_scan[idx] - weight).max(0.0);
+        }
+    }
+}
+
 fn build_anchor_landscape(
     space: &Log2Space,
     params: &LandscapeParams,
@@ -2448,6 +2950,54 @@ fn build_density_landscape_from_freqs(
     landscape
 }
 
+fn build_density_landscape_from_env_scan(
+    space: &Log2Space,
+    params: &LandscapeParams,
+    env_scan: Vec<f32>,
+) -> Landscape {
+    let mut landscape = Landscape::new(space.clone());
+    space.assert_scan_len_named(&env_scan, "combined_env_scan");
+
+    let h_dual = params
+        .harmonicity_kernel
+        .potential_h_dual_from_log2_spectrum(&env_scan, space);
+    landscape.subjective_intensity = env_scan.clone();
+    landscape.nsgt_power = env_scan;
+    landscape.harmonicity = h_dual.blended;
+    landscape.harmonicity_path_a = h_dual.path_a;
+    landscape.harmonicity_path_b = h_dual.path_b;
+    landscape.root_affinity = h_dual.metrics.root_affinity;
+    landscape.overtone_affinity = h_dual.metrics.overtone_affinity;
+    landscape.binding_strength = h_dual.metrics.binding_strength;
+    landscape.harmonic_tilt = h_dual.metrics.harmonic_tilt;
+    landscape.harmonicity_mirror_weight = params.harmonicity_kernel.params.mirror_weight;
+    compute_roughness_for_landscape(space, params, &mut landscape);
+    landscape
+}
+
+fn build_e6_contextual_loo_landscape(
+    space: &Log2Space,
+    params: &LandscapeParams,
+    contextual_landscape: &Landscape,
+    self_freq_hz: f32,
+    env_partials: u32,
+    env_partial_decay: f32,
+) -> Landscape {
+    if !self_freq_hz.is_finite() || self_freq_hz <= 0.0 {
+        return contextual_landscape.clone();
+    }
+    let mut env_scan = contextual_landscape.subjective_intensity.clone();
+    subtract_harmonic_partials_from_env(
+        space,
+        &mut env_scan,
+        self_freq_hz,
+        1.0,
+        env_partials,
+        env_partial_decay,
+    );
+    build_density_landscape_from_env_scan(space, params, env_scan)
+}
+
 fn compute_roughness_for_landscape(
     space: &Log2Space,
     params: &LandscapeParams,
@@ -2527,6 +3077,66 @@ fn weak_social_roughness_weight(current_landscape: &Landscape, idx: usize) -> f3
     (1.0 - E6_HEREDITY_SOCIAL_ROUGHNESS_WEIGHT * roughness01.clamp(0.0, 1.0)).max(0.0)
 }
 
+fn family_occupancy_score(center_freq_hz: f32, alive_freqs_hz: &[f32]) -> f32 {
+    if !center_freq_hz.is_finite() || center_freq_hz <= 0.0 || alive_freqs_hz.is_empty() {
+        return 0.0;
+    }
+    let center_log2 = center_freq_hz.max(1e-6).log2();
+    let sigma_oct = (E6_HEREDITY_FAMILY_OCCUPANCY_SIGMA_ST / 12.0).max(1e-6);
+    alive_freqs_hz
+        .iter()
+        .copied()
+        .filter(|f| f.is_finite() && *f > 0.0)
+        .map(|freq_hz| {
+            let dz = (freq_hz.log2() - center_log2) / sigma_oct;
+            (-0.5 * dz * dz).exp()
+        })
+        .sum::<f32>()
+}
+
+fn family_occupancy_weight(
+    center_freq_hz: f32,
+    alive_freqs_hz: &[f32],
+    occupancy_strength: f32,
+) -> f32 {
+    let occupancy = family_occupancy_score(center_freq_hz, alive_freqs_hz).max(0.0);
+    (1.0 / (1.0 + occupancy_strength.max(0.0) * occupancy)).clamp(0.1, 1.0)
+}
+
+fn family_contextual_weight(center_freq_hz: f32, current_landscape: &Landscape) -> f32 {
+    if !center_freq_hz.is_finite() || center_freq_hz <= 0.0 {
+        return 1.0;
+    }
+    let contextual_score = current_landscape.evaluate_pitch_score(center_freq_hz);
+    (E6_HEREDITY_FAMILY_CONTEXTUAL_BETA * contextual_score)
+        .exp()
+        .clamp(0.1, 4.0)
+}
+
+fn family_choice_weight(
+    center_freq_hz: f32,
+    current_landscape: &Landscape,
+    alive_freqs_hz: &[f32],
+    occupancy_strength: f32,
+    nfd_mode: E6FamilyNfdMode,
+    apply_nfd: bool,
+) -> f32 {
+    let occupancy_weight = match nfd_mode {
+        E6FamilyNfdMode::Off => 1.0,
+        E6FamilyNfdMode::SameFamilyOnly => {
+            if apply_nfd {
+                family_occupancy_weight(center_freq_hz, alive_freqs_hz, occupancy_strength)
+            } else {
+                1.0
+            }
+        }
+        E6FamilyNfdMode::SameFamilyAndAlt => {
+            family_occupancy_weight(center_freq_hz, alive_freqs_hz, occupancy_strength)
+        }
+    };
+    family_contextual_weight(center_freq_hz, current_landscape) * occupancy_weight
+}
+
 fn sample_from_weight_scan(
     space: &Log2Space,
     weights: &[f32],
@@ -2600,6 +3210,234 @@ struct E6HereditySample {
     child_azimuth_st: f32,
     family_inherited: bool,
     family_mutated: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct E6VacantNiche {
+    center_idx: usize,
+    center_freq_hz: f32,
+    base_score: f32,
+    parent_prior: f32,
+}
+
+fn build_e6_scene_landscape_with_anchor(
+    space: &Log2Space,
+    params: &LandscapeParams,
+    selection_reference_landscape: &Landscape,
+    freqs_hz: &[f32],
+    env_partials: u32,
+    env_partial_decay: f32,
+) -> Landscape {
+    let mut env_scan = selection_reference_landscape.subjective_intensity.clone();
+    for &freq_hz in freqs_hz {
+        if !freq_hz.is_finite() || freq_hz <= 0.0 {
+            continue;
+        }
+        add_harmonic_partials_to_env(
+            space,
+            &mut env_scan,
+            freq_hz,
+            1.0,
+            env_partials,
+            env_partial_decay,
+        );
+    }
+    build_density_landscape_from_env_scan(space, params, env_scan)
+}
+
+fn e6_runtime_crowding(freq_hz: f32, other_freqs_hz: &[f32]) -> f32 {
+    if !freq_hz.is_finite() || freq_hz <= 0.0 {
+        return 0.0;
+    }
+    let kernel_params = KernelParams::default();
+    let candidate_erb = hz_to_erb(freq_hz.max(1e-6));
+    other_freqs_hz
+        .iter()
+        .copied()
+        .filter(|f| f.is_finite() && *f > 0.0)
+        .map(|other_freq_hz| {
+            let other_erb = hz_to_erb(other_freq_hz.max(1e-6));
+            crowding_runtime_delta_erb(&kernel_params, candidate_erb - other_erb)
+        })
+        .sum()
+}
+
+fn e6_respects_hard_anti_fusion(freq_hz: f32, occupied_freqs_hz: &[f32]) -> bool {
+    if !freq_hz.is_finite() || freq_hz <= 0.0 {
+        return false;
+    }
+    let kernel_params = KernelParams::default();
+    let candidate_erb = hz_to_erb(freq_hz.max(1e-6));
+    occupied_freqs_hz.iter().copied().all(|other_freq_hz| {
+        if !other_freq_hz.is_finite() || other_freq_hz <= 0.0 {
+            return true;
+        }
+        let other_erb = hz_to_erb(other_freq_hz.max(1e-6));
+        crowding_runtime_delta_erb(&kernel_params, candidate_erb - other_erb)
+            <= E6_HARD_ANTI_FUSION_EPS
+    })
+}
+
+fn e6_polyphonic_selection_score(
+    loo_scene_landscape: &Landscape,
+    freq_hz: f32,
+    other_freqs_hz: &[f32],
+) -> f32 {
+    loo_scene_landscape.evaluate_pitch_score(freq_hz)
+        - E2_MATCH_CROWDING_WEIGHT * e6_runtime_crowding(freq_hz, other_freqs_hz)
+}
+
+fn e6_extract_vacant_niches(
+    space: &Log2Space,
+    scene_landscape: &Landscape,
+    occupied_freqs_hz: &[f32],
+    parent_prior_landscape: Option<&Landscape>,
+    tessitura_min_hz: f32,
+    tessitura_max_hz: f32,
+) -> Vec<E6VacantNiche> {
+    if space.n_bins() == 0 {
+        return Vec::new();
+    }
+
+    let min_hz = tessitura_min_hz.min(tessitura_max_hz).max(1e-6);
+    let max_hz = tessitura_max_hz.max(tessitura_min_hz).max(min_hz);
+    let mut score_scan = vec![f32::NEG_INFINITY; space.n_bins()];
+    for (idx, &freq_hz) in space.centers_hz.iter().enumerate() {
+        if freq_hz < min_hz || freq_hz > max_hz {
+            continue;
+        }
+        if !e6_respects_hard_anti_fusion(freq_hz, occupied_freqs_hz) {
+            continue;
+        }
+        score_scan[idx] =
+            e6_polyphonic_selection_score(scene_landscape, freq_hz, occupied_freqs_hz);
+    }
+
+    let best_idx = score_scan
+        .iter()
+        .enumerate()
+        .filter(|(_, score)| score.is_finite())
+        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(idx, _)| idx);
+    let Some(best_idx) = best_idx else {
+        return Vec::new();
+    };
+
+    let mut peak_indices: Vec<usize> = Vec::new();
+    for idx in 0..score_scan.len() {
+        let here = score_scan[idx];
+        if !here.is_finite() {
+            continue;
+        }
+        let prev = if idx == 0 {
+            f32::NEG_INFINITY
+        } else {
+            score_scan[idx - 1]
+        };
+        let next = if idx + 1 >= score_scan.len() {
+            f32::NEG_INFINITY
+        } else {
+            score_scan[idx + 1]
+        };
+        let prev_finite = if prev.is_finite() {
+            prev
+        } else {
+            f32::NEG_INFINITY
+        };
+        let next_finite = if next.is_finite() {
+            next
+        } else {
+            f32::NEG_INFINITY
+        };
+        if here >= prev_finite && here > next_finite {
+            peak_indices.push(idx);
+        }
+    }
+    if peak_indices.is_empty() {
+        peak_indices.push(best_idx);
+    }
+
+    peak_indices
+        .into_iter()
+        .map(|idx| {
+            let freq_hz = space.centers_hz[idx];
+            let parent_prior = parent_prior_landscape
+                .map(|landscape| landscape.evaluate_pitch_score(freq_hz))
+                .unwrap_or(1.0)
+                .max(E6_NICHE_PARENT_PRIOR_FLOOR);
+            E6VacantNiche {
+                center_idx: idx,
+                center_freq_hz: freq_hz,
+                base_score: score_scan[idx],
+                parent_prior,
+            }
+        })
+        .collect()
+}
+
+fn sample_from_vacant_niches(
+    niches: &[E6VacantNiche],
+    parent_freq_hz: f32,
+    heredity_enabled: bool,
+    rng: &mut impl Rng,
+) -> E6HereditySample {
+    if niches.is_empty() {
+        return E6HereditySample {
+            offspring_freq_hz: parent_freq_hz,
+            parent_family_center_hz: parent_freq_hz,
+            parent_azimuth_st: 0.0,
+            child_family_center_hz: parent_freq_hz,
+            child_azimuth_st: 0.0,
+            family_inherited: false,
+            family_mutated: false,
+        };
+    }
+
+    let preferred_idx = niches
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| {
+            a.parent_prior
+                .partial_cmp(&b.parent_prior)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| {
+                    a.base_score
+                        .partial_cmp(&b.base_score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+        })
+        .map(|(idx, _)| idx)
+        .unwrap_or(0);
+    let chosen_idx = if heredity_enabled {
+        let weights: Vec<f32> = niches
+            .iter()
+            .map(|niche| {
+                niche
+                    .parent_prior
+                    .powf(E6_NICHE_PARENT_PRIOR_EXPONENT)
+                    .max(1e-6)
+            })
+            .collect();
+        if let Ok(dist) = WeightedIndex::new(&weights) {
+            dist.sample(rng)
+        } else {
+            preferred_idx
+        }
+    } else {
+        rng.random_range(0..niches.len())
+    };
+    let preferred = niches[preferred_idx];
+    let chosen = niches[chosen_idx];
+    let family_inherited = heredity_enabled && chosen.center_idx == preferred.center_idx;
+    E6HereditySample {
+        offspring_freq_hz: chosen.center_freq_hz,
+        parent_family_center_hz: preferred.center_freq_hz,
+        parent_azimuth_st: 0.0,
+        child_family_center_hz: chosen.center_freq_hz,
+        child_azimuth_st: 0.0,
+        family_inherited,
+        family_mutated: heredity_enabled && !family_inherited,
+    }
 }
 
 fn semitone_distance(space: &Log2Space, idx_a: usize, idx_b: usize) -> f32 {
@@ -2774,7 +3612,7 @@ fn oracle_azimuth_search(
     (best_freq, best_score, best_level)
 }
 
-fn collect_alive_erbs(pop: &Population) -> Vec<f32> {
+fn collect_alive_freqs(pop: &Population) -> Vec<f32> {
     pop.individuals
         .iter()
         .filter(|agent| agent.is_alive())
@@ -2783,7 +3621,7 @@ fn collect_alive_erbs(pop: &Population) -> Vec<f32> {
             if !freq_hz.is_finite() || freq_hz <= 0.0 {
                 return None;
             }
-            Some(hz_to_erb(freq_hz))
+            Some(freq_hz)
         })
         .collect()
 }
@@ -2908,11 +3746,14 @@ fn oracle_global_anchor_search(
 fn sample_from_parent_harmonicity(
     parent_landscape: &Landscape,
     current_landscape: &Landscape,
+    alive_freqs_hz: &[f32],
     parent_freq_hz: f32,
     crowding_sigma_cents: f32,
     tessitura_min_hz: f32,
     tessitura_max_hz: f32,
     rng: &mut impl Rng,
+    family_occupancy_strength: f32,
+    family_nfd_mode: E6FamilyNfdMode,
 ) -> E6HereditySample {
     let space = &parent_landscape.space;
     let n = space.n_bins();
@@ -2968,12 +3809,45 @@ fn sample_from_parent_harmonicity(
     let max_hz = tessitura_max_hz.max(tessitura_min_hz).max(min_hz);
 
     for _ in 0..E6_HEREDITY_MUTATION_MAX_ATTEMPTS {
-        let inherit_same_family =
-            peaks.len() == 1 || rng.random::<f32>() < E6_HEREDITY_INHERIT_SAME_FAMILY_PROB;
+        let parent_family_weight = family_choice_weight(
+            parent_family_center_hz,
+            current_landscape,
+            alive_freqs_hz,
+            family_occupancy_strength,
+            family_nfd_mode,
+            true,
+        );
+        let inherit_same_family = peaks.len() == 1
+            || rng.random::<f32>()
+                < (E6_HEREDITY_INHERIT_SAME_FAMILY_PROB * parent_family_weight).clamp(0.0, 1.0);
         let child_peak_idx = if inherit_same_family {
             parent_peak_idx
         } else {
-            sample_mutated_peak_family_idx(&peaks, parent_peak_idx, rng).unwrap_or(parent_peak_idx)
+            let candidate_indices: Vec<usize> = (0..peaks.len())
+                .filter(|&idx| idx != parent_peak_idx)
+                .collect();
+            let candidate_weights: Vec<f32> = candidate_indices
+                .iter()
+                .map(|&idx| {
+                    let center_hz = space.centers_hz[peaks[idx].center_idx];
+                    let family_weight = family_choice_weight(
+                        center_hz,
+                        current_landscape,
+                        alive_freqs_hz,
+                        family_occupancy_strength,
+                        family_nfd_mode,
+                        false,
+                    );
+                    (peaks[idx].mass.max(1e-6) * family_weight).max(0.0)
+                })
+                .collect();
+            if let Ok(dist) = WeightedIndex::new(&candidate_weights) {
+                let local_idx = dist.sample(rng);
+                candidate_indices[local_idx]
+            } else {
+                sample_mutated_peak_family_idx(&peaks, parent_peak_idx, rng)
+                    .unwrap_or(parent_peak_idx)
+            }
         };
         let family_inherited = child_peak_idx == parent_peak_idx;
         let child_family_center_hz = space.centers_hz[peaks[child_peak_idx].center_idx];
@@ -3142,6 +4016,227 @@ fn e6_apply_exact_e2_aligned_local_search(
     }
 }
 
+fn e6_apply_juvenile_contextual_local_search(
+    pop: &mut Population,
+    states: &[E3LifeState],
+    selection_reference_landscape: &Landscape,
+    contextual_landscape: &Landscape,
+    space: &Log2Space,
+    params: &LandscapeParams,
+    env_partials: u32,
+    env_partial_decay: f32,
+    step: usize,
+    tessitura_min_hz: f32,
+    tessitura_max_hz: f32,
+    contextual_mix_weight: f32,
+) {
+    if contextual_mix_weight <= 0.0 {
+        return;
+    }
+    let mut eligible_ids: Vec<usize> = pop
+        .individuals
+        .iter()
+        .filter(|agent| agent.is_alive())
+        .filter_map(|agent| {
+            let idx = agent.id() as usize;
+            let state = states.get(idx)?;
+            (state.ticks < E6_JUVENILE_CONTEXTUAL_TUNING_TICKS).then_some(idx)
+        })
+        .collect();
+    if eligible_ids.is_empty() {
+        return;
+    }
+    eligible_ids.sort_unstable();
+    let target_agent_id = eligible_ids[step % eligible_ids.len()];
+    let Some(agent_pos) = pop
+        .individuals
+        .iter()
+        .position(|agent| agent.id() as usize == target_agent_id)
+    else {
+        return;
+    };
+
+    let current_freq_hz = pop.individuals[agent_pos].body.base_freq_hz();
+    if !current_freq_hz.is_finite() || current_freq_hz <= 0.0 {
+        return;
+    }
+    let current_pitch_log2 = current_freq_hz.log2();
+    let kernel_params = KernelParams::default();
+    let current_erb = hz_to_erb(current_freq_hz.max(1e-6));
+    let neighbor_erbs: Vec<f32> = pop
+        .individuals
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, agent)| {
+            if idx == agent_pos || !agent.is_alive() {
+                return None;
+            }
+            let freq_hz = agent.body.base_freq_hz();
+            if !freq_hz.is_finite() || freq_hz <= 0.0 {
+                return None;
+            }
+            Some(hz_to_erb(freq_hz))
+        })
+        .collect();
+
+    let mut current_crowding = 0.0f32;
+    for &other_erb in &neighbor_erbs {
+        current_crowding += crowding_runtime_delta_erb(&kernel_params, current_erb - other_erb);
+    }
+    let loo_contextual_landscape = build_e6_contextual_loo_landscape(
+        space,
+        params,
+        contextual_landscape,
+        current_freq_hz,
+        env_partials,
+        env_partial_decay,
+    );
+    let current_score = e6_selection_score(
+        selection_reference_landscape,
+        &loo_contextual_landscape,
+        current_freq_hz,
+        contextual_mix_weight,
+    ) - E6_JUVENILE_CONTEXTUAL_TUNING_CROWDING_WEIGHT * current_crowding;
+
+    let grid_st = E6_JUVENILE_CONTEXTUAL_TUNING_GRID_ST.max(0.25);
+    let radius_steps = (E6_JUVENILE_CONTEXTUAL_TUNING_RADIUS_ST.max(0.0) / grid_st).round() as i32;
+    let step_log2 = (grid_st / 12.0).max(1e-6);
+    let mut best_freq_hz = current_freq_hz;
+    let mut best_score = current_score;
+
+    for offset_steps in -radius_steps..=radius_steps {
+        let cand_pitch_log2 = current_pitch_log2 + offset_steps as f32 * step_log2;
+        let cand_freq_hz = 2.0f32
+            .powf(cand_pitch_log2)
+            .clamp(tessitura_min_hz, tessitura_max_hz);
+        if !cand_freq_hz.is_finite() || cand_freq_hz <= 0.0 {
+            continue;
+        }
+        let cand_erb = hz_to_erb(cand_freq_hz.max(1e-6));
+        let mut cand_crowding = 0.0f32;
+        for &other_erb in &neighbor_erbs {
+            cand_crowding += crowding_runtime_delta_erb(&kernel_params, cand_erb - other_erb);
+        }
+        let move_cost =
+            shared_hill_move_cost_coeff() * (cand_pitch_log2 - current_pitch_log2).abs();
+        let cand_score = e6_selection_score(
+            selection_reference_landscape,
+            &loo_contextual_landscape,
+            cand_freq_hz,
+            contextual_mix_weight,
+        ) - E6_JUVENILE_CONTEXTUAL_TUNING_CROWDING_WEIGHT * cand_crowding
+            - move_cost;
+        if cand_score > best_score {
+            best_score = cand_score;
+            best_freq_hz = cand_freq_hz;
+        }
+    }
+
+    if best_score > current_score + E6_JUVENILE_CONTEXTUAL_TUNING_IMPROVEMENT_THRESHOLD
+        && let Some(agent) = pop.individuals.get_mut(agent_pos)
+    {
+        agent.body.set_freq(best_freq_hz);
+    }
+}
+
+fn e6_apply_juvenile_polyphonic_local_search(
+    pop: &mut Population,
+    states: &[E3LifeState],
+    scene_landscape: &Landscape,
+    space: &Log2Space,
+    params: &LandscapeParams,
+    env_partials: u32,
+    env_partial_decay: f32,
+    step: usize,
+    tessitura_min_hz: f32,
+    tessitura_max_hz: f32,
+) {
+    let mut eligible_ids: Vec<usize> = pop
+        .individuals
+        .iter()
+        .filter(|agent| agent.is_alive())
+        .filter_map(|agent| {
+            let idx = agent.id() as usize;
+            let state = states.get(idx)?;
+            (state.ticks < E6_JUVENILE_CONTEXTUAL_TUNING_TICKS).then_some(idx)
+        })
+        .collect();
+    if eligible_ids.is_empty() {
+        return;
+    }
+    eligible_ids.sort_unstable();
+    let target_agent_id = eligible_ids[step % eligible_ids.len()];
+    let Some(agent_pos) = pop
+        .individuals
+        .iter()
+        .position(|agent| agent.id() as usize == target_agent_id)
+    else {
+        return;
+    };
+
+    let current_freq_hz = pop.individuals[agent_pos].body.base_freq_hz();
+    if !current_freq_hz.is_finite() || current_freq_hz <= 0.0 {
+        return;
+    }
+    let other_freqs_hz = pop
+        .individuals
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, agent)| {
+            if idx == agent_pos || !agent.is_alive() {
+                return None;
+            }
+            let freq_hz = agent.body.base_freq_hz();
+            (freq_hz.is_finite() && freq_hz > 0.0).then_some(freq_hz)
+        })
+        .collect::<Vec<_>>();
+    let loo_scene_landscape = build_e6_contextual_loo_landscape(
+        space,
+        params,
+        scene_landscape,
+        current_freq_hz,
+        env_partials,
+        env_partial_decay,
+    );
+    let current_pitch_log2 = current_freq_hz.log2();
+    let current_score =
+        e6_polyphonic_selection_score(&loo_scene_landscape, current_freq_hz, &other_freqs_hz);
+
+    let grid_st = E6_JUVENILE_CONTEXTUAL_TUNING_GRID_ST.max(0.25);
+    let radius_steps = (E6_JUVENILE_CONTEXTUAL_TUNING_RADIUS_ST.max(0.0) / grid_st).round() as i32;
+    let step_log2 = (grid_st / 12.0).max(1e-6);
+    let mut best_freq_hz = current_freq_hz;
+    let mut best_score = current_score;
+
+    for offset_steps in -radius_steps..=radius_steps {
+        let cand_pitch_log2 = current_pitch_log2 + offset_steps as f32 * step_log2;
+        let cand_freq_hz = 2.0f32
+            .powf(cand_pitch_log2)
+            .clamp(tessitura_min_hz, tessitura_max_hz);
+        if !cand_freq_hz.is_finite() || cand_freq_hz <= 0.0 {
+            continue;
+        }
+        if !e6_respects_hard_anti_fusion(cand_freq_hz, &other_freqs_hz) {
+            continue;
+        }
+        let move_cost =
+            shared_hill_move_cost_coeff() * (cand_pitch_log2 - current_pitch_log2).abs();
+        let cand_score =
+            e6_polyphonic_selection_score(&loo_scene_landscape, cand_freq_hz, &other_freqs_hz)
+                - move_cost;
+        if cand_score > best_score {
+            best_score = cand_score;
+            best_freq_hz = cand_freq_hz;
+        }
+    }
+
+    if best_score > current_score + E6_JUVENILE_CONTEXTUAL_TUNING_IMPROVEMENT_THRESHOLD
+        && let Some(agent) = pop.individuals.get_mut(agent_pos)
+    {
+        agent.body.set_freq(best_freq_hz);
+    }
+}
+
 fn apply_selection_recharge(agent: &mut Individual, c_score: f32, rate_per_sec: f32, dt_sec: f32) {
     let delta = rate_per_sec * c_score.max(0.0) * dt_sec.max(0.0);
     if delta <= 0.0 || !delta.is_finite() {
@@ -3174,6 +4269,24 @@ pub fn e6_mean_selection_score_for_freqs(
     env_partials: Option<u32>,
     env_partial_decay: Option<f32>,
 ) -> f32 {
+    e6_mean_selection_score_for_freqs_mode(
+        freqs_hz,
+        anchor_hz,
+        E6SelectionScoreMode::LegacyAnchorContextMix,
+        contextual_mix_weight,
+        env_partials,
+        env_partial_decay,
+    )
+}
+
+pub fn e6_mean_selection_score_for_freqs_mode(
+    freqs_hz: &[f32],
+    anchor_hz: f32,
+    selection_score_mode: E6SelectionScoreMode,
+    contextual_mix_weight: f32,
+    env_partials: Option<u32>,
+    env_partial_decay: Option<f32>,
+) -> f32 {
     let clean_freqs: Vec<f32> = freqs_hz
         .iter()
         .copied()
@@ -3189,40 +4302,70 @@ pub fn e6_mean_selection_score_for_freqs(
     let selection_reference_landscape = e3_reference_landscape_with_partials(anchor_hz, partials);
     let space = selection_reference_landscape.space.clone();
     let params = make_landscape_params(&space, E3_FS, 1.0);
-    let mut contextual_landscape = e3_reference_landscape_with_partials(anchor_hz, partials);
-
-    let mut env_scan = vec![0.0f32; space.n_bins()];
-    for &freq in &clean_freqs {
-        add_harmonic_partials_to_env(&space, &mut env_scan, freq, 1.0, partials, decay);
-    }
-    let h_dual = params
-        .harmonicity_kernel
-        .potential_h_dual_from_log2_spectrum(&env_scan, &space);
-    contextual_landscape.subjective_intensity = env_scan.clone();
-    contextual_landscape.nsgt_power = env_scan;
-    contextual_landscape.harmonicity = h_dual.blended;
-    contextual_landscape.harmonicity_path_a = h_dual.path_a;
-    contextual_landscape.harmonicity_path_b = h_dual.path_b;
-    contextual_landscape.root_affinity = h_dual.metrics.root_affinity;
-    contextual_landscape.overtone_affinity = h_dual.metrics.overtone_affinity;
-    contextual_landscape.binding_strength = h_dual.metrics.binding_strength;
-    contextual_landscape.harmonic_tilt = h_dual.metrics.harmonic_tilt;
-    contextual_landscape.harmonicity_mirror_weight = params.harmonicity_kernel.params.mirror_weight;
-    compute_roughness_for_landscape(&space, &params, &mut contextual_landscape);
-
-    clean_freqs
-        .iter()
-        .copied()
-        .map(|freq| {
-            e6_selection_score(
+    match selection_score_mode {
+        E6SelectionScoreMode::LegacyAnchorContextMix => {
+            let mut env_scan = vec![0.0f32; space.n_bins()];
+            for &freq in &clean_freqs {
+                add_harmonic_partials_to_env(&space, &mut env_scan, freq, 1.0, partials, decay);
+            }
+            let contextual_landscape =
+                build_density_landscape_from_env_scan(&space, &params, env_scan);
+            clean_freqs
+                .iter()
+                .copied()
+                .map(|freq| {
+                    let loo_contextual_landscape = build_e6_contextual_loo_landscape(
+                        &space,
+                        &params,
+                        &contextual_landscape,
+                        freq,
+                        partials,
+                        decay,
+                    );
+                    e6_selection_score(
+                        &selection_reference_landscape,
+                        &loo_contextual_landscape,
+                        freq,
+                        contextual_mix_weight,
+                    )
+                })
+                .sum::<f32>()
+                / clean_freqs.len() as f32
+        }
+        E6SelectionScoreMode::PolyphonicLooCrowding => {
+            let scene_landscape = build_e6_scene_landscape_with_anchor(
+                &space,
+                &params,
                 &selection_reference_landscape,
-                &contextual_landscape,
-                freq,
-                contextual_mix_weight,
-            )
-        })
-        .sum::<f32>()
-        / clean_freqs.len() as f32
+                &clean_freqs,
+                partials,
+                decay,
+            );
+            clean_freqs
+                .iter()
+                .enumerate()
+                .map(|(idx, &freq)| {
+                    let other_freqs_hz = clean_freqs
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(other_idx, &other_freq)| {
+                            (other_idx != idx).then_some(other_freq)
+                        })
+                        .collect::<Vec<_>>();
+                    let loo_scene_landscape = build_e6_contextual_loo_landscape(
+                        &space,
+                        &params,
+                        &scene_landscape,
+                        freq,
+                        partials,
+                        decay,
+                    );
+                    e6_polyphonic_selection_score(&loo_scene_landscape, freq, &other_freqs_hz)
+                })
+                .sum::<f32>()
+                / clean_freqs.len() as f32
+        }
+    }
 }
 
 fn e6_agent_energy(agent: &Individual) -> Option<f32> {
@@ -4027,11 +5170,14 @@ mod tests {
             let sample = sample_from_parent_harmonicity(
                 &parent_landscape,
                 &current_landscape,
+                &[],
                 parent_freq,
                 E4_MATCH_SIGMA_CENTS,
                 tessitura_min_hz,
                 tessitura_max_hz,
                 &mut rng,
+                E6_HEREDITY_FAMILY_OCCUPANCY_STRENGTH,
+                E6FamilyNfdMode::Off,
             );
             let freq = sample.offspring_freq_hz;
             assert!(
@@ -4082,11 +5228,14 @@ mod tests {
             let sample = sample_from_parent_harmonicity(
                 &parent_landscape,
                 &current_landscape,
+                &[],
                 parent_freq,
                 E4_MATCH_SIGMA_CENTS,
                 min_hz,
                 max_hz,
                 &mut rng,
+                E6_HEREDITY_FAMILY_OCCUPANCY_STRENGTH,
+                E6FamilyNfdMode::Off,
             );
             assert!(
                 sample.offspring_freq_hz >= min_hz && sample.offspring_freq_hz <= max_hz,
@@ -4106,6 +5255,146 @@ mod tests {
             mean_abs_child_azimuth < E6_HEREDITY_AZIMUTH_CLIP_ST,
             "azimuth inheritance should keep children close to the selected family center"
         );
+    }
+
+    #[test]
+    fn e6_vacant_niches_respect_hard_anti_fusion() {
+        let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
+        let params = make_landscape_params(&space, E3_FS, 1.0);
+        let reference_landscape =
+            e3_reference_landscape_with_partials(E4_ANCHOR_HZ, E4_ENV_PARTIALS_DEFAULT);
+        let occupied = vec![
+            E4_ANCHOR_HZ * 2.0f32.powf(4.0 / 12.0),
+            E4_ANCHOR_HZ * 2.0f32.powf(7.0 / 12.0),
+        ];
+        let scene_landscape = build_e6_scene_landscape_with_anchor(
+            &space,
+            &params,
+            &reference_landscape,
+            &occupied,
+            E4_ENV_PARTIALS_DEFAULT,
+            E4_ENV_PARTIAL_DECAY_DEFAULT,
+        );
+        let parent_landscape = build_e6_parent_harmonicity_landscape(
+            &space,
+            &params,
+            occupied[1],
+            E4_ENV_PARTIALS_DEFAULT,
+            E4_ENV_PARTIAL_DECAY_DEFAULT,
+        );
+        let (min_hz, max_hz) = e3_tessitura_bounds(E4_ANCHOR_HZ, &space);
+        let niches = e6_extract_vacant_niches(
+            &space,
+            &scene_landscape,
+            &occupied,
+            Some(&parent_landscape),
+            min_hz,
+            max_hz,
+        );
+        assert!(
+            !niches.is_empty(),
+            "vacant niche extraction should expose at least one valid seat"
+        );
+        for niche in niches {
+            assert!(
+                niche.center_freq_hz >= min_hz && niche.center_freq_hz <= max_hz,
+                "niche center should stay inside tessitura"
+            );
+            assert!(
+                e6_respects_hard_anti_fusion(niche.center_freq_hz, &occupied),
+                "vacant niche centers must satisfy the hard anti-fusion gate"
+            );
+        }
+    }
+
+    #[test]
+    fn e6_polyphonic_selection_prefers_spread_over_duplicate_stack() {
+        let spread = vec![
+            E4_ANCHOR_HZ * (5.0 / 4.0),
+            E4_ANCHOR_HZ * (3.0 / 2.0),
+            E4_ANCHOR_HZ * (15.0 / 8.0),
+        ];
+        let duplicate = vec![
+            E4_ANCHOR_HZ * (3.0 / 2.0),
+            E4_ANCHOR_HZ * (3.0 / 2.0),
+            E4_ANCHOR_HZ * (3.0 / 2.0),
+        ];
+        let spread_score = e6_mean_selection_score_for_freqs_mode(
+            &spread,
+            E4_ANCHOR_HZ,
+            E6SelectionScoreMode::PolyphonicLooCrowding,
+            0.0,
+            None,
+            None,
+        );
+        let duplicate_score = e6_mean_selection_score_for_freqs_mode(
+            &duplicate,
+            E4_ANCHOR_HZ,
+            E6SelectionScoreMode::PolyphonicLooCrowding,
+            0.0,
+            None,
+            None,
+        );
+        assert!(
+            spread_score > duplicate_score,
+            "polyphonic selection should reward spread harmonic scenes over duplicate stacks"
+        );
+    }
+
+    #[test]
+    fn run_e6_polyphonic_vacant_niche_mode_avoids_close_endpoint_collisions() {
+        let cfg = E6RunConfig {
+            seed: 0xE6AA_9911,
+            steps_cap: 1500,
+            min_deaths: 24,
+            pop_size: 6,
+            first_k: 10,
+            condition: E6Condition::Heredity,
+            snapshot_interval: 25,
+            landscape_weight: 0.0,
+            shuffle_landscape: false,
+            env_partials: None,
+            oracle_azimuth_radius_st: None,
+            oracle_global_anchor_c: false,
+            oracle_freeze_pitch_after_respawn: false,
+            crowding_strength_override: Some(0.0),
+            adaptation_enabled_override: Some(false),
+            range_oct_override: Some(2.0),
+            e2_aligned_exact_local_search_radius_st: None,
+            disable_within_life_pitch_movement: true,
+            selection_enabled: true,
+            selection_contextual_mix_weight: 0.25,
+            selection_score_mode: E6SelectionScoreMode::PolyphonicLooCrowding,
+            juvenile_contextual_settlement_enabled: false,
+            juvenile_cull_enabled: false,
+            record_life_diagnostics: true,
+            family_occupancy_strength_override: None,
+            family_nfd_mode: E6FamilyNfdMode::Off,
+            respawn_mode: E6RespawnMode::VacantNicheByParentPrior,
+        };
+        let result = run_e6(&cfg);
+        assert!(
+            result.total_deaths >= cfg.min_deaths,
+            "polyphonic vacant-niche run should reach the requested turnover"
+        );
+        let final_snapshot = result
+            .snapshots
+            .last()
+            .expect("polyphonic vacant-niche run should produce snapshots");
+        for (idx, &freq_hz) in final_snapshot.freqs_hz.iter().enumerate() {
+            let occupied = final_snapshot
+                .freqs_hz
+                .iter()
+                .enumerate()
+                .filter_map(|(other_idx, &other_freq_hz)| {
+                    (other_idx != idx).then_some(other_freq_hz)
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                e6_respects_hard_anti_fusion(freq_hz, &occupied),
+                "polyphonic vacant-niche endpoint should not collapse into close collisions"
+            );
+        }
     }
 
     #[test]
@@ -4132,6 +5421,44 @@ mod tests {
                         <= E6_HEREDITY_PEAK_MERGE_ST),
             "peak extraction should retain the strongest local family"
         );
+    }
+
+    #[test]
+    fn e6b_run_reaches_turnover_without_close_collisions() {
+        let cfg = E6bRunConfig {
+            seed: 0xE6B0_1234,
+            steps_cap: 1800,
+            min_deaths: 24,
+            pop_size: 8,
+            first_k: 10,
+            condition: E6Condition::Heredity,
+            snapshot_interval: 20,
+            selection_enabled: true,
+            shuffle_landscape: false,
+        };
+        let result = run_e6b(&cfg);
+        assert!(
+            result.total_deaths >= cfg.min_deaths,
+            "E6b run should reach the requested turnover"
+        );
+        let final_snapshot = result
+            .snapshots
+            .last()
+            .expect("E6b run should produce snapshots");
+        for (idx, &freq_hz) in final_snapshot.freqs_hz.iter().enumerate() {
+            let occupied = final_snapshot
+                .freqs_hz
+                .iter()
+                .enumerate()
+                .filter_map(|(other_idx, &other_freq_hz)| {
+                    (other_idx != idx).then_some(other_freq_hz)
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                e6_respects_hard_anti_fusion(freq_hz, &occupied),
+                "E6b endpoint should keep hard anti-fusion spacing"
+            );
+        }
     }
 
     #[test]

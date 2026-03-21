@@ -11,6 +11,7 @@ Experiment runner and plot generator for all figures and statistical analyses in
 | Experiment 3 | E7          | Temporal Scaffold                              |
 | *(skipped)*  | E4          | *(excluded from paper)*                        |
 | Experiment 4 | E6          | Hereditary Adaptation                          |
+| Experimental | E6b         | Hereditary Polyphony Assay                     |
 | Supplementary mechanism check | E5 | Configurable spectral--temporal bridge |
 
 ## Quick start
@@ -27,6 +28,7 @@ just paper-pdf --exp e2
 ```
 
 When `--exp` is omitted, the default set `e1,e2,e3,e6,e7` is run.
+`e6b` is opt-in and runs only when requested explicitly.
 
 ## Build and test
 
@@ -61,6 +63,7 @@ Key output files per experiment:
 | E3 | `paper_e3_figure4.svg` | `paper_e3_lifetimes.csv` |
 | E5 | `paper_e5_figure.svg` | `paper_e5_summary.csv` (supplementary mechanism check) |
 | E6 | `paper_e6_figure.svg`, `paper_e6_integration_figure.svg` | `paper_e6_summary.csv` |
+| E6b | `paper_e6b_figure.svg` | `paper_e6b_endpoint_metrics.csv`, `paper_e6b_exp1_benchmark.txt` |
 | E7 | `paper_e7_figure.svg` | `paper_e7_summary.csv` |
 
 Use `--clean` when you need strict reproducibility from a fully fresh output tree.

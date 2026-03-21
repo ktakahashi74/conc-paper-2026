@@ -15,12 +15,15 @@ use plotters::prelude::*;
 
 use crate::sim::{
     E3_BINS_PER_OCT, E3_FMAX, E3_FMIN, E3Condition, E3DeathRecord, E3RunConfig, E4_ANCHOR_HZ,
-    E4RuntimeOverrides, E4TailSamples, E6AgentSnapshot, E6Condition, E6PitchSnapshot,
-    E6RespawnRecord, E6RunConfig, E6RunResult, configure_shared_hillclimb_core, e3_policy_params,
-    e3_reference_landscape, e3_reference_landscape_with_partials, e3_tessitura_bounds_for_range,
-    e4_paper_meta, e6_mean_selection_score_for_freqs, e6_sampler_debug_scan, run_e3_collect_deaths,
+    E4RuntimeOverrides, E4TailSamples, E6AgentSnapshot, E6B_DEFAULT_POP_SIZE, E6Condition,
+    E6FamilyNfdMode, E6PitchSnapshot, E6RespawnMode, E6RespawnRecord, E6RunConfig, E6RunResult,
+    E6SelectionScoreMode, E6bRunConfig, E6bRunResult, configure_shared_hillclimb_core,
+    e3_policy_params, e3_reference_landscape, e3_reference_landscape_with_partials,
+    e3_tessitura_bounds_for_range, e4_paper_meta, e6_mean_selection_score_for_freqs,
+    e6_mean_selection_score_for_freqs_mode, e6_sampler_debug_scan, run_e3_collect_deaths,
     run_e4_condition_tail_samples, run_e4_condition_tail_samples_with_wr,
-    run_e4_mirror_schedule_samples, run_e6, set_e4_runtime_overrides, shared_hill_move_cost_coeff,
+    run_e4_mirror_schedule_samples, run_e6, run_e6b, set_e4_runtime_overrides,
+    shared_hill_move_cost_coeff,
 };
 use conchordal::core::consonance_kernel::{ConsonanceKernel, ConsonanceRepresentationParams};
 use conchordal::core::erb::hz_to_erb;
@@ -361,7 +364,7 @@ const PAL_E7_SCRAMBLED: RGBColor = PAL_R;
 const PAL_E7_OFF: RGBColor = PAL_C;
 
 const E6_FIRST_K: usize = 20;
-const E6_POP_SIZE: usize = 24;
+const E6_POP_SIZE: usize = 12;
 const E6_MIN_DEATHS: usize = 2500;
 const E6_STEPS_CAP: usize = 10_000;
 const E6_HILL_LANDSCAPE_WEIGHT: f32 = 1.0;
@@ -369,6 +372,9 @@ const E6_SNAPSHOT_INTERVAL: usize = 10;
 const E6_FIG_X_MAX: f32 = 10_000.0;
 const E6_CONSONANT_WINDOW_ST: f32 = 0.25;
 const E6_INTERVAL_BIN_ST: f32 = 0.25;
+const E6_MAIN_RANGE_OCT: f32 = 2.0;
+const E6_MAIN_FAMILY_NFD_MODE: E6FamilyNfdMode = E6FamilyNfdMode::SameFamilyOnly;
+const E6_MAIN_FAMILY_OCCUPANCY_STRENGTH: f32 = 0.02;
 const E6_SEEDS: [u64; 20] = [
     0xC0FFEE_u64 + 60,
     0xC0FFEE_u64 + 61,
@@ -391,13 +397,39 @@ const E6_SEEDS: [u64; 20] = [
     0xC0FFEE_u64 + 78,
     0xC0FFEE_u64 + 79,
 ];
+const E6B_FIRST_K: usize = 20;
+const E6B_MIN_DEATHS: usize = 2500;
+const E6B_STEPS_CAP: usize = 12_000;
+const E6B_SNAPSHOT_INTERVAL: usize = 10;
+const E6B_SEEDS: [u64; 20] = [
+    0xE6B0_0001_u64,
+    0xE6B0_0002_u64,
+    0xE6B0_0003_u64,
+    0xE6B0_0004_u64,
+    0xE6B0_0005_u64,
+    0xE6B0_0006_u64,
+    0xE6B0_0007_u64,
+    0xE6B0_0008_u64,
+    0xE6B0_0009_u64,
+    0xE6B0_000A_u64,
+    0xE6B0_000B_u64,
+    0xE6B0_000C_u64,
+    0xE6B0_000D_u64,
+    0xE6B0_000E_u64,
+    0xE6B0_000F_u64,
+    0xE6B0_0010_u64,
+    0xE6B0_0011_u64,
+    0xE6B0_0012_u64,
+    0xE6B0_0013_u64,
+    0xE6B0_0014_u64,
+];
 const PAPER_PLOTS_LOCK_FILE: &str = "experiments/.paper_plots.lock";
 const PAPER_PLOTS_BASE_DIR: &str = "experiments/plots";
 
 fn e6_effective_range_bounds_st() -> (f32, f32) {
     let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
     let (min_freq, max_freq) =
-        e3_tessitura_bounds_for_range(E4_ANCHOR_HZ, &space, E2_PAPER_RANGE_OCT);
+        e3_tessitura_bounds_for_range(E4_ANCHOR_HZ, &space, E6_MAIN_RANGE_OCT);
     (
         12.0 * (min_freq / E4_ANCHOR_HZ).log2(),
         12.0 * (max_freq / E4_ANCHOR_HZ).log2(),
@@ -489,6 +521,7 @@ enum Experiment {
     E4,
     E5,
     E6,
+    E6b,
     E7,
 }
 
@@ -536,6 +569,7 @@ impl Experiment {
             Experiment::E4 => "E4",
             Experiment::E5 => "E5",
             Experiment::E6 => "E6",
+            Experiment::E6b => "E6b",
             Experiment::E7 => "E7",
         }
     }
@@ -548,6 +582,7 @@ impl Experiment {
             Experiment::E4 => "e4",
             Experiment::E5 => "e5",
             Experiment::E6 => "e6",
+            Experiment::E6b => "e6b",
             Experiment::E7 => "e7",
         }
     }
@@ -560,6 +595,7 @@ impl Experiment {
             Experiment::E4,
             Experiment::E5,
             Experiment::E6,
+            Experiment::E6b,
             Experiment::E7,
         ]
     }
@@ -631,10 +667,12 @@ fn usage() -> String {
         "  paper --e2-render-nohill 5 4 2",
         "  paper --e2-render-proposal 5 4 2",
         "  paper --e6-debug-sampler",
+        "  paper --exp e6b",
         "  paper --exp e2 --e2-quick --e2-dense-sweep",
         "  paper --exp e2 --e2-quick --e2-candidate-search",
         "If no experiment is specified, paper defaults (E1,E2,E3,E6,E7) run.",
         "Use --exp e4 to run E4 explicitly.",
+        "Use --exp e6b to run the experimental hereditary polyphony assay.",
         "E4 histogram dumps default to off (use --e4-hist on to enable).",
         "E4 kernel gate plot default to off (use --e4-kernel-gate on to enable).",
         "E4 wr probe default to off (use --e4-wr on to enable).",
@@ -854,6 +892,7 @@ fn parse_experiments(args: &[String]) -> Result<Vec<Experiment>, String> {
                 "4" | "e4" | "E4" => Experiment::E4,
                 "5" | "e5" | "E5" => Experiment::E5,
                 "6" | "e6" | "E6" => Experiment::E6,
+                "e6b" | "E6B" => Experiment::E6b,
                 "7" | "e7" | "E7" => Experiment::E7,
                 _ => {
                     return Err(format!("Unknown experiment '{token}'.\n{}", usage()));
@@ -1465,6 +1504,13 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
                 Experiment::E6 => {
                     let h = s.spawn(|| {
                         plot_e6_hereditary_adaptation(out_dir, space_ref, anchor_hz)
+                            .map_err(|err| io::Error::other(err.to_string()))
+                    });
+                    handles.push((exp.label(), h));
+                }
+                Experiment::E6b => {
+                    let h = s.spawn(|| {
+                        plot_e6b_hereditary_polyphony(out_dir, space_ref, anchor_hz)
                             .map_err(|err| io::Error::other(err.to_string()))
                     });
                     handles.push((exp.label(), h));
@@ -6503,6 +6549,555 @@ struct E6SnapshotPoint {
     n_alive: usize,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct E6bEndpointMetrics {
+    loo_c_score: f32,
+    g_scene: f32,
+    pairwise_entropy: f32,
+    ji_score: f32,
+    unique_bins: f32,
+}
+
+#[derive(Clone, Debug)]
+struct E6bProcessedRun {
+    label: &'static str,
+    selection_enabled: bool,
+    seed: u64,
+    series: Vec<(usize, f32)>,
+    final_metrics: Option<E6bEndpointMetrics>,
+    heat_counts: Vec<(usize, i32, f32)>,
+}
+
+#[allow(clippy::type_complexity)]
+fn e6b_run_jobs(
+    specs: &[(&'static str, E6Condition, bool)],
+) -> Vec<(&'static str, E6Condition, bool, u64, E6bRunResult)> {
+    let mut jobs: Vec<(&'static str, E6Condition, bool, u64)> = Vec::new();
+    for &(label, condition, selection_enabled) in specs {
+        for &seed in &E6B_SEEDS {
+            jobs.push((label, condition, selection_enabled, seed));
+        }
+    }
+    let worker_count = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(jobs.len())
+        .max(1);
+    let next = AtomicUsize::new(0);
+    let slots: Mutex<Vec<Option<(&'static str, E6Condition, bool, u64, E6bRunResult)>>> =
+        Mutex::new((0..jobs.len()).map(|_| None).collect());
+    std::thread::scope(|scope| {
+        for _ in 0..worker_count {
+            scope.spawn(|| {
+                loop {
+                    let idx = next.fetch_add(1, Ordering::Relaxed);
+                    if idx >= jobs.len() {
+                        break;
+                    }
+                    let (label, condition, selection_enabled, seed) = jobs[idx];
+                    let cfg = E6bRunConfig {
+                        seed,
+                        steps_cap: E6B_STEPS_CAP,
+                        min_deaths: E6B_MIN_DEATHS,
+                        pop_size: E6B_DEFAULT_POP_SIZE,
+                        first_k: E6B_FIRST_K,
+                        condition,
+                        snapshot_interval: E6B_SNAPSHOT_INTERVAL,
+                        selection_enabled,
+                        shuffle_landscape: false,
+                    };
+                    let result = run_e6b(&cfg);
+                    slots.lock().unwrap()[idx] =
+                        Some((label, condition, selection_enabled, seed, result));
+                }
+            });
+        }
+    });
+    slots
+        .into_inner()
+        .unwrap()
+        .into_iter()
+        .map(|slot| slot.expect("missing E6b job output"))
+        .collect()
+}
+
+fn e6b_process_run(
+    label: &'static str,
+    selection_enabled: bool,
+    seed: u64,
+    result: &E6bRunResult,
+    anchor_hz: f32,
+    space: &Log2Space,
+    workspace: &ConsonanceWorkspace,
+    du_scan: &[f32],
+    heat_min_st: f32,
+    heat_max_st: f32,
+) -> E6bProcessedRun {
+    let mut death_count = 0usize;
+    let mut series: Vec<(usize, f32)> = Vec::with_capacity(result.snapshots.len());
+    let mut heat_counts: Vec<(usize, i32, f32)> = Vec::new();
+    let mut last_loo_g: Option<(f32, f32)> = None;
+
+    for snapshot in &result.snapshots {
+        while death_count < result.deaths.len()
+            && result.deaths[death_count].death_step as usize <= snapshot.step
+        {
+            death_count += 1;
+        }
+        let (loo_c_score, g_scene) = e6_contextual_endpoint_metrics(
+            &snapshot.freqs_hz,
+            anchor_hz,
+            space,
+            workspace,
+            du_scan,
+        );
+        series.push((death_count, loo_c_score));
+        last_loo_g = Some((loo_c_score, g_scene));
+
+        if label == "heredity" {
+            for &freq_hz in &snapshot.freqs_hz {
+                if !freq_hz.is_finite() || freq_hz <= 0.0 {
+                    continue;
+                }
+                let semitone = 12.0 * (freq_hz / anchor_hz).log2();
+                let clamped = semitone.clamp(heat_min_st, heat_max_st - f32::EPSILON);
+                let bin = ((clamped - heat_min_st) / E6_INTERVAL_BIN_ST).floor() as i32;
+                heat_counts.push((death_count, bin, 1.0));
+            }
+        }
+    }
+
+    let final_metrics = e6b_final_metrics(result, anchor_hz, last_loo_g);
+    E6bProcessedRun {
+        label,
+        selection_enabled,
+        seed,
+        series,
+        final_metrics,
+        heat_counts,
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn e6b_process_results(
+    main_results: &[(&'static str, E6Condition, bool, u64, E6bRunResult)],
+    anchor_hz: f32,
+    space: &Log2Space,
+    workspace: &ConsonanceWorkspace,
+    du_scan: &[f32],
+    heat_min_st: f32,
+    heat_max_st: f32,
+) -> Vec<E6bProcessedRun> {
+    let worker_count = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(main_results.len())
+        .max(1);
+    let next = AtomicUsize::new(0);
+    let slots: Mutex<Vec<Option<E6bProcessedRun>>> =
+        Mutex::new((0..main_results.len()).map(|_| None).collect());
+    std::thread::scope(|scope| {
+        for _ in 0..worker_count {
+            scope.spawn(|| {
+                loop {
+                    let idx = next.fetch_add(1, Ordering::Relaxed);
+                    if idx >= main_results.len() {
+                        break;
+                    }
+                    let (label, _condition, selection_enabled, seed, result) = &main_results[idx];
+                    let processed = e6b_process_run(
+                        *label,
+                        *selection_enabled,
+                        *seed,
+                        result,
+                        anchor_hz,
+                        space,
+                        workspace,
+                        du_scan,
+                        heat_min_st,
+                        heat_max_st,
+                    );
+                    slots.lock().unwrap()[idx] = Some(processed);
+                }
+            });
+        }
+    });
+    slots
+        .into_inner()
+        .unwrap()
+        .into_iter()
+        .map(|slot| slot.expect("missing E6b processed output"))
+        .collect()
+}
+
+fn e6b_final_metrics(
+    result: &E6bRunResult,
+    anchor_hz: f32,
+    last_loo_g: Option<(f32, f32)>,
+) -> Option<E6bEndpointMetrics> {
+    let final_snapshot = result.snapshots.last()?;
+    let semitones: Vec<f32> = final_snapshot
+        .freqs_hz
+        .iter()
+        .copied()
+        .filter(|f| f.is_finite() && *f > 0.0)
+        .map(|freq_hz| 12.0 * (freq_hz / anchor_hz).log2())
+        .collect();
+    let pairwise = pairwise_interval_samples(&semitones);
+    let pairwise_probs = histogram_probabilities_fixed(&pairwise, 0.0, 12.0, E2_PAIRWISE_BIN_ST);
+    let pairwise_entropy = hist_structure_metrics_from_probs(&pairwise_probs).entropy;
+    let diversity = diversity_metrics_for_semitones(&semitones);
+    let (loo_c_score, g_scene) = last_loo_g.unwrap_or((0.0, 0.0));
+    Some(E6bEndpointMetrics {
+        loo_c_score,
+        g_scene,
+        pairwise_entropy,
+        ji_score: ji_population_score(&final_snapshot.freqs_hz, anchor_hz),
+        unique_bins: diversity.unique_bins as f32,
+    })
+}
+
+fn e6b_gap_closed(value: f32, baseline: f32, control: f32, higher_is_better: bool) -> f32 {
+    let denom = if higher_is_better {
+        baseline - control
+    } else {
+        control - baseline
+    };
+    if denom.abs() <= 1e-6 {
+        0.0
+    } else if higher_is_better {
+        (value - control) / denom
+    } else {
+        (control - value) / denom
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn plot_e6b_hereditary_polyphony(
+    out_dir: &Path,
+    space: &Log2Space,
+    anchor_hz: f32,
+) -> Result<(), Box<dyn Error>> {
+    let main_results = e6b_run_jobs(&[
+        ("heredity_nosel", E6Condition::Heredity, false),
+        ("random_nosel", E6Condition::Random, false),
+        ("heredity", E6Condition::Heredity, true),
+        ("random", E6Condition::Random, true),
+    ]);
+
+    let reference_landscape = e3_reference_landscape(anchor_hz);
+    let contextual_space = reference_landscape.space.clone();
+    let (_contextual_erb_scan, contextual_du_scan) = erb_grid(&contextual_space);
+    let contextual_workspace = build_consonance_workspace(&contextual_space);
+
+    let mut series_by_label_seed: HashMap<&'static str, HashMap<u64, Vec<(usize, f32)>>> =
+        HashMap::new();
+    let mut final_loo_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
+    let mut final_entropy_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
+    let mut final_ji_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
+    let mut final_unique_bins_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
+    let mut final_g_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
+    let mut endpoint_csv = String::from(
+        "condition,seed,selection_enabled,loo_c_score,g_scene,pairwise_entropy,ji_score,unique_bins\n",
+    );
+    let mut heat_counts: HashMap<(usize, i32), f32> = HashMap::new();
+    let (heat_min_st, heat_max_st) = e6_effective_range_bounds_st();
+
+    let processed_runs = e6b_process_results(
+        &main_results,
+        anchor_hz,
+        &contextual_space,
+        &contextual_workspace,
+        &contextual_du_scan,
+        heat_min_st,
+        heat_max_st,
+    );
+
+    for processed in processed_runs {
+        series_by_label_seed
+            .entry(processed.label)
+            .or_default()
+            .insert(processed.seed, processed.series);
+        for (death_count, bin, mass) in processed.heat_counts {
+            *heat_counts.entry((death_count, bin)).or_insert(0.0) += mass;
+        }
+
+        if let Some(metrics) = processed.final_metrics {
+            final_loo_by_label
+                .entry(processed.label)
+                .or_default()
+                .push(metrics.loo_c_score);
+            final_entropy_by_label
+                .entry(processed.label)
+                .or_default()
+                .push(metrics.pairwise_entropy);
+            final_ji_by_label
+                .entry(processed.label)
+                .or_default()
+                .push(metrics.ji_score);
+            final_unique_bins_by_label
+                .entry(processed.label)
+                .or_default()
+                .push(metrics.unique_bins);
+            final_g_by_label
+                .entry(processed.label)
+                .or_default()
+                .push(metrics.g_scene);
+            endpoint_csv.push_str(&format!(
+                "{},{},{},{:.6},{:.6},{:.6},{:.6},{:.3}\n",
+                processed.label,
+                processed.seed,
+                u8::from(processed.selection_enabled),
+                metrics.loo_c_score,
+                metrics.g_scene,
+                metrics.pairwise_entropy,
+                metrics.ji_score,
+                metrics.unique_bins
+            ));
+        }
+    }
+
+    write_with_log(out_dir.join("paper_e6b_endpoint_metrics.csv"), endpoint_csv)?;
+
+    let c_heredity_nosel = e6_series_stats(series_by_label_seed.get("heredity_nosel"), 1);
+    let c_random_nosel = e6_series_stats(series_by_label_seed.get("random_nosel"), 1);
+    let c_heredity = e6_series_stats(series_by_label_seed.get("heredity"), 1);
+    let c_random = e6_series_stats(series_by_label_seed.get("random"), 1);
+
+    let final_loo_heredity_nosel = final_loo_by_label
+        .remove("heredity_nosel")
+        .unwrap_or_default();
+    let final_loo_random_nosel = final_loo_by_label
+        .remove("random_nosel")
+        .unwrap_or_default();
+    let final_loo_heredity = final_loo_by_label.remove("heredity").unwrap_or_default();
+    let final_loo_random = final_loo_by_label.remove("random").unwrap_or_default();
+
+    let final_entropy_heredity_nosel = final_entropy_by_label
+        .remove("heredity_nosel")
+        .unwrap_or_default();
+    let final_entropy_random_nosel = final_entropy_by_label
+        .remove("random_nosel")
+        .unwrap_or_default();
+    let final_entropy_heredity = final_entropy_by_label
+        .remove("heredity")
+        .unwrap_or_default();
+    let final_entropy_random = final_entropy_by_label.remove("random").unwrap_or_default();
+
+    render_e6b_figure(
+        &out_dir.join("paper_e6b_figure.svg"),
+        &c_heredity_nosel,
+        &c_random_nosel,
+        &c_heredity,
+        &c_random,
+        &heat_counts,
+        &final_loo_heredity_nosel,
+        &final_loo_random_nosel,
+        &final_loo_heredity,
+        &final_loo_random,
+        &final_entropy_heredity_nosel,
+        &final_entropy_random_nosel,
+        &final_entropy_heredity,
+        &final_entropy_random,
+    )?;
+
+    let max_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .max(1);
+    let baseline_threads = (max_threads / 2).max(1);
+    let nohill_threads = max_threads.saturating_sub(baseline_threads).max(1);
+    let ((baseline_runs, _), (nohill_runs, _)) = std::thread::scope(|scope| {
+        let baseline = scope.spawn(|| {
+            e2_seed_sweep_with_threads(
+                space,
+                anchor_hz,
+                E2Condition::Baseline,
+                E2_STEP_SEMITONES,
+                E2PhaseMode::DissonanceThenConsonance,
+                None,
+                0,
+                E2_PAPER_N_AGENTS,
+                E2_PAPER_RANGE_OCT,
+                Some(baseline_threads),
+            )
+        });
+        let nohill = scope.spawn(|| {
+            e2_seed_sweep_with_threads(
+                space,
+                anchor_hz,
+                E2Condition::NoHillClimb,
+                E2_STEP_SEMITONES,
+                E2PhaseMode::DissonanceThenConsonance,
+                None,
+                0,
+                E2_PAPER_N_AGENTS,
+                E2_PAPER_RANGE_OCT,
+                Some(nohill_threads),
+            )
+        });
+        (
+            baseline.join().expect("baseline Exp1 benchmark failed"),
+            nohill.join().expect("nohill Exp1 benchmark failed"),
+        )
+    });
+    let hs_loo_mean = mean_std_scalar(&final_loo_heredity).0;
+    let hs_entropy_mean = mean_std_scalar(&final_entropy_heredity).0;
+    let hs_ji_mean = mean_std_scalar(
+        final_ji_by_label
+            .get("heredity")
+            .map_or(&[][..], Vec::as_slice),
+    )
+    .0;
+    let hs_unique_bins_mean = mean_std_scalar(
+        final_unique_bins_by_label
+            .get("heredity")
+            .map_or(&[][..], Vec::as_slice),
+    )
+    .0;
+
+    let baseline_c = mean_last_c_score_loo(&baseline_runs);
+    let nohill_c = mean_last_c_score_loo(&nohill_runs);
+    let baseline_entropy = mean_entropy_end(&baseline_runs);
+    let nohill_entropy = mean_entropy_end(&nohill_runs);
+    let baseline_ji = mean_ji_scene_end(&baseline_runs, anchor_hz);
+    let nohill_ji = mean_ji_scene_end(&nohill_runs, anchor_hz);
+    let baseline_bins = mean_unique_bins_end(&baseline_runs);
+    let nohill_bins = mean_unique_bins_end(&nohill_runs);
+
+    let benchmark_text = format!(
+        "E6b benchmark against Experiment 1\n\
+         --------------------------------\n\
+         H+S endpoint means (E6b):\n\
+         LOO C_score      = {:.4}\n\
+         interval entropy = {:.4}\n\
+         JI score         = {:.4}\n\
+         unique bins      = {:.3}\n\
+         \n\
+         Exp1 reference means:\n\
+         local-search: C={:.4}  entropy={:.4}  JI={:.4}  bins={:.3}\n\
+         random-walk : C={:.4}  entropy={:.4}  JI={:.4}  bins={:.3}\n\
+         \n\
+         Gap closed toward Exp1 local-search (1.0 = match local-search, 0.0 = random-walk):\n\
+         C_score      = {:.4}\n\
+         entropy      = {:.4}\n\
+         JI score     = {:.4}\n\
+         unique bins  = {:.4}\n",
+        hs_loo_mean,
+        hs_entropy_mean,
+        hs_ji_mean,
+        hs_unique_bins_mean,
+        baseline_c,
+        baseline_entropy,
+        baseline_ji,
+        baseline_bins,
+        nohill_c,
+        nohill_entropy,
+        nohill_ji,
+        nohill_bins,
+        e6b_gap_closed(hs_loo_mean, baseline_c, nohill_c, true),
+        e6b_gap_closed(hs_entropy_mean, baseline_entropy, nohill_entropy, false),
+        e6b_gap_closed(hs_ji_mean, baseline_ji, nohill_ji, true),
+        e6b_gap_closed(hs_unique_bins_mean, baseline_bins, nohill_bins, false),
+    );
+    write_with_log(out_dir.join("paper_e6b_exp1_benchmark.txt"), benchmark_text)?;
+
+    let summary_text = format!(
+        "E6b summary\n\
+         ----------\n\
+         Final LOO C_score:\n\
+         heredity, no selection: {:.4} +/- {:.4}\n\
+         random,   no selection: {:.4} +/- {:.4}\n\
+         heredity, selection:    {:.4} +/- {:.4}\n\
+         random,   selection:    {:.4} +/- {:.4}\n\
+         \n\
+         Final interval entropy:\n\
+         heredity, no selection: {:.4} +/- {:.4}\n\
+         random,   no selection: {:.4} +/- {:.4}\n\
+         heredity, selection:    {:.4} +/- {:.4}\n\
+         random,   selection:    {:.4} +/- {:.4}\n\
+         \n\
+         Final JI score (means):\n\
+         heredity, no selection: {:.4}\n\
+         random,   no selection: {:.4}\n\
+         heredity, selection:    {:.4}\n\
+         random,   selection:    {:.4}\n\
+         \n\
+         Final unique bins (means):\n\
+         heredity, no selection: {:.3}\n\
+         random,   no selection: {:.3}\n\
+         heredity, selection:    {:.3}\n\
+         random,   selection:    {:.3}\n",
+        mean_std_scalar(&final_loo_heredity_nosel).0,
+        ci95_half_width(&final_loo_heredity_nosel),
+        mean_std_scalar(&final_loo_random_nosel).0,
+        ci95_half_width(&final_loo_random_nosel),
+        mean_std_scalar(&final_loo_heredity).0,
+        ci95_half_width(&final_loo_heredity),
+        mean_std_scalar(&final_loo_random).0,
+        ci95_half_width(&final_loo_random),
+        mean_std_scalar(&final_entropy_heredity_nosel).0,
+        ci95_half_width(&final_entropy_heredity_nosel),
+        mean_std_scalar(&final_entropy_random_nosel).0,
+        ci95_half_width(&final_entropy_random_nosel),
+        mean_std_scalar(&final_entropy_heredity).0,
+        ci95_half_width(&final_entropy_heredity),
+        mean_std_scalar(&final_entropy_random).0,
+        ci95_half_width(&final_entropy_random),
+        mean_std_scalar(
+            final_ji_by_label
+                .get("heredity_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_ji_by_label
+                .get("random_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_ji_by_label
+                .get("heredity")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_ji_by_label
+                .get("random")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_unique_bins_by_label
+                .get("heredity_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_unique_bins_by_label
+                .get("random_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_unique_bins_by_label
+                .get("heredity")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_unique_bins_by_label
+                .get("random")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+    );
+    write_with_log(out_dir.join("paper_e6b_summary.txt"), summary_text)?;
+
+    Ok(())
+}
+
 #[allow(clippy::type_complexity)]
 fn plot_e6_hereditary_adaptation(
     out_dir: &Path,
@@ -6598,12 +7193,20 @@ fn plot_e6_hereditary_adaptation(
                             oracle_freeze_pitch_after_respawn,
                             crowding_strength_override: Some(0.0),
                             adaptation_enabled_override: Some(false),
-                            range_oct_override: Some(E2_PAPER_RANGE_OCT),
+                            range_oct_override: Some(E6_MAIN_RANGE_OCT),
                             e2_aligned_exact_local_search_radius_st: None,
                             disable_within_life_pitch_movement: true,
                             selection_enabled,
                             selection_contextual_mix_weight,
+                            selection_score_mode: E6SelectionScoreMode::PolyphonicLooCrowding,
+                            juvenile_contextual_settlement_enabled: false,
                             juvenile_cull_enabled: false,
+                            record_life_diagnostics: true,
+                            family_occupancy_strength_override: Some(
+                                E6_MAIN_FAMILY_OCCUPANCY_STRENGTH,
+                            ),
+                            family_nfd_mode: E6_MAIN_FAMILY_NFD_MODE,
+                            respawn_mode: E6RespawnMode::VacantNicheByParentPrior,
                         };
                         let result = run_e6(&cfg);
                         results_slot.lock().unwrap()[idx] =
@@ -6619,37 +7222,42 @@ fn plot_e6_hereditary_adaptation(
             .map(|opt| opt.unwrap())
             .collect::<Vec<_>>()
     };
+    let emit_e6_extra_diagnostics = false;
 
-    let anchor_baseline_results = run_jobs(&[
-        (
-            "heredity_nosel",
-            E6Condition::Heredity,
-            false,
-            None,
-            false,
-            false,
-            0.0,
-        ),
-        (
-            "random_nosel",
-            E6Condition::Random,
-            false,
-            None,
-            false,
-            false,
-            0.0,
-        ),
-        (
-            "heredity",
-            E6Condition::Heredity,
-            true,
-            None,
-            false,
-            false,
-            0.0,
-        ),
-        ("random", E6Condition::Random, true, None, false, false, 0.0),
-    ]);
+    let anchor_baseline_results = if emit_e6_extra_diagnostics {
+        run_jobs(&[
+            (
+                "heredity_nosel",
+                E6Condition::Heredity,
+                false,
+                None,
+                false,
+                false,
+                0.0,
+            ),
+            (
+                "random_nosel",
+                E6Condition::Random,
+                false,
+                None,
+                false,
+                false,
+                0.0,
+            ),
+            (
+                "heredity",
+                E6Condition::Heredity,
+                true,
+                None,
+                false,
+                false,
+                0.0,
+            ),
+            ("random", E6Condition::Random, true, None, false, false, 0.0),
+        ])
+    } else {
+        Vec::<(&'static str, E6Condition, bool, u64, E6RunResult)>::new()
+    };
     let all_results = run_jobs(&[
         (
             "heredity_nosel",
@@ -6688,197 +7296,83 @@ fn plot_e6_hereditary_adaptation(
             0.25,
         ),
     ]);
-    let contextual_selection_results = run_jobs(&[
-        (
-            "heredity_sel_mix025",
-            E6Condition::Heredity,
-            true,
-            None,
-            false,
-            false,
-            0.25,
-        ),
-        (
-            "random_sel_mix025",
-            E6Condition::Random,
-            true,
-            None,
-            false,
-            false,
-            0.25,
-        ),
-        (
-            "heredity_sel_contextual",
-            E6Condition::Heredity,
-            true,
-            None,
-            false,
-            false,
-            1.0,
-        ),
-        (
-            "random_sel_contextual",
-            E6Condition::Random,
-            true,
-            None,
-            false,
-            false,
-            1.0,
-        ),
-    ]);
-    let oracle_results = run_jobs(&[
-        (
-            "heredity_oracle",
-            E6Condition::Heredity,
-            true,
-            Some(5.0),
-            false,
-            false,
-            0.0,
-        ),
-        (
-            "random_oracle",
-            E6Condition::Random,
-            true,
-            Some(5.0),
-            false,
-            false,
-            0.0,
-        ),
-    ]);
-    let global_oracle_results = run_jobs(&[
-        (
-            "heredity_oracle_global",
-            E6Condition::Heredity,
-            true,
-            None,
-            true,
-            false,
-            0.0,
-        ),
-        (
-            "random_oracle_global",
-            E6Condition::Random,
-            true,
-            None,
-            true,
-            false,
-            0.0,
-        ),
-    ]);
-    let global_oracle_freeze_results = run_jobs(&[
-        (
-            "heredity_oracle_global_freeze",
-            E6Condition::Heredity,
-            true,
-            None,
-            true,
-            true,
-            0.0,
-        ),
-        (
-            "random_oracle_global_freeze",
-            E6Condition::Random,
-            true,
-            None,
-            true,
-            true,
-            0.0,
-        ),
-    ]);
-    let e2_aligned_jobs: Vec<(&'static str, E6Condition, u64)> = E6_SEEDS
+    let nfd_sweep_seeds: &[u64] = &E6_SEEDS[..4];
+    let nfd_sweep_min_deaths = 600usize;
+    let family_nfd_specs: &[(E6FamilyNfdMode, f32)] = &[
+        (E6FamilyNfdMode::Off, 0.00),
+        (E6FamilyNfdMode::SameFamilyOnly, 0.02),
+        (E6FamilyNfdMode::SameFamilyOnly, 0.05),
+        (E6FamilyNfdMode::SameFamilyOnly, 0.10),
+        (E6FamilyNfdMode::SameFamilyOnly, 0.20),
+        (E6FamilyNfdMode::SameFamilyAndAlt, 0.02),
+        (E6FamilyNfdMode::SameFamilyAndAlt, 0.05),
+        (E6FamilyNfdMode::SameFamilyAndAlt, 0.10),
+        (E6FamilyNfdMode::SameFamilyAndAlt, 0.20),
+    ];
+    let family_nfd_jobs: Vec<(E6FamilyNfdMode, f32, bool, u64)> = family_nfd_specs
         .iter()
         .copied()
-        .flat_map(|seed| {
-            [
-                ("heredity_e2_aligned", E6Condition::Heredity, seed),
-                ("random_e2_aligned", E6Condition::Random, seed),
-            ]
+        .flat_map(|(nfd_mode, occupancy_strength)| {
+            nfd_sweep_seeds.iter().copied().flat_map(move |seed| {
+                [
+                    (nfd_mode, occupancy_strength, false, seed),
+                    (nfd_mode, occupancy_strength, true, seed),
+                ]
+            })
         })
         .collect();
-    let e2_aligned_worker_count = std::thread::available_parallelism()
+    let family_nfd_random_jobs: Vec<(bool, u64)> = nfd_sweep_seeds
+        .iter()
+        .copied()
+        .flat_map(|seed| [(false, seed), (true, seed)])
+        .collect();
+    let family_nfd_worker_count = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1)
-        .min(e2_aligned_jobs.len())
+        .min(family_nfd_jobs.len() + family_nfd_random_jobs.len())
         .max(1);
-    let e2_aligned_next = AtomicUsize::new(0);
-    let e2_aligned_slots: Mutex<Vec<Option<(&'static str, E6Condition, u64, E6RunResult)>>> =
-        Mutex::new((0..e2_aligned_jobs.len()).map(|_| None).collect());
+    let family_nfd_next = AtomicUsize::new(0);
+    let family_nfd_total_jobs = family_nfd_jobs.len() + family_nfd_random_jobs.len();
+    let family_nfd_slots: Mutex<
+        Vec<
+            Option<(
+                Option<E6FamilyNfdMode>,
+                f32,
+                bool,
+                E6Condition,
+                u64,
+                E6RunResult,
+            )>,
+        >,
+    > = Mutex::new((0..family_nfd_total_jobs).map(|_| None).collect());
     std::thread::scope(|scope| {
-        for _ in 0..e2_aligned_worker_count {
+        for _ in 0..family_nfd_worker_count {
             scope.spawn(|| {
                 loop {
-                    let idx = e2_aligned_next.fetch_add(1, Ordering::Relaxed);
-                    if idx >= e2_aligned_jobs.len() {
+                    let idx = family_nfd_next.fetch_add(1, Ordering::Relaxed);
+                    if idx >= family_nfd_total_jobs {
                         break;
                     }
-                    let (label, condition, seed) = e2_aligned_jobs[idx];
+                    let (nfd_mode, occupancy_strength, selection_enabled, condition, seed) =
+                        if idx < family_nfd_jobs.len() {
+                            let (nfd_mode, occupancy_strength, selection_enabled, seed) =
+                                family_nfd_jobs[idx];
+                            (
+                                Some(nfd_mode),
+                                occupancy_strength,
+                                selection_enabled,
+                                E6Condition::Heredity,
+                                seed,
+                            )
+                        } else {
+                            let (selection_enabled, seed) =
+                                family_nfd_random_jobs[idx - family_nfd_jobs.len()];
+                            (None, 0.0, selection_enabled, E6Condition::Random, seed)
+                        };
                     let cfg = E6RunConfig {
                         seed,
                         steps_cap: E6_STEPS_CAP,
-                        min_deaths: E6_MIN_DEATHS,
-                        pop_size: E2_PAPER_N_AGENTS,
-                        first_k: E6_FIRST_K,
-                        condition,
-                        snapshot_interval: E6_SNAPSHOT_INTERVAL,
-                        landscape_weight: 0.0,
-                        shuffle_landscape: false,
-                        env_partials: None,
-                        oracle_azimuth_radius_st: None,
-                        oracle_global_anchor_c: false,
-                        oracle_freeze_pitch_after_respawn: false,
-                        crowding_strength_override: Some(E2_CROWDING_WEIGHT),
-                        adaptation_enabled_override: Some(false),
-                        range_oct_override: Some(E2_PAPER_RANGE_OCT),
-                        e2_aligned_exact_local_search_radius_st: Some(2.0),
-                        disable_within_life_pitch_movement: false,
-                        selection_enabled: true,
-                        selection_contextual_mix_weight: 0.0,
-                        juvenile_cull_enabled: false,
-                    };
-                    let result = run_e6(&cfg);
-                    e2_aligned_slots.lock().unwrap()[idx] = Some((label, condition, seed, result));
-                }
-            });
-        }
-    });
-    let e2_aligned_results = e2_aligned_slots
-        .into_inner()
-        .unwrap()
-        .into_iter()
-        .map(|opt| opt.unwrap())
-        .collect::<Vec<_>>();
-    let e6_static_jobs: Vec<(&'static str, E6Condition, u64)> = E6_SEEDS
-        .iter()
-        .copied()
-        .flat_map(|seed| {
-            [
-                ("heredity_static", E6Condition::Heredity, seed),
-                ("random_static", E6Condition::Random, seed),
-            ]
-        })
-        .collect();
-    let e6_static_worker_count = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
-        .min(e6_static_jobs.len())
-        .max(1);
-    let e6_static_next = AtomicUsize::new(0);
-    let e6_static_slots: Mutex<Vec<Option<(&'static str, E6Condition, u64, E6RunResult)>>> =
-        Mutex::new((0..e6_static_jobs.len()).map(|_| None).collect());
-    std::thread::scope(|scope| {
-        for _ in 0..e6_static_worker_count {
-            scope.spawn(|| {
-                loop {
-                    let idx = e6_static_next.fetch_add(1, Ordering::Relaxed);
-                    if idx >= e6_static_jobs.len() {
-                        break;
-                    }
-                    let (label, condition, seed) = e6_static_jobs[idx];
-                    let cfg = E6RunConfig {
-                        seed,
-                        steps_cap: E6_STEPS_CAP,
-                        min_deaths: E6_MIN_DEATHS,
+                        min_deaths: nfd_sweep_min_deaths,
                         pop_size: E6_POP_SIZE,
                         first_k: E6_FIRST_K,
                         condition,
@@ -6892,24 +7386,297 @@ fn plot_e6_hereditary_adaptation(
                         crowding_strength_override: Some(0.0),
                         adaptation_enabled_override: Some(false),
                         range_oct_override: Some(E2_PAPER_RANGE_OCT),
-                        e2_aligned_exact_local_search_radius_st: Some(0.0),
-                        disable_within_life_pitch_movement: false,
-                        selection_enabled: true,
-                        selection_contextual_mix_weight: 0.0,
+                        e2_aligned_exact_local_search_radius_st: None,
+                        disable_within_life_pitch_movement: true,
+                        selection_enabled,
+                        selection_contextual_mix_weight: if selection_enabled { 0.25 } else { 0.0 },
+                        selection_score_mode: E6SelectionScoreMode::LegacyAnchorContextMix,
+                        juvenile_contextual_settlement_enabled: false,
                         juvenile_cull_enabled: false,
+                        record_life_diagnostics: true,
+                        family_occupancy_strength_override: Some(occupancy_strength),
+                        family_nfd_mode: nfd_mode.unwrap_or(E6FamilyNfdMode::Off),
+                        respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
                     };
                     let result = run_e6(&cfg);
-                    e6_static_slots.lock().unwrap()[idx] = Some((label, condition, seed, result));
+                    family_nfd_slots.lock().unwrap()[idx] = Some((
+                        nfd_mode,
+                        occupancy_strength,
+                        selection_enabled,
+                        condition,
+                        seed,
+                        result,
+                    ));
                 }
             });
         }
     });
-    let e6_static_results = e6_static_slots
+    let family_nfd_results = family_nfd_slots
         .into_inner()
         .unwrap()
         .into_iter()
         .map(|opt| opt.unwrap())
         .collect::<Vec<_>>();
+    let contextual_selection_results = if emit_e6_extra_diagnostics {
+        run_jobs(&[
+            (
+                "heredity_sel_mix025",
+                E6Condition::Heredity,
+                true,
+                None,
+                false,
+                false,
+                0.25,
+            ),
+            (
+                "random_sel_mix025",
+                E6Condition::Random,
+                true,
+                None,
+                false,
+                false,
+                0.25,
+            ),
+            (
+                "heredity_sel_contextual",
+                E6Condition::Heredity,
+                true,
+                None,
+                false,
+                false,
+                1.0,
+            ),
+            (
+                "random_sel_contextual",
+                E6Condition::Random,
+                true,
+                None,
+                false,
+                false,
+                1.0,
+            ),
+        ])
+    } else {
+        Vec::<(&'static str, E6Condition, bool, u64, E6RunResult)>::new()
+    };
+    let oracle_results = if emit_e6_extra_diagnostics {
+        run_jobs(&[
+            (
+                "heredity_oracle",
+                E6Condition::Heredity,
+                true,
+                Some(5.0),
+                false,
+                false,
+                0.0,
+            ),
+            (
+                "random_oracle",
+                E6Condition::Random,
+                true,
+                Some(5.0),
+                false,
+                false,
+                0.0,
+            ),
+        ])
+    } else {
+        Vec::<(&'static str, E6Condition, bool, u64, E6RunResult)>::new()
+    };
+    let global_oracle_results = if emit_e6_extra_diagnostics {
+        run_jobs(&[
+            (
+                "heredity_oracle_global",
+                E6Condition::Heredity,
+                true,
+                None,
+                true,
+                false,
+                0.0,
+            ),
+            (
+                "random_oracle_global",
+                E6Condition::Random,
+                true,
+                None,
+                true,
+                false,
+                0.0,
+            ),
+        ])
+    } else {
+        Vec::<(&'static str, E6Condition, bool, u64, E6RunResult)>::new()
+    };
+    let global_oracle_freeze_results = if emit_e6_extra_diagnostics {
+        run_jobs(&[
+            (
+                "heredity_oracle_global_freeze",
+                E6Condition::Heredity,
+                true,
+                None,
+                true,
+                true,
+                0.0,
+            ),
+            (
+                "random_oracle_global_freeze",
+                E6Condition::Random,
+                true,
+                None,
+                true,
+                true,
+                0.0,
+            ),
+        ])
+    } else {
+        Vec::<(&'static str, E6Condition, bool, u64, E6RunResult)>::new()
+    };
+    let e2_aligned_results = if emit_e6_extra_diagnostics {
+        let e2_aligned_jobs: Vec<(&'static str, E6Condition, u64)> = E6_SEEDS
+            .iter()
+            .copied()
+            .flat_map(|seed| {
+                [
+                    ("heredity_e2_aligned", E6Condition::Heredity, seed),
+                    ("random_e2_aligned", E6Condition::Random, seed),
+                ]
+            })
+            .collect();
+        let e2_aligned_worker_count = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .min(e2_aligned_jobs.len())
+            .max(1);
+        let e2_aligned_next = AtomicUsize::new(0);
+        let e2_aligned_slots: Mutex<Vec<Option<(&'static str, E6Condition, u64, E6RunResult)>>> =
+            Mutex::new((0..e2_aligned_jobs.len()).map(|_| None).collect());
+        std::thread::scope(|scope| {
+            for _ in 0..e2_aligned_worker_count {
+                scope.spawn(|| {
+                    loop {
+                        let idx = e2_aligned_next.fetch_add(1, Ordering::Relaxed);
+                        if idx >= e2_aligned_jobs.len() {
+                            break;
+                        }
+                        let (label, condition, seed) = e2_aligned_jobs[idx];
+                        let cfg = E6RunConfig {
+                            seed,
+                            steps_cap: E6_STEPS_CAP,
+                            min_deaths: E6_MIN_DEATHS,
+                            pop_size: E2_PAPER_N_AGENTS,
+                            first_k: E6_FIRST_K,
+                            condition,
+                            snapshot_interval: E6_SNAPSHOT_INTERVAL,
+                            landscape_weight: 0.0,
+                            shuffle_landscape: false,
+                            env_partials: None,
+                            oracle_azimuth_radius_st: None,
+                            oracle_global_anchor_c: false,
+                            oracle_freeze_pitch_after_respawn: false,
+                            crowding_strength_override: Some(E2_CROWDING_WEIGHT),
+                            adaptation_enabled_override: Some(false),
+                            range_oct_override: Some(E2_PAPER_RANGE_OCT),
+                            e2_aligned_exact_local_search_radius_st: Some(2.0),
+                            disable_within_life_pitch_movement: false,
+                            selection_enabled: true,
+                            selection_contextual_mix_weight: 0.0,
+                            selection_score_mode: E6SelectionScoreMode::LegacyAnchorContextMix,
+                            juvenile_contextual_settlement_enabled: true,
+                            juvenile_cull_enabled: false,
+                            record_life_diagnostics: true,
+                            family_occupancy_strength_override: None,
+                            family_nfd_mode: E6FamilyNfdMode::Off,
+                            respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
+                        };
+                        let result = run_e6(&cfg);
+                        e2_aligned_slots.lock().unwrap()[idx] =
+                            Some((label, condition, seed, result));
+                    }
+                });
+            }
+        });
+        e2_aligned_slots
+            .into_inner()
+            .unwrap()
+            .into_iter()
+            .map(|opt| opt.unwrap())
+            .collect::<Vec<_>>()
+    } else {
+        Vec::<(&'static str, E6Condition, u64, E6RunResult)>::new()
+    };
+    let e6_static_results = if emit_e6_extra_diagnostics {
+        let e6_static_jobs: Vec<(&'static str, E6Condition, u64)> = E6_SEEDS
+            .iter()
+            .copied()
+            .flat_map(|seed| {
+                [
+                    ("heredity_static", E6Condition::Heredity, seed),
+                    ("random_static", E6Condition::Random, seed),
+                ]
+            })
+            .collect();
+        let e6_static_worker_count = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .min(e6_static_jobs.len())
+            .max(1);
+        let e6_static_next = AtomicUsize::new(0);
+        let e6_static_slots: Mutex<Vec<Option<(&'static str, E6Condition, u64, E6RunResult)>>> =
+            Mutex::new((0..e6_static_jobs.len()).map(|_| None).collect());
+        std::thread::scope(|scope| {
+            for _ in 0..e6_static_worker_count {
+                scope.spawn(|| {
+                    loop {
+                        let idx = e6_static_next.fetch_add(1, Ordering::Relaxed);
+                        if idx >= e6_static_jobs.len() {
+                            break;
+                        }
+                        let (label, condition, seed) = e6_static_jobs[idx];
+                        let cfg = E6RunConfig {
+                            seed,
+                            steps_cap: E6_STEPS_CAP,
+                            min_deaths: E6_MIN_DEATHS,
+                            pop_size: E6_POP_SIZE,
+                            first_k: E6_FIRST_K,
+                            condition,
+                            snapshot_interval: E6_SNAPSHOT_INTERVAL,
+                            landscape_weight: 0.0,
+                            shuffle_landscape: false,
+                            env_partials: None,
+                            oracle_azimuth_radius_st: None,
+                            oracle_global_anchor_c: false,
+                            oracle_freeze_pitch_after_respawn: false,
+                            crowding_strength_override: Some(0.0),
+                            adaptation_enabled_override: Some(false),
+                            range_oct_override: Some(E2_PAPER_RANGE_OCT),
+                            e2_aligned_exact_local_search_radius_st: Some(0.0),
+                            disable_within_life_pitch_movement: false,
+                            selection_enabled: true,
+                            selection_contextual_mix_weight: 0.0,
+                            selection_score_mode: E6SelectionScoreMode::LegacyAnchorContextMix,
+                            juvenile_contextual_settlement_enabled: true,
+                            juvenile_cull_enabled: false,
+                            record_life_diagnostics: true,
+                            family_occupancy_strength_override: None,
+                            family_nfd_mode: E6FamilyNfdMode::Off,
+                            respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
+                        };
+                        let result = run_e6(&cfg);
+                        e6_static_slots.lock().unwrap()[idx] =
+                            Some((label, condition, seed, result));
+                    }
+                });
+            }
+        });
+        e6_static_slots
+            .into_inner()
+            .unwrap()
+            .into_iter()
+            .map(|opt| opt.unwrap())
+            .collect::<Vec<_>>()
+    } else {
+        Vec::<(&'static str, E6Condition, u64, E6RunResult)>::new()
+    };
 
     let mut deaths_long_csv = String::from(
         "condition,seed,life_id,agent_id,birth_step,death_step,lifetime_steps,c_level01_birth,c_level01_firstk,avg_c_level01_tick,c_level01_std_over_life,avg_c_level01_attack,attack_tick_count\n",
@@ -6933,8 +7700,9 @@ fn plot_e6_hereditary_adaptation(
     let mut hered_seed_last_step: HashMap<u64, usize> = HashMap::new();
     let mut hered_seed_last_bins: HashMap<u64, Vec<i32>> = HashMap::new();
     let (e6_min_range_st, e6_max_range_st) = e6_effective_range_bounds_st();
-    let mut endpoint_metrics_csv =
-        String::from("condition,seed,anchor_ji_mass,pairwise_ji_score\n");
+    let mut endpoint_metrics_csv = String::from(
+        "condition,seed,anchor_ji_mass,pairwise_ji_score,unison_share,octave_share,unison_oct_share\n",
+    );
     let mut contextual_endpoint_metrics_csv =
         String::from("condition,seed,mean_c_score_loo,g_scene\n");
     let mut final_contextual_loo_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
@@ -7090,11 +7858,16 @@ fn plot_e6_hereditary_adaptation(
             "heredity" | "random" => 0.25,
             _ => 0.0,
         };
+        let mainline_selection_mode = match *cond_label {
+            "heredity" | "random" => E6SelectionScoreMode::PolyphonicLooCrowding,
+            _ => E6SelectionScoreMode::LegacyAnchorContextMix,
+        };
         for snap in &result.snapshots {
             let point = e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape);
-            let selection_score = e6_mean_selection_score_for_freqs(
+            let selection_score = e6_mean_selection_score_for_freqs_mode(
                 &snap.freqs_hz,
                 anchor_hz,
+                mainline_selection_mode,
                 mainline_mix_weight,
                 None,
                 None,
@@ -7156,6 +7929,44 @@ fn plot_e6_hereditary_adaptation(
             .last()
             .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
             .unwrap_or(0.0);
+        let (final_unison_share, final_octave_share, final_unison_oct_share) = result
+            .snapshots
+            .last()
+            .map(|snap| {
+                let mut n_valid = 0usize;
+                let mut n_unison = 0usize;
+                let mut n_octave = 0usize;
+                let mut n_union = 0usize;
+                for &freq in &snap.freqs_hz {
+                    if !freq.is_finite() || freq <= 0.0 {
+                        continue;
+                    }
+                    n_valid += 1;
+                    let st = 12.0 * (freq / anchor_hz).log2();
+                    let d = ((st + 6.0).rem_euclid(12.0) - 6.0).abs();
+                    let is_unison = st.abs() <= 0.35;
+                    let is_octave = !is_unison && d <= 0.35;
+                    if is_unison {
+                        n_unison += 1;
+                    }
+                    if is_octave {
+                        n_octave += 1;
+                    }
+                    if is_unison || is_octave {
+                        n_union += 1;
+                    }
+                }
+                if n_valid == 0 {
+                    (0.0, 0.0, 0.0)
+                } else {
+                    (
+                        n_unison as f32 / n_valid as f32,
+                        n_octave as f32 / n_valid as f32,
+                        n_union as f32 / n_valid as f32,
+                    )
+                }
+            })
+            .unwrap_or((0.0, 0.0, 0.0));
         let (final_contextual_loo, final_contextual_g) = result
             .snapshots
             .last()
@@ -7183,8 +7994,14 @@ fn plot_e6_hereditary_adaptation(
             .or_default()
             .push(final_contextual_g);
         endpoint_metrics_csv.push_str(&format!(
-            "{},{},{:.6},{:.6}\n",
-            cond_label, seed, final_anchor_ji_mass, final_pairwise_ji_score
+            "{},{},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
+            cond_label,
+            seed,
+            final_anchor_ji_mass,
+            final_pairwise_ji_score,
+            final_unison_share,
+            final_octave_share,
+            final_unison_oct_share
         ));
         contextual_endpoint_metrics_csv.push_str(&format!(
             "{},{},{:.6},{:.6}\n",
@@ -7199,9 +8016,10 @@ fn plot_e6_hereditary_adaptation(
                     .snapshots
                     .last()
                     .map(|snap| {
-                        e6_mean_selection_score_for_freqs(
+                        e6_mean_selection_score_for_freqs_mode(
                             &snap.freqs_hz,
                             anchor_hz,
+                            mainline_selection_mode,
                             mainline_mix_weight,
                             None,
                             None,
@@ -7306,105 +8124,106 @@ fn plot_e6_hereditary_adaptation(
         contextual_endpoint_metrics_csv,
     )?;
 
-    #[derive(Clone, Copy, Debug)]
-    struct OracleRunSummary {
-        mean_c_end: f32,
-        occ_end: f32,
-        pairwise_ji_score: f32,
-    }
+    if emit_e6_extra_diagnostics {
+        #[derive(Clone, Copy, Debug)]
+        struct OracleRunSummary {
+            mean_c_end: f32,
+            occ_end: f32,
+            pairwise_ji_score: f32,
+        }
 
-    let mut oracle_respawns_long_csv = String::from(
-        "condition,seed,step,dead_agent_id,child_life_id,parent_agent_id,parent_life_id,parent_freq_hz,parent_st,parent_energy,parent_c_level,candidate_count,candidate_energy_mean,candidate_energy_std,candidate_c_level_mean,chosen_selection_prob,offspring_freq_hz,offspring_st,spawn_freq_hz,spawn_st,spawn_c_level,delta_st,parent_family_center_hz,parent_azimuth_st,child_family_center_hz,child_azimuth_st,family_inherited,family_mutated,oracle_applied,oracle_freq_hz,oracle_st,oracle_c_score,oracle_c_level,oracle_delta_st\n",
-    );
-    let mut oracle_summary_csv = String::from(
-        "condition,seed,mean_c_start,mean_c_end,occ_start,occ_end,anchor_ji_mass,pairwise_ji_score\n",
-    );
-    let mut oracle_by_label_seed: HashMap<&'static str, HashMap<u64, OracleRunSummary>> =
-        HashMap::new();
-    for (label, _condition, _selection_enabled, seed, result) in &oracle_results {
-        for rec in &result.respawns {
-            let parent_st = rec
-                .parent_freq_hz
-                .map(|freq| 12.0 * (freq / anchor_hz).log2())
-                .map(|st| format!("{st:.6}"))
-                .unwrap_or_default();
-            let parent_freq_hz = rec
-                .parent_freq_hz
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let parent_agent_id = rec
-                .parent_agent_id
-                .map(|v| v.to_string())
-                .unwrap_or_default();
-            let parent_life_id = rec
-                .parent_life_id
-                .map(|v| v.to_string())
-                .unwrap_or_default();
-            let parent_energy = rec
-                .parent_energy
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let parent_c_level = rec
-                .parent_c_level
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let chosen_selection_prob = rec
-                .chosen_selection_prob
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let offspring_st = 12.0 * (rec.offspring_freq_hz / anchor_hz).log2();
-            let spawn_st = 12.0 * (rec.spawn_freq_hz / anchor_hz).log2();
-            let delta_st = rec
-                .parent_freq_hz
-                .map(|parent_freq| 12.0 * (rec.spawn_freq_hz / parent_freq).log2())
-                .map(|st| format!("{st:.6}"))
-                .unwrap_or_default();
-            let parent_family_center_hz = rec
-                .parent_family_center_hz
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let parent_azimuth_st = rec
-                .parent_azimuth_st
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let child_family_center_hz = rec
-                .child_family_center_hz
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let child_azimuth_st = rec
-                .child_azimuth_st
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let family_inherited = rec
-                .family_inherited
-                .map(|v| if v { "1".to_string() } else { "0".to_string() })
-                .unwrap_or_default();
-            let family_mutated = rec
-                .family_mutated
-                .map(|v| if v { "1".to_string() } else { "0".to_string() })
-                .unwrap_or_default();
-            let oracle_freq_hz = rec
-                .oracle_freq_hz
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let oracle_st = rec
-                .oracle_freq_hz
-                .map(|freq| 12.0 * (freq / anchor_hz).log2())
-                .map(|st| format!("{st:.6}"))
-                .unwrap_or_default();
-            let oracle_c_score = rec
-                .oracle_c_score
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let oracle_c_level = rec
-                .oracle_c_level
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let oracle_delta_st = rec
-                .oracle_delta_st
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            oracle_respawns_long_csv.push_str(&format!(
+        let mut oracle_respawns_long_csv = String::from(
+            "condition,seed,step,dead_agent_id,child_life_id,parent_agent_id,parent_life_id,parent_freq_hz,parent_st,parent_energy,parent_c_level,candidate_count,candidate_energy_mean,candidate_energy_std,candidate_c_level_mean,chosen_selection_prob,offspring_freq_hz,offspring_st,spawn_freq_hz,spawn_st,spawn_c_level,delta_st,parent_family_center_hz,parent_azimuth_st,child_family_center_hz,child_azimuth_st,family_inherited,family_mutated,oracle_applied,oracle_freq_hz,oracle_st,oracle_c_score,oracle_c_level,oracle_delta_st\n",
+        );
+        let mut oracle_summary_csv = String::from(
+            "condition,seed,mean_c_start,mean_c_end,occ_start,occ_end,anchor_ji_mass,pairwise_ji_score\n",
+        );
+        let mut oracle_by_label_seed: HashMap<&'static str, HashMap<u64, OracleRunSummary>> =
+            HashMap::new();
+        for (label, _condition, _selection_enabled, seed, result) in &oracle_results {
+            for rec in &result.respawns {
+                let parent_st = rec
+                    .parent_freq_hz
+                    .map(|freq| 12.0 * (freq / anchor_hz).log2())
+                    .map(|st| format!("{st:.6}"))
+                    .unwrap_or_default();
+                let parent_freq_hz = rec
+                    .parent_freq_hz
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let parent_agent_id = rec
+                    .parent_agent_id
+                    .map(|v| v.to_string())
+                    .unwrap_or_default();
+                let parent_life_id = rec
+                    .parent_life_id
+                    .map(|v| v.to_string())
+                    .unwrap_or_default();
+                let parent_energy = rec
+                    .parent_energy
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let parent_c_level = rec
+                    .parent_c_level
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let chosen_selection_prob = rec
+                    .chosen_selection_prob
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let offspring_st = 12.0 * (rec.offspring_freq_hz / anchor_hz).log2();
+                let spawn_st = 12.0 * (rec.spawn_freq_hz / anchor_hz).log2();
+                let delta_st = rec
+                    .parent_freq_hz
+                    .map(|parent_freq| 12.0 * (rec.spawn_freq_hz / parent_freq).log2())
+                    .map(|st| format!("{st:.6}"))
+                    .unwrap_or_default();
+                let parent_family_center_hz = rec
+                    .parent_family_center_hz
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let parent_azimuth_st = rec
+                    .parent_azimuth_st
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let child_family_center_hz = rec
+                    .child_family_center_hz
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let child_azimuth_st = rec
+                    .child_azimuth_st
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let family_inherited = rec
+                    .family_inherited
+                    .map(|v| if v { "1".to_string() } else { "0".to_string() })
+                    .unwrap_or_default();
+                let family_mutated = rec
+                    .family_mutated
+                    .map(|v| if v { "1".to_string() } else { "0".to_string() })
+                    .unwrap_or_default();
+                let oracle_freq_hz = rec
+                    .oracle_freq_hz
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let oracle_st = rec
+                    .oracle_freq_hz
+                    .map(|freq| 12.0 * (freq / anchor_hz).log2())
+                    .map(|st| format!("{st:.6}"))
+                    .unwrap_or_default();
+                let oracle_c_score = rec
+                    .oracle_c_score
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let oracle_c_level = rec
+                    .oracle_c_level
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let oracle_delta_st = rec
+                    .oracle_delta_st
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                oracle_respawns_long_csv.push_str(&format!(
                 "{},{},{},{},{},{},{},{},{},{},{},{},{:.6},{:.6},{:.6},{},{:.6},{:.6},{:.6},{:.6},{:.6},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
                 label,
                 seed,
@@ -7441,70 +8260,20 @@ fn plot_e6_hereditary_adaptation(
                 oracle_c_level,
                 oracle_delta_st,
             ));
-        }
+            }
 
-        let mut run_points: Vec<E6SnapshotPoint> = Vec::with_capacity(result.snapshots.len());
-        for snap in &result.snapshots {
-            run_points.push(e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape));
-        }
-        let start = run_points.first().copied().unwrap_or(E6SnapshotPoint {
-            mean_c_score: 0.0,
-            consonant_occupation: 0.0,
-            pairwise_entropy: 0.0,
-            n_alive: 0,
-        });
-        let end = run_points.last().copied().unwrap_or(start);
-        let anchor_ji_mass = result
-            .snapshots
-            .last()
-            .map(|snap| e6_anchor_ji_mass(&snap.freqs_hz, anchor_hz))
-            .unwrap_or(0.0);
-        let pairwise_ji_score = result
-            .snapshots
-            .last()
-            .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
-            .unwrap_or(0.0);
-        oracle_summary_csv.push_str(&format!(
-            "{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
-            label,
-            seed,
-            start.mean_c_score,
-            end.mean_c_score,
-            start.consonant_occupation,
-            end.consonant_occupation,
-            anchor_ji_mass,
-            pairwise_ji_score
-        ));
-        oracle_by_label_seed.entry(*label).or_default().insert(
-            *seed,
-            OracleRunSummary {
-                mean_c_end: end.mean_c_score,
-                occ_end: end.consonant_occupation,
-                pairwise_ji_score,
-            },
-        );
-    }
-    write_with_log(
-        out_dir.join("paper_e6_oracle_respawns_long.csv"),
-        oracle_respawns_long_csv,
-    )?;
-    write_with_log(
-        out_dir.join("paper_e6_oracle_summary.csv"),
-        oracle_summary_csv,
-    )?;
-
-    let baseline_h: HashMap<u64, OracleRunSummary> = all_results
-        .iter()
-        .filter(|(label, _, _, _, _)| *label == "heredity")
-        .filter_map(|(_, _, _, seed, result)| {
-            let run_points: Vec<E6SnapshotPoint> = result
-                .snapshots
-                .iter()
-                .map(|snap| e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape))
-                .collect();
-            let start = run_points.first().copied()?;
+            let mut run_points: Vec<E6SnapshotPoint> = Vec::with_capacity(result.snapshots.len());
+            for snap in &result.snapshots {
+                run_points.push(e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape));
+            }
+            let start = run_points.first().copied().unwrap_or(E6SnapshotPoint {
+                mean_c_score: 0.0,
+                consonant_occupation: 0.0,
+                pairwise_entropy: 0.0,
+                n_alive: 0,
+            });
             let end = run_points.last().copied().unwrap_or(start);
-            let _anchor_ji_mass = result
+            let anchor_ji_mass = result
                 .snapshots
                 .last()
                 .map(|snap| e6_anchor_ji_mass(&snap.freqs_hz, anchor_hz))
@@ -7514,101 +8283,155 @@ fn plot_e6_hereditary_adaptation(
                 .last()
                 .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
                 .unwrap_or(0.0);
-            Some((
+            oracle_summary_csv.push_str(&format!(
+                "{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
+                label,
+                seed,
+                start.mean_c_score,
+                end.mean_c_score,
+                start.consonant_occupation,
+                end.consonant_occupation,
+                anchor_ji_mass,
+                pairwise_ji_score
+            ));
+            oracle_by_label_seed.entry(*label).or_default().insert(
                 *seed,
                 OracleRunSummary {
                     mean_c_end: end.mean_c_score,
                     occ_end: end.consonant_occupation,
                     pairwise_ji_score,
                 },
-            ))
-        })
-        .collect();
-    let baseline_r: HashMap<u64, OracleRunSummary> = all_results
-        .iter()
-        .filter(|(label, _, _, _, _)| *label == "random")
-        .filter_map(|(_, _, _, seed, result)| {
-            let run_points: Vec<E6SnapshotPoint> = result
-                .snapshots
-                .iter()
-                .map(|snap| e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape))
-                .collect();
-            let start = run_points.first().copied()?;
-            let end = run_points.last().copied().unwrap_or(start);
-            let _anchor_ji_mass = result
-                .snapshots
-                .last()
-                .map(|snap| e6_anchor_ji_mass(&snap.freqs_hz, anchor_hz))
-                .unwrap_or(0.0);
-            let pairwise_ji_score = result
-                .snapshots
-                .last()
-                .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
-                .unwrap_or(0.0);
-            Some((
-                *seed,
-                OracleRunSummary {
-                    mean_c_end: end.mean_c_score,
-                    occ_end: end.consonant_occupation,
-                    pairwise_ji_score,
-                },
-            ))
-        })
-        .collect();
-    let oracle_h = oracle_by_label_seed
-        .get("heredity_oracle")
-        .cloned()
-        .unwrap_or_default();
-    let oracle_r = oracle_by_label_seed
-        .get("random_oracle")
-        .cloned()
-        .unwrap_or_default();
-    let collect_metric = |map: &HashMap<u64, OracleRunSummary>, f: fn(OracleRunSummary) -> f32| {
-        E6_SEEDS
-            .iter()
-            .filter_map(|seed| map.get(seed).copied().map(f))
-            .collect::<Vec<_>>()
-    };
-    let collect_paired_delta = |lhs: &HashMap<u64, OracleRunSummary>,
-                                rhs: &HashMap<u64, OracleRunSummary>,
-                                f: fn(OracleRunSummary) -> f32| {
-        E6_SEEDS
-            .iter()
-            .filter_map(|seed| Some(f(*lhs.get(seed)?) - f(*rhs.get(seed)?)))
-            .collect::<Vec<_>>()
-    };
-    let h_base_c = collect_metric(&baseline_h, |s| s.mean_c_end);
-    let r_base_c = collect_metric(&baseline_r, |s| s.mean_c_end);
-    let h_oracle_c = collect_metric(&oracle_h, |s| s.mean_c_end);
-    let r_oracle_c = collect_metric(&oracle_r, |s| s.mean_c_end);
-    let h_oracle_occ = collect_metric(&oracle_h, |s| s.occ_end);
-    let r_oracle_occ = collect_metric(&oracle_r, |s| s.occ_end);
-    let h_oracle_pairwise = collect_metric(&oracle_h, |s| s.pairwise_ji_score);
-    let r_oracle_pairwise = collect_metric(&oracle_r, |s| s.pairwise_ji_score);
-    let h_gain = collect_paired_delta(&oracle_h, &baseline_h, |s| s.mean_c_end);
-    let r_gain = collect_paired_delta(&oracle_r, &baseline_r, |s| s.mean_c_end);
-    let oracle_adv = collect_paired_delta(&oracle_h, &oracle_r, |s| s.mean_c_end);
-    let (h_gain_p, h_gain_method) = permutation_pvalue_one_sample(&h_gain, 100_000, 0xE6A0_A111);
-    let (r_gain_p, r_gain_method) = permutation_pvalue_one_sample(&r_gain, 100_000, 0xE6A0_A222);
-    let (oracle_adv_p, oracle_adv_method) =
-        permutation_pvalue_one_sample(&oracle_adv, 100_000, 0xE6A0_A333);
-    let mean_ci = |values: &[f32]| -> (f32, f32) {
-        if values.is_empty() {
-            (0.0, 0.0)
-        } else {
-            (mean_std_scalar(values).0, ci95_half_width(values))
+            );
         }
-    };
-    let (h_base_mean, h_base_ci) = mean_ci(&h_base_c);
-    let (r_base_mean, r_base_ci) = mean_ci(&r_base_c);
-    let (h_oracle_mean, h_oracle_ci) = mean_ci(&h_oracle_c);
-    let (r_oracle_mean, r_oracle_ci) = mean_ci(&r_oracle_c);
-    let (h_oracle_occ_mean, h_oracle_occ_ci) = mean_ci(&h_oracle_occ);
-    let (r_oracle_occ_mean, r_oracle_occ_ci) = mean_ci(&r_oracle_occ);
-    let (h_oracle_pairwise_mean, h_oracle_pairwise_ci) = mean_ci(&h_oracle_pairwise);
-    let (r_oracle_pairwise_mean, r_oracle_pairwise_ci) = mean_ci(&r_oracle_pairwise);
-    let oracle_text = format!(
-        "E6 Oracle Azimuth Diagnostic\n\
+        write_with_log(
+            out_dir.join("paper_e6_oracle_respawns_long.csv"),
+            oracle_respawns_long_csv,
+        )?;
+        write_with_log(
+            out_dir.join("paper_e6_oracle_summary.csv"),
+            oracle_summary_csv,
+        )?;
+
+        let baseline_h: HashMap<u64, OracleRunSummary> = all_results
+            .iter()
+            .filter(|(label, _, _, _, _)| *label == "heredity")
+            .filter_map(|(_, _, _, seed, result)| {
+                let run_points: Vec<E6SnapshotPoint> = result
+                    .snapshots
+                    .iter()
+                    .map(|snap| e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape))
+                    .collect();
+                let start = run_points.first().copied()?;
+                let end = run_points.last().copied().unwrap_or(start);
+                let _anchor_ji_mass = result
+                    .snapshots
+                    .last()
+                    .map(|snap| e6_anchor_ji_mass(&snap.freqs_hz, anchor_hz))
+                    .unwrap_or(0.0);
+                let pairwise_ji_score = result
+                    .snapshots
+                    .last()
+                    .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
+                    .unwrap_or(0.0);
+                Some((
+                    *seed,
+                    OracleRunSummary {
+                        mean_c_end: end.mean_c_score,
+                        occ_end: end.consonant_occupation,
+                        pairwise_ji_score,
+                    },
+                ))
+            })
+            .collect();
+        let baseline_r: HashMap<u64, OracleRunSummary> = all_results
+            .iter()
+            .filter(|(label, _, _, _, _)| *label == "random")
+            .filter_map(|(_, _, _, seed, result)| {
+                let run_points: Vec<E6SnapshotPoint> = result
+                    .snapshots
+                    .iter()
+                    .map(|snap| e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape))
+                    .collect();
+                let start = run_points.first().copied()?;
+                let end = run_points.last().copied().unwrap_or(start);
+                let _anchor_ji_mass = result
+                    .snapshots
+                    .last()
+                    .map(|snap| e6_anchor_ji_mass(&snap.freqs_hz, anchor_hz))
+                    .unwrap_or(0.0);
+                let pairwise_ji_score = result
+                    .snapshots
+                    .last()
+                    .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
+                    .unwrap_or(0.0);
+                Some((
+                    *seed,
+                    OracleRunSummary {
+                        mean_c_end: end.mean_c_score,
+                        occ_end: end.consonant_occupation,
+                        pairwise_ji_score,
+                    },
+                ))
+            })
+            .collect();
+        let oracle_h = oracle_by_label_seed
+            .get("heredity_oracle")
+            .cloned()
+            .unwrap_or_default();
+        let oracle_r = oracle_by_label_seed
+            .get("random_oracle")
+            .cloned()
+            .unwrap_or_default();
+        let collect_metric = |map: &HashMap<u64, OracleRunSummary>,
+                              f: fn(OracleRunSummary) -> f32| {
+            E6_SEEDS
+                .iter()
+                .filter_map(|seed| map.get(seed).copied().map(f))
+                .collect::<Vec<_>>()
+        };
+        let collect_paired_delta =
+            |lhs: &HashMap<u64, OracleRunSummary>,
+             rhs: &HashMap<u64, OracleRunSummary>,
+             f: fn(OracleRunSummary) -> f32| {
+                E6_SEEDS
+                    .iter()
+                    .filter_map(|seed| Some(f(*lhs.get(seed)?) - f(*rhs.get(seed)?)))
+                    .collect::<Vec<_>>()
+            };
+        let h_base_c = collect_metric(&baseline_h, |s| s.mean_c_end);
+        let r_base_c = collect_metric(&baseline_r, |s| s.mean_c_end);
+        let h_oracle_c = collect_metric(&oracle_h, |s| s.mean_c_end);
+        let r_oracle_c = collect_metric(&oracle_r, |s| s.mean_c_end);
+        let h_oracle_occ = collect_metric(&oracle_h, |s| s.occ_end);
+        let r_oracle_occ = collect_metric(&oracle_r, |s| s.occ_end);
+        let h_oracle_pairwise = collect_metric(&oracle_h, |s| s.pairwise_ji_score);
+        let r_oracle_pairwise = collect_metric(&oracle_r, |s| s.pairwise_ji_score);
+        let h_gain = collect_paired_delta(&oracle_h, &baseline_h, |s| s.mean_c_end);
+        let r_gain = collect_paired_delta(&oracle_r, &baseline_r, |s| s.mean_c_end);
+        let oracle_adv = collect_paired_delta(&oracle_h, &oracle_r, |s| s.mean_c_end);
+        let (h_gain_p, h_gain_method) =
+            permutation_pvalue_one_sample(&h_gain, 100_000, 0xE6A0_A111);
+        let (r_gain_p, r_gain_method) =
+            permutation_pvalue_one_sample(&r_gain, 100_000, 0xE6A0_A222);
+        let (oracle_adv_p, oracle_adv_method) =
+            permutation_pvalue_one_sample(&oracle_adv, 100_000, 0xE6A0_A333);
+        let mean_ci = |values: &[f32]| -> (f32, f32) {
+            if values.is_empty() {
+                (0.0, 0.0)
+            } else {
+                (mean_std_scalar(values).0, ci95_half_width(values))
+            }
+        };
+        let (h_base_mean, h_base_ci) = mean_ci(&h_base_c);
+        let (r_base_mean, r_base_ci) = mean_ci(&r_base_c);
+        let (h_oracle_mean, h_oracle_ci) = mean_ci(&h_oracle_c);
+        let (r_oracle_mean, r_oracle_ci) = mean_ci(&r_oracle_c);
+        let (h_oracle_occ_mean, h_oracle_occ_ci) = mean_ci(&h_oracle_occ);
+        let (r_oracle_occ_mean, r_oracle_occ_ci) = mean_ci(&r_oracle_occ);
+        let (h_oracle_pairwise_mean, h_oracle_pairwise_ci) = mean_ci(&h_oracle_pairwise);
+        let (r_oracle_pairwise_mean, r_oracle_pairwise_ci) = mean_ci(&r_oracle_pairwise);
+        let oracle_text = format!(
+            "E6 Oracle Azimuth Diagnostic\n\
          ==========================\n\
          One-shot oracle anchor-C maximization applied immediately after respawn.\n\
          Radius = +/-5 st, grid = 25 cents\n\
@@ -7631,126 +8454,126 @@ fn plot_e6_hereditary_adaptation(
          H oracle - H baseline: mean={:.4}, p={} ({})\n\
          R oracle - R baseline: mean={:.4}, p={} ({})\n\
          H oracle - R oracle:   mean={:.4}, p={} ({})\n",
-        h_base_mean,
-        h_base_ci,
-        h_oracle_mean,
-        h_oracle_ci,
-        r_base_mean,
-        r_base_ci,
-        r_oracle_mean,
-        r_oracle_ci,
-        h_oracle_occ_mean,
-        h_oracle_occ_ci,
-        r_oracle_occ_mean,
-        r_oracle_occ_ci,
-        h_oracle_pairwise_mean,
-        h_oracle_pairwise_ci,
-        r_oracle_pairwise_mean,
-        r_oracle_pairwise_ci,
-        mean_std_scalar(&h_gain).0,
-        format_p_value(h_gain_p),
-        h_gain_method,
-        mean_std_scalar(&r_gain).0,
-        format_p_value(r_gain_p),
-        r_gain_method,
-        mean_std_scalar(&oracle_adv).0,
-        format_p_value(oracle_adv_p),
-        oracle_adv_method,
-    );
-    write_with_log(out_dir.join("paper_e6_oracle_test.txt"), oracle_text)?;
+            h_base_mean,
+            h_base_ci,
+            h_oracle_mean,
+            h_oracle_ci,
+            r_base_mean,
+            r_base_ci,
+            r_oracle_mean,
+            r_oracle_ci,
+            h_oracle_occ_mean,
+            h_oracle_occ_ci,
+            r_oracle_occ_mean,
+            r_oracle_occ_ci,
+            h_oracle_pairwise_mean,
+            h_oracle_pairwise_ci,
+            r_oracle_pairwise_mean,
+            r_oracle_pairwise_ci,
+            mean_std_scalar(&h_gain).0,
+            format_p_value(h_gain_p),
+            h_gain_method,
+            mean_std_scalar(&r_gain).0,
+            format_p_value(r_gain_p),
+            r_gain_method,
+            mean_std_scalar(&oracle_adv).0,
+            format_p_value(oracle_adv_p),
+            oracle_adv_method,
+        );
+        write_with_log(out_dir.join("paper_e6_oracle_test.txt"), oracle_text)?;
 
-    let mut global_oracle_respawns_long_csv = String::from(
-        "condition,seed,step,dead_agent_id,child_life_id,parent_agent_id,parent_life_id,parent_freq_hz,parent_st,parent_energy,parent_c_level,candidate_count,candidate_energy_mean,candidate_energy_std,candidate_c_level_mean,chosen_selection_prob,offspring_freq_hz,offspring_st,spawn_freq_hz,spawn_st,spawn_c_level,delta_st,parent_family_center_hz,parent_azimuth_st,child_family_center_hz,child_azimuth_st,family_inherited,family_mutated,oracle_applied,oracle_freq_hz,oracle_st,oracle_c_score,oracle_c_level,oracle_delta_st\n",
-    );
-    let mut global_oracle_summary_csv = String::from(
-        "condition,seed,mean_c_start,mean_c_end,occ_start,occ_end,anchor_ji_mass,pairwise_ji_score\n",
-    );
-    let mut global_oracle_by_label_seed: HashMap<&'static str, HashMap<u64, OracleRunSummary>> =
-        HashMap::new();
-    for (label, _condition, _selection_enabled, seed, result) in &global_oracle_results {
-        for rec in &result.respawns {
-            let parent_st = rec
-                .parent_freq_hz
-                .map(|freq| 12.0 * (freq / anchor_hz).log2())
-                .map(|st| format!("{st:.6}"))
-                .unwrap_or_default();
-            let parent_freq_hz = rec
-                .parent_freq_hz
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let parent_agent_id = rec
-                .parent_agent_id
-                .map(|v| v.to_string())
-                .unwrap_or_default();
-            let parent_life_id = rec
-                .parent_life_id
-                .map(|v| v.to_string())
-                .unwrap_or_default();
-            let parent_energy = rec
-                .parent_energy
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let parent_c_level = rec
-                .parent_c_level
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let chosen_selection_prob = rec
-                .chosen_selection_prob
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let offspring_st = 12.0 * (rec.offspring_freq_hz / anchor_hz).log2();
-            let spawn_st = 12.0 * (rec.spawn_freq_hz / anchor_hz).log2();
-            let delta_st = rec
-                .parent_freq_hz
-                .map(|parent_freq| 12.0 * (rec.spawn_freq_hz / parent_freq).log2())
-                .map(|st| format!("{st:.6}"))
-                .unwrap_or_default();
-            let parent_family_center_hz = rec
-                .parent_family_center_hz
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let parent_azimuth_st = rec
-                .parent_azimuth_st
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let child_family_center_hz = rec
-                .child_family_center_hz
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let child_azimuth_st = rec
-                .child_azimuth_st
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let family_inherited = rec
-                .family_inherited
-                .map(|v| if v { "1".to_string() } else { "0".to_string() })
-                .unwrap_or_default();
-            let family_mutated = rec
-                .family_mutated
-                .map(|v| if v { "1".to_string() } else { "0".to_string() })
-                .unwrap_or_default();
-            let oracle_freq_hz = rec
-                .oracle_freq_hz
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let oracle_st = rec
-                .oracle_freq_hz
-                .map(|freq| 12.0 * (freq / anchor_hz).log2())
-                .map(|st| format!("{st:.6}"))
-                .unwrap_or_default();
-            let oracle_c_score = rec
-                .oracle_c_score
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let oracle_c_level = rec
-                .oracle_c_level
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let oracle_delta_st = rec
-                .oracle_delta_st
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            global_oracle_respawns_long_csv.push_str(&format!(
+        let mut global_oracle_respawns_long_csv = String::from(
+            "condition,seed,step,dead_agent_id,child_life_id,parent_agent_id,parent_life_id,parent_freq_hz,parent_st,parent_energy,parent_c_level,candidate_count,candidate_energy_mean,candidate_energy_std,candidate_c_level_mean,chosen_selection_prob,offspring_freq_hz,offspring_st,spawn_freq_hz,spawn_st,spawn_c_level,delta_st,parent_family_center_hz,parent_azimuth_st,child_family_center_hz,child_azimuth_st,family_inherited,family_mutated,oracle_applied,oracle_freq_hz,oracle_st,oracle_c_score,oracle_c_level,oracle_delta_st\n",
+        );
+        let mut global_oracle_summary_csv = String::from(
+            "condition,seed,mean_c_start,mean_c_end,occ_start,occ_end,anchor_ji_mass,pairwise_ji_score\n",
+        );
+        let mut global_oracle_by_label_seed: HashMap<&'static str, HashMap<u64, OracleRunSummary>> =
+            HashMap::new();
+        for (label, _condition, _selection_enabled, seed, result) in &global_oracle_results {
+            for rec in &result.respawns {
+                let parent_st = rec
+                    .parent_freq_hz
+                    .map(|freq| 12.0 * (freq / anchor_hz).log2())
+                    .map(|st| format!("{st:.6}"))
+                    .unwrap_or_default();
+                let parent_freq_hz = rec
+                    .parent_freq_hz
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let parent_agent_id = rec
+                    .parent_agent_id
+                    .map(|v| v.to_string())
+                    .unwrap_or_default();
+                let parent_life_id = rec
+                    .parent_life_id
+                    .map(|v| v.to_string())
+                    .unwrap_or_default();
+                let parent_energy = rec
+                    .parent_energy
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let parent_c_level = rec
+                    .parent_c_level
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let chosen_selection_prob = rec
+                    .chosen_selection_prob
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let offspring_st = 12.0 * (rec.offspring_freq_hz / anchor_hz).log2();
+                let spawn_st = 12.0 * (rec.spawn_freq_hz / anchor_hz).log2();
+                let delta_st = rec
+                    .parent_freq_hz
+                    .map(|parent_freq| 12.0 * (rec.spawn_freq_hz / parent_freq).log2())
+                    .map(|st| format!("{st:.6}"))
+                    .unwrap_or_default();
+                let parent_family_center_hz = rec
+                    .parent_family_center_hz
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let parent_azimuth_st = rec
+                    .parent_azimuth_st
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let child_family_center_hz = rec
+                    .child_family_center_hz
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let child_azimuth_st = rec
+                    .child_azimuth_st
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let family_inherited = rec
+                    .family_inherited
+                    .map(|v| if v { "1".to_string() } else { "0".to_string() })
+                    .unwrap_or_default();
+                let family_mutated = rec
+                    .family_mutated
+                    .map(|v| if v { "1".to_string() } else { "0".to_string() })
+                    .unwrap_or_default();
+                let oracle_freq_hz = rec
+                    .oracle_freq_hz
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let oracle_st = rec
+                    .oracle_freq_hz
+                    .map(|freq| 12.0 * (freq / anchor_hz).log2())
+                    .map(|st| format!("{st:.6}"))
+                    .unwrap_or_default();
+                let oracle_c_score = rec
+                    .oracle_c_score
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let oracle_c_level = rec
+                    .oracle_c_level
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let oracle_delta_st = rec
+                    .oracle_delta_st
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                global_oracle_respawns_long_csv.push_str(&format!(
                 "{},{},{},{},{},{},{},{},{},{},{},{},{:.6},{:.6},{:.6},{},{:.6},{:.6},{:.6},{:.6},{:.6},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
                 label,
                 seed,
@@ -7787,95 +8610,95 @@ fn plot_e6_hereditary_adaptation(
                 oracle_c_level,
                 oracle_delta_st,
             ));
-        }
+            }
 
-        let mut run_points: Vec<E6SnapshotPoint> = Vec::with_capacity(result.snapshots.len());
-        for snap in &result.snapshots {
-            run_points.push(e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape));
+            let mut run_points: Vec<E6SnapshotPoint> = Vec::with_capacity(result.snapshots.len());
+            for snap in &result.snapshots {
+                run_points.push(e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape));
+            }
+            let start = run_points.first().copied().unwrap_or(E6SnapshotPoint {
+                mean_c_score: 0.0,
+                consonant_occupation: 0.0,
+                pairwise_entropy: 0.0,
+                n_alive: 0,
+            });
+            let end = run_points.last().copied().unwrap_or(start);
+            let anchor_ji_mass = result
+                .snapshots
+                .last()
+                .map(|snap| e6_anchor_ji_mass(&snap.freqs_hz, anchor_hz))
+                .unwrap_or(0.0);
+            let pairwise_ji_score = result
+                .snapshots
+                .last()
+                .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
+                .unwrap_or(0.0);
+            global_oracle_summary_csv.push_str(&format!(
+                "{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
+                label,
+                seed,
+                start.mean_c_score,
+                end.mean_c_score,
+                start.consonant_occupation,
+                end.consonant_occupation,
+                anchor_ji_mass,
+                pairwise_ji_score
+            ));
+            global_oracle_by_label_seed
+                .entry(*label)
+                .or_default()
+                .insert(
+                    *seed,
+                    OracleRunSummary {
+                        mean_c_end: end.mean_c_score,
+                        occ_end: end.consonant_occupation,
+                        pairwise_ji_score,
+                    },
+                );
         }
-        let start = run_points.first().copied().unwrap_or(E6SnapshotPoint {
-            mean_c_score: 0.0,
-            consonant_occupation: 0.0,
-            pairwise_entropy: 0.0,
-            n_alive: 0,
-        });
-        let end = run_points.last().copied().unwrap_or(start);
-        let anchor_ji_mass = result
-            .snapshots
-            .last()
-            .map(|snap| e6_anchor_ji_mass(&snap.freqs_hz, anchor_hz))
-            .unwrap_or(0.0);
-        let pairwise_ji_score = result
-            .snapshots
-            .last()
-            .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
-            .unwrap_or(0.0);
-        global_oracle_summary_csv.push_str(&format!(
-            "{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
-            label,
-            seed,
-            start.mean_c_score,
-            end.mean_c_score,
-            start.consonant_occupation,
-            end.consonant_occupation,
-            anchor_ji_mass,
-            pairwise_ji_score
-        ));
-        global_oracle_by_label_seed
-            .entry(*label)
-            .or_default()
-            .insert(
-                *seed,
-                OracleRunSummary {
-                    mean_c_end: end.mean_c_score,
-                    occ_end: end.consonant_occupation,
-                    pairwise_ji_score,
-                },
-            );
-    }
-    write_with_log(
-        out_dir.join("paper_e6_oracle_global_respawns_long.csv"),
-        global_oracle_respawns_long_csv,
-    )?;
-    write_with_log(
-        out_dir.join("paper_e6_oracle_global_summary.csv"),
-        global_oracle_summary_csv,
-    )?;
+        write_with_log(
+            out_dir.join("paper_e6_oracle_global_respawns_long.csv"),
+            global_oracle_respawns_long_csv,
+        )?;
+        write_with_log(
+            out_dir.join("paper_e6_oracle_global_summary.csv"),
+            global_oracle_summary_csv,
+        )?;
 
-    let global_oracle_h = global_oracle_by_label_seed
-        .get("heredity_oracle_global")
-        .cloned()
-        .unwrap_or_default();
-    let global_oracle_r = global_oracle_by_label_seed
-        .get("random_oracle_global")
-        .cloned()
-        .unwrap_or_default();
-    let h_global_oracle_c = collect_metric(&global_oracle_h, |s| s.mean_c_end);
-    let r_global_oracle_c = collect_metric(&global_oracle_r, |s| s.mean_c_end);
-    let h_global_oracle_occ = collect_metric(&global_oracle_h, |s| s.occ_end);
-    let r_global_oracle_occ = collect_metric(&global_oracle_r, |s| s.occ_end);
-    let h_global_oracle_pairwise = collect_metric(&global_oracle_h, |s| s.pairwise_ji_score);
-    let r_global_oracle_pairwise = collect_metric(&global_oracle_r, |s| s.pairwise_ji_score);
-    let h_global_gain = collect_paired_delta(&global_oracle_h, &baseline_h, |s| s.mean_c_end);
-    let r_global_gain = collect_paired_delta(&global_oracle_r, &baseline_r, |s| s.mean_c_end);
-    let global_oracle_adv =
-        collect_paired_delta(&global_oracle_h, &global_oracle_r, |s| s.mean_c_end);
-    let (h_global_gain_p, h_global_gain_method) =
-        permutation_pvalue_one_sample(&h_global_gain, 100_000, 0xE6A0_B111);
-    let (r_global_gain_p, r_global_gain_method) =
-        permutation_pvalue_one_sample(&r_global_gain, 100_000, 0xE6A0_B222);
-    let (global_oracle_adv_p, global_oracle_adv_method) =
-        permutation_pvalue_one_sample(&global_oracle_adv, 100_000, 0xE6A0_B333);
-    let (h_global_oracle_mean, h_global_oracle_ci) = mean_ci(&h_global_oracle_c);
-    let (r_global_oracle_mean, r_global_oracle_ci) = mean_ci(&r_global_oracle_c);
-    let (h_global_oracle_occ_mean, h_global_oracle_occ_ci) = mean_ci(&h_global_oracle_occ);
-    let (r_global_oracle_occ_mean, r_global_oracle_occ_ci) = mean_ci(&r_global_oracle_occ);
-    let (h_global_oracle_pairwise_mean, h_global_oracle_pairwise_ci) =
-        mean_ci(&h_global_oracle_pairwise);
-    let (r_global_oracle_pairwise_mean, r_global_oracle_pairwise_ci) =
-        mean_ci(&r_global_oracle_pairwise);
-    let global_oracle_text = format!(
-        "E6 Oracle Global Anchor-C Diagnostic\n\
+        let global_oracle_h = global_oracle_by_label_seed
+            .get("heredity_oracle_global")
+            .cloned()
+            .unwrap_or_default();
+        let global_oracle_r = global_oracle_by_label_seed
+            .get("random_oracle_global")
+            .cloned()
+            .unwrap_or_default();
+        let h_global_oracle_c = collect_metric(&global_oracle_h, |s| s.mean_c_end);
+        let r_global_oracle_c = collect_metric(&global_oracle_r, |s| s.mean_c_end);
+        let h_global_oracle_occ = collect_metric(&global_oracle_h, |s| s.occ_end);
+        let r_global_oracle_occ = collect_metric(&global_oracle_r, |s| s.occ_end);
+        let h_global_oracle_pairwise = collect_metric(&global_oracle_h, |s| s.pairwise_ji_score);
+        let r_global_oracle_pairwise = collect_metric(&global_oracle_r, |s| s.pairwise_ji_score);
+        let h_global_gain = collect_paired_delta(&global_oracle_h, &baseline_h, |s| s.mean_c_end);
+        let r_global_gain = collect_paired_delta(&global_oracle_r, &baseline_r, |s| s.mean_c_end);
+        let global_oracle_adv =
+            collect_paired_delta(&global_oracle_h, &global_oracle_r, |s| s.mean_c_end);
+        let (h_global_gain_p, h_global_gain_method) =
+            permutation_pvalue_one_sample(&h_global_gain, 100_000, 0xE6A0_B111);
+        let (r_global_gain_p, r_global_gain_method) =
+            permutation_pvalue_one_sample(&r_global_gain, 100_000, 0xE6A0_B222);
+        let (global_oracle_adv_p, global_oracle_adv_method) =
+            permutation_pvalue_one_sample(&global_oracle_adv, 100_000, 0xE6A0_B333);
+        let (h_global_oracle_mean, h_global_oracle_ci) = mean_ci(&h_global_oracle_c);
+        let (r_global_oracle_mean, r_global_oracle_ci) = mean_ci(&r_global_oracle_c);
+        let (h_global_oracle_occ_mean, h_global_oracle_occ_ci) = mean_ci(&h_global_oracle_occ);
+        let (r_global_oracle_occ_mean, r_global_oracle_occ_ci) = mean_ci(&r_global_oracle_occ);
+        let (h_global_oracle_pairwise_mean, h_global_oracle_pairwise_ci) =
+            mean_ci(&h_global_oracle_pairwise);
+        let (r_global_oracle_pairwise_mean, r_global_oracle_pairwise_ci) =
+            mean_ci(&r_global_oracle_pairwise);
+        let global_oracle_text = format!(
+            "E6 Oracle Global Anchor-C Diagnostic\n\
          ==================================\n\
          Respawn is replaced by the global anchor-C argmax within tessitura.\n\
          Grid = 25 cents\n\
@@ -7898,135 +8721,135 @@ fn plot_e6_hereditary_adaptation(
          H global oracle - H baseline: mean={:.4}, p={} ({})\n\
          R global oracle - R baseline: mean={:.4}, p={} ({})\n\
          H global oracle - R global oracle: mean={:.4}, p={} ({})\n",
-        h_base_mean,
-        h_base_ci,
-        h_global_oracle_mean,
-        h_global_oracle_ci,
-        r_base_mean,
-        r_base_ci,
-        r_global_oracle_mean,
-        r_global_oracle_ci,
-        h_global_oracle_occ_mean,
-        h_global_oracle_occ_ci,
-        r_global_oracle_occ_mean,
-        r_global_oracle_occ_ci,
-        h_global_oracle_pairwise_mean,
-        h_global_oracle_pairwise_ci,
-        r_global_oracle_pairwise_mean,
-        r_global_oracle_pairwise_ci,
-        mean_std_scalar(&h_global_gain).0,
-        format_p_value(h_global_gain_p),
-        h_global_gain_method,
-        mean_std_scalar(&r_global_gain).0,
-        format_p_value(r_global_gain_p),
-        r_global_gain_method,
-        mean_std_scalar(&global_oracle_adv).0,
-        format_p_value(global_oracle_adv_p),
-        global_oracle_adv_method,
-    );
-    write_with_log(
-        out_dir.join("paper_e6_oracle_global_test.txt"),
-        global_oracle_text,
-    )?;
-    write_life_checks_csv(
-        &global_oracle_results,
-        &out_dir.join("paper_e6_oracle_global_life_checks_long.csv"),
-    )?;
+            h_base_mean,
+            h_base_ci,
+            h_global_oracle_mean,
+            h_global_oracle_ci,
+            r_base_mean,
+            r_base_ci,
+            r_global_oracle_mean,
+            r_global_oracle_ci,
+            h_global_oracle_occ_mean,
+            h_global_oracle_occ_ci,
+            r_global_oracle_occ_mean,
+            r_global_oracle_occ_ci,
+            h_global_oracle_pairwise_mean,
+            h_global_oracle_pairwise_ci,
+            r_global_oracle_pairwise_mean,
+            r_global_oracle_pairwise_ci,
+            mean_std_scalar(&h_global_gain).0,
+            format_p_value(h_global_gain_p),
+            h_global_gain_method,
+            mean_std_scalar(&r_global_gain).0,
+            format_p_value(r_global_gain_p),
+            r_global_gain_method,
+            mean_std_scalar(&global_oracle_adv).0,
+            format_p_value(global_oracle_adv_p),
+            global_oracle_adv_method,
+        );
+        write_with_log(
+            out_dir.join("paper_e6_oracle_global_test.txt"),
+            global_oracle_text,
+        )?;
+        write_life_checks_csv(
+            &global_oracle_results,
+            &out_dir.join("paper_e6_oracle_global_life_checks_long.csv"),
+        )?;
 
-    let mut global_oracle_freeze_respawns_long_csv = String::from(
-        "condition,seed,step,dead_agent_id,child_life_id,parent_agent_id,parent_life_id,parent_freq_hz,parent_st,parent_energy,parent_c_level,candidate_count,candidate_energy_mean,candidate_energy_std,candidate_c_level_mean,chosen_selection_prob,offspring_freq_hz,offspring_st,spawn_freq_hz,spawn_st,spawn_c_level,delta_st,parent_family_center_hz,parent_azimuth_st,child_family_center_hz,child_azimuth_st,family_inherited,family_mutated,oracle_applied,oracle_freq_hz,oracle_st,oracle_c_score,oracle_c_level,oracle_delta_st\n",
-    );
-    let mut global_oracle_freeze_summary_csv = String::from(
-        "condition,seed,mean_c_start,mean_c_end,occ_start,occ_end,anchor_ji_mass,pairwise_ji_score\n",
-    );
-    let mut global_oracle_freeze_by_label_seed: HashMap<
-        &'static str,
-        HashMap<u64, OracleRunSummary>,
-    > = HashMap::new();
-    for (label, _condition, _selection_enabled, seed, result) in &global_oracle_freeze_results {
-        for rec in &result.respawns {
-            let parent_st = rec
-                .parent_freq_hz
-                .map(|freq| 12.0 * (freq / anchor_hz).log2())
-                .map(|st| format!("{st:.6}"))
-                .unwrap_or_default();
-            let parent_freq_hz = rec
-                .parent_freq_hz
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let parent_agent_id = rec
-                .parent_agent_id
-                .map(|v| v.to_string())
-                .unwrap_or_default();
-            let parent_life_id = rec
-                .parent_life_id
-                .map(|v| v.to_string())
-                .unwrap_or_default();
-            let parent_energy = rec
-                .parent_energy
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let parent_c_level = rec
-                .parent_c_level
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let chosen_selection_prob = rec
-                .chosen_selection_prob
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let offspring_st = 12.0 * (rec.offspring_freq_hz / anchor_hz).log2();
-            let spawn_st = 12.0 * (rec.spawn_freq_hz / anchor_hz).log2();
-            let delta_st = rec
-                .parent_freq_hz
-                .map(|parent_freq| 12.0 * (rec.spawn_freq_hz / parent_freq).log2())
-                .map(|st| format!("{st:.6}"))
-                .unwrap_or_default();
-            let parent_family_center_hz = rec
-                .parent_family_center_hz
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let parent_azimuth_st = rec
-                .parent_azimuth_st
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let child_family_center_hz = rec
-                .child_family_center_hz
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let child_azimuth_st = rec
-                .child_azimuth_st
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let family_inherited = rec
-                .family_inherited
-                .map(|v| if v { "1".to_string() } else { "0".to_string() })
-                .unwrap_or_default();
-            let family_mutated = rec
-                .family_mutated
-                .map(|v| if v { "1".to_string() } else { "0".to_string() })
-                .unwrap_or_default();
-            let oracle_freq_hz = rec
-                .oracle_freq_hz
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let oracle_st = rec
-                .oracle_freq_hz
-                .map(|freq| 12.0 * (freq / anchor_hz).log2())
-                .map(|st| format!("{st:.6}"))
-                .unwrap_or_default();
-            let oracle_c_score = rec
-                .oracle_c_score
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let oracle_c_level = rec
-                .oracle_c_level
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            let oracle_delta_st = rec
-                .oracle_delta_st
-                .map(|v| format!("{v:.6}"))
-                .unwrap_or_default();
-            global_oracle_freeze_respawns_long_csv.push_str(&format!(
+        let mut global_oracle_freeze_respawns_long_csv = String::from(
+            "condition,seed,step,dead_agent_id,child_life_id,parent_agent_id,parent_life_id,parent_freq_hz,parent_st,parent_energy,parent_c_level,candidate_count,candidate_energy_mean,candidate_energy_std,candidate_c_level_mean,chosen_selection_prob,offspring_freq_hz,offspring_st,spawn_freq_hz,spawn_st,spawn_c_level,delta_st,parent_family_center_hz,parent_azimuth_st,child_family_center_hz,child_azimuth_st,family_inherited,family_mutated,oracle_applied,oracle_freq_hz,oracle_st,oracle_c_score,oracle_c_level,oracle_delta_st\n",
+        );
+        let mut global_oracle_freeze_summary_csv = String::from(
+            "condition,seed,mean_c_start,mean_c_end,occ_start,occ_end,anchor_ji_mass,pairwise_ji_score\n",
+        );
+        let mut global_oracle_freeze_by_label_seed: HashMap<
+            &'static str,
+            HashMap<u64, OracleRunSummary>,
+        > = HashMap::new();
+        for (label, _condition, _selection_enabled, seed, result) in &global_oracle_freeze_results {
+            for rec in &result.respawns {
+                let parent_st = rec
+                    .parent_freq_hz
+                    .map(|freq| 12.0 * (freq / anchor_hz).log2())
+                    .map(|st| format!("{st:.6}"))
+                    .unwrap_or_default();
+                let parent_freq_hz = rec
+                    .parent_freq_hz
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let parent_agent_id = rec
+                    .parent_agent_id
+                    .map(|v| v.to_string())
+                    .unwrap_or_default();
+                let parent_life_id = rec
+                    .parent_life_id
+                    .map(|v| v.to_string())
+                    .unwrap_or_default();
+                let parent_energy = rec
+                    .parent_energy
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let parent_c_level = rec
+                    .parent_c_level
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let chosen_selection_prob = rec
+                    .chosen_selection_prob
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let offspring_st = 12.0 * (rec.offspring_freq_hz / anchor_hz).log2();
+                let spawn_st = 12.0 * (rec.spawn_freq_hz / anchor_hz).log2();
+                let delta_st = rec
+                    .parent_freq_hz
+                    .map(|parent_freq| 12.0 * (rec.spawn_freq_hz / parent_freq).log2())
+                    .map(|st| format!("{st:.6}"))
+                    .unwrap_or_default();
+                let parent_family_center_hz = rec
+                    .parent_family_center_hz
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let parent_azimuth_st = rec
+                    .parent_azimuth_st
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let child_family_center_hz = rec
+                    .child_family_center_hz
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let child_azimuth_st = rec
+                    .child_azimuth_st
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let family_inherited = rec
+                    .family_inherited
+                    .map(|v| if v { "1".to_string() } else { "0".to_string() })
+                    .unwrap_or_default();
+                let family_mutated = rec
+                    .family_mutated
+                    .map(|v| if v { "1".to_string() } else { "0".to_string() })
+                    .unwrap_or_default();
+                let oracle_freq_hz = rec
+                    .oracle_freq_hz
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let oracle_st = rec
+                    .oracle_freq_hz
+                    .map(|freq| 12.0 * (freq / anchor_hz).log2())
+                    .map(|st| format!("{st:.6}"))
+                    .unwrap_or_default();
+                let oracle_c_score = rec
+                    .oracle_c_score
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let oracle_c_level = rec
+                    .oracle_c_level
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                let oracle_delta_st = rec
+                    .oracle_delta_st
+                    .map(|v| format!("{v:.6}"))
+                    .unwrap_or_default();
+                global_oracle_freeze_respawns_long_csv.push_str(&format!(
                 "{},{},{},{},{},{},{},{},{},{},{},{},{:.6},{:.6},{:.6},{},{:.6},{:.6},{:.6},{:.6},{:.6},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
                 label,
                 seed,
@@ -8063,109 +8886,109 @@ fn plot_e6_hereditary_adaptation(
                 oracle_c_level,
                 oracle_delta_st,
             ));
-        }
+            }
 
-        let mut run_points: Vec<E6SnapshotPoint> = Vec::with_capacity(result.snapshots.len());
-        for snap in &result.snapshots {
-            run_points.push(e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape));
+            let mut run_points: Vec<E6SnapshotPoint> = Vec::with_capacity(result.snapshots.len());
+            for snap in &result.snapshots {
+                run_points.push(e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape));
+            }
+            let start = run_points.first().copied().unwrap_or(E6SnapshotPoint {
+                mean_c_score: 0.0,
+                consonant_occupation: 0.0,
+                pairwise_entropy: 0.0,
+                n_alive: 0,
+            });
+            let end = run_points.last().copied().unwrap_or(start);
+            let anchor_ji_mass = result
+                .snapshots
+                .last()
+                .map(|snap| e6_anchor_ji_mass(&snap.freqs_hz, anchor_hz))
+                .unwrap_or(0.0);
+            let pairwise_ji_score = result
+                .snapshots
+                .last()
+                .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
+                .unwrap_or(0.0);
+            global_oracle_freeze_summary_csv.push_str(&format!(
+                "{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
+                label,
+                seed,
+                start.mean_c_score,
+                end.mean_c_score,
+                start.consonant_occupation,
+                end.consonant_occupation,
+                anchor_ji_mass,
+                pairwise_ji_score
+            ));
+            global_oracle_freeze_by_label_seed
+                .entry(*label)
+                .or_default()
+                .insert(
+                    *seed,
+                    OracleRunSummary {
+                        mean_c_end: end.mean_c_score,
+                        occ_end: end.consonant_occupation,
+                        pairwise_ji_score,
+                    },
+                );
         }
-        let start = run_points.first().copied().unwrap_or(E6SnapshotPoint {
-            mean_c_score: 0.0,
-            consonant_occupation: 0.0,
-            pairwise_entropy: 0.0,
-            n_alive: 0,
-        });
-        let end = run_points.last().copied().unwrap_or(start);
-        let anchor_ji_mass = result
-            .snapshots
-            .last()
-            .map(|snap| e6_anchor_ji_mass(&snap.freqs_hz, anchor_hz))
-            .unwrap_or(0.0);
-        let pairwise_ji_score = result
-            .snapshots
-            .last()
-            .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
-            .unwrap_or(0.0);
-        global_oracle_freeze_summary_csv.push_str(&format!(
-            "{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
-            label,
-            seed,
-            start.mean_c_score,
-            end.mean_c_score,
-            start.consonant_occupation,
-            end.consonant_occupation,
-            anchor_ji_mass,
-            pairwise_ji_score
-        ));
-        global_oracle_freeze_by_label_seed
-            .entry(*label)
-            .or_default()
-            .insert(
-                *seed,
-                OracleRunSummary {
-                    mean_c_end: end.mean_c_score,
-                    occ_end: end.consonant_occupation,
-                    pairwise_ji_score,
-                },
-            );
-    }
-    write_with_log(
-        out_dir.join("paper_e6_oracle_global_freeze_respawns_long.csv"),
-        global_oracle_freeze_respawns_long_csv,
-    )?;
-    write_with_log(
-        out_dir.join("paper_e6_oracle_global_freeze_summary.csv"),
-        global_oracle_freeze_summary_csv,
-    )?;
-    write_life_checks_csv(
-        &global_oracle_freeze_results,
-        &out_dir.join("paper_e6_oracle_global_freeze_life_checks_long.csv"),
-    )?;
+        write_with_log(
+            out_dir.join("paper_e6_oracle_global_freeze_respawns_long.csv"),
+            global_oracle_freeze_respawns_long_csv,
+        )?;
+        write_with_log(
+            out_dir.join("paper_e6_oracle_global_freeze_summary.csv"),
+            global_oracle_freeze_summary_csv,
+        )?;
+        write_life_checks_csv(
+            &global_oracle_freeze_results,
+            &out_dir.join("paper_e6_oracle_global_freeze_life_checks_long.csv"),
+        )?;
 
-    let global_oracle_freeze_h = global_oracle_freeze_by_label_seed
-        .get("heredity_oracle_global_freeze")
-        .cloned()
-        .unwrap_or_default();
-    let global_oracle_freeze_r = global_oracle_freeze_by_label_seed
-        .get("random_oracle_global_freeze")
-        .cloned()
-        .unwrap_or_default();
-    let h_global_oracle_freeze_c = collect_metric(&global_oracle_freeze_h, |s| s.mean_c_end);
-    let r_global_oracle_freeze_c = collect_metric(&global_oracle_freeze_r, |s| s.mean_c_end);
-    let h_global_oracle_freeze_occ = collect_metric(&global_oracle_freeze_h, |s| s.occ_end);
-    let r_global_oracle_freeze_occ = collect_metric(&global_oracle_freeze_r, |s| s.occ_end);
-    let h_global_oracle_freeze_pairwise =
-        collect_metric(&global_oracle_freeze_h, |s| s.pairwise_ji_score);
-    let r_global_oracle_freeze_pairwise =
-        collect_metric(&global_oracle_freeze_r, |s| s.pairwise_ji_score);
-    let h_global_oracle_freeze_gain =
-        collect_paired_delta(&global_oracle_freeze_h, &baseline_h, |s| s.mean_c_end);
-    let r_global_oracle_freeze_gain =
-        collect_paired_delta(&global_oracle_freeze_r, &baseline_r, |s| s.mean_c_end);
-    let global_oracle_freeze_adv =
-        collect_paired_delta(&global_oracle_freeze_h, &global_oracle_freeze_r, |s| {
-            s.mean_c_end
-        });
-    let (h_global_oracle_freeze_gain_p, h_global_oracle_freeze_gain_method) =
-        permutation_pvalue_one_sample(&h_global_oracle_freeze_gain, 100_000, 0xE6A0_C111);
-    let (r_global_oracle_freeze_gain_p, r_global_oracle_freeze_gain_method) =
-        permutation_pvalue_one_sample(&r_global_oracle_freeze_gain, 100_000, 0xE6A0_C222);
-    let (global_oracle_freeze_adv_p, global_oracle_freeze_adv_method) =
-        permutation_pvalue_one_sample(&global_oracle_freeze_adv, 100_000, 0xE6A0_C333);
-    let (h_global_oracle_freeze_mean, h_global_oracle_freeze_ci) =
-        mean_ci(&h_global_oracle_freeze_c);
-    let (r_global_oracle_freeze_mean, r_global_oracle_freeze_ci) =
-        mean_ci(&r_global_oracle_freeze_c);
-    let (h_global_oracle_freeze_occ_mean, h_global_oracle_freeze_occ_ci) =
-        mean_ci(&h_global_oracle_freeze_occ);
-    let (r_global_oracle_freeze_occ_mean, r_global_oracle_freeze_occ_ci) =
-        mean_ci(&r_global_oracle_freeze_occ);
-    let (h_global_oracle_freeze_pairwise_mean, h_global_oracle_freeze_pairwise_ci) =
-        mean_ci(&h_global_oracle_freeze_pairwise);
-    let (r_global_oracle_freeze_pairwise_mean, r_global_oracle_freeze_pairwise_ci) =
-        mean_ci(&r_global_oracle_freeze_pairwise);
-    let global_oracle_freeze_text = format!(
-        "E6 Oracle Global Anchor-C Freeze Diagnostic\n\
+        let global_oracle_freeze_h = global_oracle_freeze_by_label_seed
+            .get("heredity_oracle_global_freeze")
+            .cloned()
+            .unwrap_or_default();
+        let global_oracle_freeze_r = global_oracle_freeze_by_label_seed
+            .get("random_oracle_global_freeze")
+            .cloned()
+            .unwrap_or_default();
+        let h_global_oracle_freeze_c = collect_metric(&global_oracle_freeze_h, |s| s.mean_c_end);
+        let r_global_oracle_freeze_c = collect_metric(&global_oracle_freeze_r, |s| s.mean_c_end);
+        let h_global_oracle_freeze_occ = collect_metric(&global_oracle_freeze_h, |s| s.occ_end);
+        let r_global_oracle_freeze_occ = collect_metric(&global_oracle_freeze_r, |s| s.occ_end);
+        let h_global_oracle_freeze_pairwise =
+            collect_metric(&global_oracle_freeze_h, |s| s.pairwise_ji_score);
+        let r_global_oracle_freeze_pairwise =
+            collect_metric(&global_oracle_freeze_r, |s| s.pairwise_ji_score);
+        let h_global_oracle_freeze_gain =
+            collect_paired_delta(&global_oracle_freeze_h, &baseline_h, |s| s.mean_c_end);
+        let r_global_oracle_freeze_gain =
+            collect_paired_delta(&global_oracle_freeze_r, &baseline_r, |s| s.mean_c_end);
+        let global_oracle_freeze_adv =
+            collect_paired_delta(&global_oracle_freeze_h, &global_oracle_freeze_r, |s| {
+                s.mean_c_end
+            });
+        let (h_global_oracle_freeze_gain_p, h_global_oracle_freeze_gain_method) =
+            permutation_pvalue_one_sample(&h_global_oracle_freeze_gain, 100_000, 0xE6A0_C111);
+        let (r_global_oracle_freeze_gain_p, r_global_oracle_freeze_gain_method) =
+            permutation_pvalue_one_sample(&r_global_oracle_freeze_gain, 100_000, 0xE6A0_C222);
+        let (global_oracle_freeze_adv_p, global_oracle_freeze_adv_method) =
+            permutation_pvalue_one_sample(&global_oracle_freeze_adv, 100_000, 0xE6A0_C333);
+        let (h_global_oracle_freeze_mean, h_global_oracle_freeze_ci) =
+            mean_ci(&h_global_oracle_freeze_c);
+        let (r_global_oracle_freeze_mean, r_global_oracle_freeze_ci) =
+            mean_ci(&r_global_oracle_freeze_c);
+        let (h_global_oracle_freeze_occ_mean, h_global_oracle_freeze_occ_ci) =
+            mean_ci(&h_global_oracle_freeze_occ);
+        let (r_global_oracle_freeze_occ_mean, r_global_oracle_freeze_occ_ci) =
+            mean_ci(&r_global_oracle_freeze_occ);
+        let (h_global_oracle_freeze_pairwise_mean, h_global_oracle_freeze_pairwise_ci) =
+            mean_ci(&h_global_oracle_freeze_pairwise);
+        let (r_global_oracle_freeze_pairwise_mean, r_global_oracle_freeze_pairwise_ci) =
+            mean_ci(&r_global_oracle_freeze_pairwise);
+        let global_oracle_freeze_text = format!(
+            "E6 Oracle Global Anchor-C Freeze Diagnostic\n\
          =========================================\n\
          Respawn is replaced by the global anchor-C argmax within tessitura,\n\
          then pitch is frozen after respawn for the remainder of life.\n\
@@ -8189,119 +9012,121 @@ fn plot_e6_hereditary_adaptation(
          H global oracle freeze - H baseline: mean={:.4}, p={} ({})\n\
          R global oracle freeze - R baseline: mean={:.4}, p={} ({})\n\
          H global oracle freeze - R global oracle freeze: mean={:.4}, p={} ({})\n",
-        h_base_mean,
-        h_base_ci,
-        h_global_oracle_freeze_mean,
-        h_global_oracle_freeze_ci,
-        r_base_mean,
-        r_base_ci,
-        r_global_oracle_freeze_mean,
-        r_global_oracle_freeze_ci,
-        h_global_oracle_freeze_occ_mean,
-        h_global_oracle_freeze_occ_ci,
-        r_global_oracle_freeze_occ_mean,
-        r_global_oracle_freeze_occ_ci,
-        h_global_oracle_freeze_pairwise_mean,
-        h_global_oracle_freeze_pairwise_ci,
-        r_global_oracle_freeze_pairwise_mean,
-        r_global_oracle_freeze_pairwise_ci,
-        mean_std_scalar(&h_global_oracle_freeze_gain).0,
-        format_p_value(h_global_oracle_freeze_gain_p),
-        h_global_oracle_freeze_gain_method,
-        mean_std_scalar(&r_global_oracle_freeze_gain).0,
-        format_p_value(r_global_oracle_freeze_gain_p),
-        r_global_oracle_freeze_gain_method,
-        mean_std_scalar(&global_oracle_freeze_adv).0,
-        format_p_value(global_oracle_freeze_adv_p),
-        global_oracle_freeze_adv_method,
-    );
-    write_with_log(
-        out_dir.join("paper_e6_oracle_global_freeze_test.txt"),
-        global_oracle_freeze_text,
-    )?;
-
-    let mut e2_aligned_summary_csv = String::from(
-        "condition,seed,mean_c_start,mean_c_end,occ_start,occ_end,anchor_ji_mass,pairwise_ji_score\n",
-    );
-    let mut e2_aligned_by_label_seed: HashMap<&'static str, HashMap<u64, OracleRunSummary>> =
-        HashMap::new();
-    for (label, _condition, seed, result) in &e2_aligned_results {
-        let mut run_points: Vec<E6SnapshotPoint> = Vec::with_capacity(result.snapshots.len());
-        for snap in &result.snapshots {
-            run_points.push(e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape));
-        }
-        let start = run_points.first().copied().unwrap_or(E6SnapshotPoint {
-            mean_c_score: 0.0,
-            consonant_occupation: 0.0,
-            pairwise_entropy: 0.0,
-            n_alive: 0,
-        });
-        let end = run_points.last().copied().unwrap_or(start);
-        let anchor_ji_mass = result
-            .snapshots
-            .last()
-            .map(|snap| e6_anchor_ji_mass(&snap.freqs_hz, anchor_hz))
-            .unwrap_or(0.0);
-        let pairwise_ji_score = result
-            .snapshots
-            .last()
-            .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
-            .unwrap_or(0.0);
-        e2_aligned_summary_csv.push_str(&format!(
-            "{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
-            label,
-            seed,
-            start.mean_c_score,
-            end.mean_c_score,
-            start.consonant_occupation,
-            end.consonant_occupation,
-            anchor_ji_mass,
-            pairwise_ji_score
-        ));
-        e2_aligned_by_label_seed.entry(*label).or_default().insert(
-            *seed,
-            OracleRunSummary {
-                mean_c_end: end.mean_c_score,
-                occ_end: end.consonant_occupation,
-                pairwise_ji_score,
-            },
+            h_base_mean,
+            h_base_ci,
+            h_global_oracle_freeze_mean,
+            h_global_oracle_freeze_ci,
+            r_base_mean,
+            r_base_ci,
+            r_global_oracle_freeze_mean,
+            r_global_oracle_freeze_ci,
+            h_global_oracle_freeze_occ_mean,
+            h_global_oracle_freeze_occ_ci,
+            r_global_oracle_freeze_occ_mean,
+            r_global_oracle_freeze_occ_ci,
+            h_global_oracle_freeze_pairwise_mean,
+            h_global_oracle_freeze_pairwise_ci,
+            r_global_oracle_freeze_pairwise_mean,
+            r_global_oracle_freeze_pairwise_ci,
+            mean_std_scalar(&h_global_oracle_freeze_gain).0,
+            format_p_value(h_global_oracle_freeze_gain_p),
+            h_global_oracle_freeze_gain_method,
+            mean_std_scalar(&r_global_oracle_freeze_gain).0,
+            format_p_value(r_global_oracle_freeze_gain_p),
+            r_global_oracle_freeze_gain_method,
+            mean_std_scalar(&global_oracle_freeze_adv).0,
+            format_p_value(global_oracle_freeze_adv_p),
+            global_oracle_freeze_adv_method,
         );
-    }
-    write_with_log(
-        out_dir.join("paper_e6_e2_aligned_summary.csv"),
-        e2_aligned_summary_csv,
-    )?;
-    let e2_aligned_h = e2_aligned_by_label_seed
-        .get("heredity_e2_aligned")
-        .cloned()
-        .unwrap_or_default();
-    let e2_aligned_r = e2_aligned_by_label_seed
-        .get("random_e2_aligned")
-        .cloned()
-        .unwrap_or_default();
-    let h_e2_aligned_c = collect_metric(&e2_aligned_h, |s| s.mean_c_end);
-    let r_e2_aligned_c = collect_metric(&e2_aligned_r, |s| s.mean_c_end);
-    let h_e2_aligned_occ = collect_metric(&e2_aligned_h, |s| s.occ_end);
-    let r_e2_aligned_occ = collect_metric(&e2_aligned_r, |s| s.occ_end);
-    let h_e2_aligned_pairwise = collect_metric(&e2_aligned_h, |s| s.pairwise_ji_score);
-    let r_e2_aligned_pairwise = collect_metric(&e2_aligned_r, |s| s.pairwise_ji_score);
-    let e2_aligned_adv = collect_paired_delta(&e2_aligned_h, &e2_aligned_r, |s| s.mean_c_end);
-    let h_e2_aligned_gain = collect_paired_delta(&e2_aligned_h, &baseline_h, |s| s.mean_c_end);
-    let r_e2_aligned_gain = collect_paired_delta(&e2_aligned_r, &baseline_r, |s| s.mean_c_end);
-    let (e2_aligned_adv_p, e2_aligned_adv_method) =
-        permutation_pvalue_one_sample(&e2_aligned_adv, 100_000, 0xE6A0_D111);
-    let (h_e2_aligned_gain_p, h_e2_aligned_gain_method) =
-        permutation_pvalue_one_sample(&h_e2_aligned_gain, 100_000, 0xE6A0_D222);
-    let (r_e2_aligned_gain_p, r_e2_aligned_gain_method) =
-        permutation_pvalue_one_sample(&r_e2_aligned_gain, 100_000, 0xE6A0_D333);
-    let (h_e2_aligned_mean, h_e2_aligned_ci) = mean_ci(&h_e2_aligned_c);
-    let (r_e2_aligned_mean, r_e2_aligned_ci) = mean_ci(&r_e2_aligned_c);
-    let (h_e2_aligned_occ_mean, h_e2_aligned_occ_ci) = mean_ci(&h_e2_aligned_occ);
-    let (r_e2_aligned_occ_mean, r_e2_aligned_occ_ci) = mean_ci(&r_e2_aligned_occ);
-    let (h_e2_aligned_pairwise_mean, h_e2_aligned_pairwise_ci) = mean_ci(&h_e2_aligned_pairwise);
-    let (r_e2_aligned_pairwise_mean, r_e2_aligned_pairwise_ci) = mean_ci(&r_e2_aligned_pairwise);
-    let e2_aligned_text = format!(
-        "E6 E2-Aligned Dynamics Diagnostic\n\
+        write_with_log(
+            out_dir.join("paper_e6_oracle_global_freeze_test.txt"),
+            global_oracle_freeze_text,
+        )?;
+
+        let mut e2_aligned_summary_csv = String::from(
+            "condition,seed,mean_c_start,mean_c_end,occ_start,occ_end,anchor_ji_mass,pairwise_ji_score\n",
+        );
+        let mut e2_aligned_by_label_seed: HashMap<&'static str, HashMap<u64, OracleRunSummary>> =
+            HashMap::new();
+        for (label, _condition, seed, result) in &e2_aligned_results {
+            let mut run_points: Vec<E6SnapshotPoint> = Vec::with_capacity(result.snapshots.len());
+            for snap in &result.snapshots {
+                run_points.push(e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape));
+            }
+            let start = run_points.first().copied().unwrap_or(E6SnapshotPoint {
+                mean_c_score: 0.0,
+                consonant_occupation: 0.0,
+                pairwise_entropy: 0.0,
+                n_alive: 0,
+            });
+            let end = run_points.last().copied().unwrap_or(start);
+            let anchor_ji_mass = result
+                .snapshots
+                .last()
+                .map(|snap| e6_anchor_ji_mass(&snap.freqs_hz, anchor_hz))
+                .unwrap_or(0.0);
+            let pairwise_ji_score = result
+                .snapshots
+                .last()
+                .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
+                .unwrap_or(0.0);
+            e2_aligned_summary_csv.push_str(&format!(
+                "{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
+                label,
+                seed,
+                start.mean_c_score,
+                end.mean_c_score,
+                start.consonant_occupation,
+                end.consonant_occupation,
+                anchor_ji_mass,
+                pairwise_ji_score
+            ));
+            e2_aligned_by_label_seed.entry(*label).or_default().insert(
+                *seed,
+                OracleRunSummary {
+                    mean_c_end: end.mean_c_score,
+                    occ_end: end.consonant_occupation,
+                    pairwise_ji_score,
+                },
+            );
+        }
+        write_with_log(
+            out_dir.join("paper_e6_e2_aligned_summary.csv"),
+            e2_aligned_summary_csv,
+        )?;
+        let e2_aligned_h = e2_aligned_by_label_seed
+            .get("heredity_e2_aligned")
+            .cloned()
+            .unwrap_or_default();
+        let e2_aligned_r = e2_aligned_by_label_seed
+            .get("random_e2_aligned")
+            .cloned()
+            .unwrap_or_default();
+        let h_e2_aligned_c = collect_metric(&e2_aligned_h, |s| s.mean_c_end);
+        let r_e2_aligned_c = collect_metric(&e2_aligned_r, |s| s.mean_c_end);
+        let h_e2_aligned_occ = collect_metric(&e2_aligned_h, |s| s.occ_end);
+        let r_e2_aligned_occ = collect_metric(&e2_aligned_r, |s| s.occ_end);
+        let h_e2_aligned_pairwise = collect_metric(&e2_aligned_h, |s| s.pairwise_ji_score);
+        let r_e2_aligned_pairwise = collect_metric(&e2_aligned_r, |s| s.pairwise_ji_score);
+        let e2_aligned_adv = collect_paired_delta(&e2_aligned_h, &e2_aligned_r, |s| s.mean_c_end);
+        let h_e2_aligned_gain = collect_paired_delta(&e2_aligned_h, &baseline_h, |s| s.mean_c_end);
+        let r_e2_aligned_gain = collect_paired_delta(&e2_aligned_r, &baseline_r, |s| s.mean_c_end);
+        let (e2_aligned_adv_p, e2_aligned_adv_method) =
+            permutation_pvalue_one_sample(&e2_aligned_adv, 100_000, 0xE6A0_D111);
+        let (h_e2_aligned_gain_p, h_e2_aligned_gain_method) =
+            permutation_pvalue_one_sample(&h_e2_aligned_gain, 100_000, 0xE6A0_D222);
+        let (r_e2_aligned_gain_p, r_e2_aligned_gain_method) =
+            permutation_pvalue_one_sample(&r_e2_aligned_gain, 100_000, 0xE6A0_D333);
+        let (h_e2_aligned_mean, h_e2_aligned_ci) = mean_ci(&h_e2_aligned_c);
+        let (r_e2_aligned_mean, r_e2_aligned_ci) = mean_ci(&r_e2_aligned_c);
+        let (h_e2_aligned_occ_mean, h_e2_aligned_occ_ci) = mean_ci(&h_e2_aligned_occ);
+        let (r_e2_aligned_occ_mean, r_e2_aligned_occ_ci) = mean_ci(&r_e2_aligned_occ);
+        let (h_e2_aligned_pairwise_mean, h_e2_aligned_pairwise_ci) =
+            mean_ci(&h_e2_aligned_pairwise);
+        let (r_e2_aligned_pairwise_mean, r_e2_aligned_pairwise_ci) =
+            mean_ci(&r_e2_aligned_pairwise);
+        let e2_aligned_text = format!(
+            "E6 E2-Aligned Dynamics Diagnostic\n\
          ===============================\n\
          Conditions use:\n\
          - pop_size = {n_agents}\n\
@@ -8328,122 +9153,122 @@ fn plot_e6_hereditary_adaptation(
          H E2-aligned - H baseline: mean={h_gain:.4}, p={h_gain_p} ({h_gain_method})\n\
          R E2-aligned - R baseline: mean={r_gain:.4}, p={r_gain_p} ({r_gain_method})\n\
          H E2-aligned - R E2-aligned: mean={adv:.4}, p={adv_p} ({adv_method})\n",
-        n_agents = E2_PAPER_N_AGENTS,
-        range_oct = E2_PAPER_RANGE_OCT,
-        crowding = E2_CROWDING_WEIGHT,
-        h_base_mean = h_base_mean,
-        h_base_ci = h_base_ci,
-        h_e2_aligned_mean = h_e2_aligned_mean,
-        h_e2_aligned_ci = h_e2_aligned_ci,
-        r_base_mean = r_base_mean,
-        r_base_ci = r_base_ci,
-        r_e2_aligned_mean = r_e2_aligned_mean,
-        r_e2_aligned_ci = r_e2_aligned_ci,
-        h_e2_aligned_occ_mean = h_e2_aligned_occ_mean,
-        h_e2_aligned_occ_ci = h_e2_aligned_occ_ci,
-        r_e2_aligned_occ_mean = r_e2_aligned_occ_mean,
-        r_e2_aligned_occ_ci = r_e2_aligned_occ_ci,
-        h_e2_aligned_pairwise_mean = h_e2_aligned_pairwise_mean,
-        h_e2_aligned_pairwise_ci = h_e2_aligned_pairwise_ci,
-        r_e2_aligned_pairwise_mean = r_e2_aligned_pairwise_mean,
-        r_e2_aligned_pairwise_ci = r_e2_aligned_pairwise_ci,
-        h_gain = mean_std_scalar(&h_e2_aligned_gain).0,
-        h_gain_p = format_p_value(h_e2_aligned_gain_p),
-        h_gain_method = h_e2_aligned_gain_method,
-        r_gain = mean_std_scalar(&r_e2_aligned_gain).0,
-        r_gain_p = format_p_value(r_e2_aligned_gain_p),
-        r_gain_method = r_e2_aligned_gain_method,
-        adv = mean_std_scalar(&e2_aligned_adv).0,
-        adv_p = format_p_value(e2_aligned_adv_p),
-        adv_method = e2_aligned_adv_method,
-    );
-    write_with_log(
-        out_dir.join("paper_e6_e2_aligned_test.txt"),
-        e2_aligned_text,
-    )?;
-
-    let mut e6_static_summary_csv = String::from(
-        "condition,seed,mean_c_start,mean_c_end,occ_start,occ_end,anchor_ji_mass,pairwise_ji_score\n",
-    );
-    let mut e6_static_by_label_seed: HashMap<&'static str, HashMap<u64, OracleRunSummary>> =
-        HashMap::new();
-    for (label, _condition, seed, result) in &e6_static_results {
-        let mut run_points: Vec<E6SnapshotPoint> = Vec::with_capacity(result.snapshots.len());
-        for snap in &result.snapshots {
-            run_points.push(e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape));
-        }
-        let start = run_points.first().copied().unwrap_or(E6SnapshotPoint {
-            mean_c_score: 0.0,
-            consonant_occupation: 0.0,
-            pairwise_entropy: 0.0,
-            n_alive: 0,
-        });
-        let end = run_points.last().copied().unwrap_or(start);
-        let anchor_ji_mass = result
-            .snapshots
-            .last()
-            .map(|snap| e6_anchor_ji_mass(&snap.freqs_hz, anchor_hz))
-            .unwrap_or(0.0);
-        let pairwise_ji_score = result
-            .snapshots
-            .last()
-            .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
-            .unwrap_or(0.0);
-        e6_static_summary_csv.push_str(&format!(
-            "{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
-            label,
-            seed,
-            start.mean_c_score,
-            end.mean_c_score,
-            start.consonant_occupation,
-            end.consonant_occupation,
-            anchor_ji_mass,
-            pairwise_ji_score
-        ));
-        e6_static_by_label_seed.entry(*label).or_default().insert(
-            *seed,
-            OracleRunSummary {
-                mean_c_end: end.mean_c_score,
-                occ_end: end.consonant_occupation,
-                pairwise_ji_score,
-            },
+            n_agents = E2_PAPER_N_AGENTS,
+            range_oct = E2_PAPER_RANGE_OCT,
+            crowding = E2_CROWDING_WEIGHT,
+            h_base_mean = h_base_mean,
+            h_base_ci = h_base_ci,
+            h_e2_aligned_mean = h_e2_aligned_mean,
+            h_e2_aligned_ci = h_e2_aligned_ci,
+            r_base_mean = r_base_mean,
+            r_base_ci = r_base_ci,
+            r_e2_aligned_mean = r_e2_aligned_mean,
+            r_e2_aligned_ci = r_e2_aligned_ci,
+            h_e2_aligned_occ_mean = h_e2_aligned_occ_mean,
+            h_e2_aligned_occ_ci = h_e2_aligned_occ_ci,
+            r_e2_aligned_occ_mean = r_e2_aligned_occ_mean,
+            r_e2_aligned_occ_ci = r_e2_aligned_occ_ci,
+            h_e2_aligned_pairwise_mean = h_e2_aligned_pairwise_mean,
+            h_e2_aligned_pairwise_ci = h_e2_aligned_pairwise_ci,
+            r_e2_aligned_pairwise_mean = r_e2_aligned_pairwise_mean,
+            r_e2_aligned_pairwise_ci = r_e2_aligned_pairwise_ci,
+            h_gain = mean_std_scalar(&h_e2_aligned_gain).0,
+            h_gain_p = format_p_value(h_e2_aligned_gain_p),
+            h_gain_method = h_e2_aligned_gain_method,
+            r_gain = mean_std_scalar(&r_e2_aligned_gain).0,
+            r_gain_p = format_p_value(r_e2_aligned_gain_p),
+            r_gain_method = r_e2_aligned_gain_method,
+            adv = mean_std_scalar(&e2_aligned_adv).0,
+            adv_p = format_p_value(e2_aligned_adv_p),
+            adv_method = e2_aligned_adv_method,
         );
-    }
-    write_with_log(
-        out_dir.join("paper_e6_static_summary.csv"),
-        e6_static_summary_csv,
-    )?;
-    let e6_static_h = e6_static_by_label_seed
-        .get("heredity_static")
-        .cloned()
-        .unwrap_or_default();
-    let e6_static_r = e6_static_by_label_seed
-        .get("random_static")
-        .cloned()
-        .unwrap_or_default();
-    let h_static_c = collect_metric(&e6_static_h, |s| s.mean_c_end);
-    let r_static_c = collect_metric(&e6_static_r, |s| s.mean_c_end);
-    let h_static_occ = collect_metric(&e6_static_h, |s| s.occ_end);
-    let r_static_occ = collect_metric(&e6_static_r, |s| s.occ_end);
-    let h_static_pairwise = collect_metric(&e6_static_h, |s| s.pairwise_ji_score);
-    let r_static_pairwise = collect_metric(&e6_static_r, |s| s.pairwise_ji_score);
-    let static_adv = collect_paired_delta(&e6_static_h, &e6_static_r, |s| s.mean_c_end);
-    let h_static_gain = collect_paired_delta(&e6_static_h, &baseline_h, |s| s.mean_c_end);
-    let r_static_gain = collect_paired_delta(&e6_static_r, &baseline_r, |s| s.mean_c_end);
-    let (static_adv_p, static_adv_method) =
-        permutation_pvalue_one_sample(&static_adv, 100_000, 0xE6A0_E111);
-    let (h_static_gain_p, h_static_gain_method) =
-        permutation_pvalue_one_sample(&h_static_gain, 100_000, 0xE6A0_E222);
-    let (r_static_gain_p, r_static_gain_method) =
-        permutation_pvalue_one_sample(&r_static_gain, 100_000, 0xE6A0_E333);
-    let (h_static_mean, h_static_ci) = mean_ci(&h_static_c);
-    let (r_static_mean, r_static_ci) = mean_ci(&r_static_c);
-    let (h_static_occ_mean, h_static_occ_ci) = mean_ci(&h_static_occ);
-    let (r_static_occ_mean, r_static_occ_ci) = mean_ci(&r_static_occ);
-    let (h_static_pairwise_mean, h_static_pairwise_ci) = mean_ci(&h_static_pairwise);
-    let (r_static_pairwise_mean, r_static_pairwise_ci) = mean_ci(&r_static_pairwise);
-    let e6_static_text = format!(
-        "E6 Static Dynamics Diagnostic\n\
+        write_with_log(
+            out_dir.join("paper_e6_e2_aligned_test.txt"),
+            e2_aligned_text,
+        )?;
+
+        let mut e6_static_summary_csv = String::from(
+            "condition,seed,mean_c_start,mean_c_end,occ_start,occ_end,anchor_ji_mass,pairwise_ji_score\n",
+        );
+        let mut e6_static_by_label_seed: HashMap<&'static str, HashMap<u64, OracleRunSummary>> =
+            HashMap::new();
+        for (label, _condition, seed, result) in &e6_static_results {
+            let mut run_points: Vec<E6SnapshotPoint> = Vec::with_capacity(result.snapshots.len());
+            for snap in &result.snapshots {
+                run_points.push(e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape));
+            }
+            let start = run_points.first().copied().unwrap_or(E6SnapshotPoint {
+                mean_c_score: 0.0,
+                consonant_occupation: 0.0,
+                pairwise_entropy: 0.0,
+                n_alive: 0,
+            });
+            let end = run_points.last().copied().unwrap_or(start);
+            let anchor_ji_mass = result
+                .snapshots
+                .last()
+                .map(|snap| e6_anchor_ji_mass(&snap.freqs_hz, anchor_hz))
+                .unwrap_or(0.0);
+            let pairwise_ji_score = result
+                .snapshots
+                .last()
+                .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
+                .unwrap_or(0.0);
+            e6_static_summary_csv.push_str(&format!(
+                "{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
+                label,
+                seed,
+                start.mean_c_score,
+                end.mean_c_score,
+                start.consonant_occupation,
+                end.consonant_occupation,
+                anchor_ji_mass,
+                pairwise_ji_score
+            ));
+            e6_static_by_label_seed.entry(*label).or_default().insert(
+                *seed,
+                OracleRunSummary {
+                    mean_c_end: end.mean_c_score,
+                    occ_end: end.consonant_occupation,
+                    pairwise_ji_score,
+                },
+            );
+        }
+        write_with_log(
+            out_dir.join("paper_e6_static_summary.csv"),
+            e6_static_summary_csv,
+        )?;
+        let e6_static_h = e6_static_by_label_seed
+            .get("heredity_static")
+            .cloned()
+            .unwrap_or_default();
+        let e6_static_r = e6_static_by_label_seed
+            .get("random_static")
+            .cloned()
+            .unwrap_or_default();
+        let h_static_c = collect_metric(&e6_static_h, |s| s.mean_c_end);
+        let r_static_c = collect_metric(&e6_static_r, |s| s.mean_c_end);
+        let h_static_occ = collect_metric(&e6_static_h, |s| s.occ_end);
+        let r_static_occ = collect_metric(&e6_static_r, |s| s.occ_end);
+        let h_static_pairwise = collect_metric(&e6_static_h, |s| s.pairwise_ji_score);
+        let r_static_pairwise = collect_metric(&e6_static_r, |s| s.pairwise_ji_score);
+        let static_adv = collect_paired_delta(&e6_static_h, &e6_static_r, |s| s.mean_c_end);
+        let h_static_gain = collect_paired_delta(&e6_static_h, &baseline_h, |s| s.mean_c_end);
+        let r_static_gain = collect_paired_delta(&e6_static_r, &baseline_r, |s| s.mean_c_end);
+        let (static_adv_p, static_adv_method) =
+            permutation_pvalue_one_sample(&static_adv, 100_000, 0xE6A0_E111);
+        let (h_static_gain_p, h_static_gain_method) =
+            permutation_pvalue_one_sample(&h_static_gain, 100_000, 0xE6A0_E222);
+        let (r_static_gain_p, r_static_gain_method) =
+            permutation_pvalue_one_sample(&r_static_gain, 100_000, 0xE6A0_E333);
+        let (h_static_mean, h_static_ci) = mean_ci(&h_static_c);
+        let (r_static_mean, r_static_ci) = mean_ci(&r_static_c);
+        let (h_static_occ_mean, h_static_occ_ci) = mean_ci(&h_static_occ);
+        let (r_static_occ_mean, r_static_occ_ci) = mean_ci(&r_static_occ);
+        let (h_static_pairwise_mean, h_static_pairwise_ci) = mean_ci(&h_static_pairwise);
+        let (r_static_pairwise_mean, r_static_pairwise_ci) = mean_ci(&r_static_pairwise);
+        let e6_static_text = format!(
+            "E6 Static Dynamics Diagnostic\n\
          ===========================\n\
          Conditions use:\n\
          - pop_size = {pop_size}\n\
@@ -8470,172 +9295,179 @@ fn plot_e6_hereditary_adaptation(
          H static - H baseline: mean={h_gain:.4}, p={h_gain_p} ({h_gain_method})\n\
          R static - R baseline: mean={r_gain:.4}, p={r_gain_p} ({r_gain_method})\n\
          H static - R static: mean={adv:.4}, p={adv_p} ({adv_method})\n",
-        pop_size = E6_POP_SIZE,
-        range_oct = 2.0f32,
-        h_base_mean = h_base_mean,
-        h_base_ci = h_base_ci,
-        h_static_mean = h_static_mean,
-        h_static_ci = h_static_ci,
-        r_base_mean = r_base_mean,
-        r_base_ci = r_base_ci,
-        r_static_mean = r_static_mean,
-        r_static_ci = r_static_ci,
-        h_static_occ_mean = h_static_occ_mean,
-        h_static_occ_ci = h_static_occ_ci,
-        r_static_occ_mean = r_static_occ_mean,
-        r_static_occ_ci = r_static_occ_ci,
-        h_static_pairwise_mean = h_static_pairwise_mean,
-        h_static_pairwise_ci = h_static_pairwise_ci,
-        r_static_pairwise_mean = r_static_pairwise_mean,
-        r_static_pairwise_ci = r_static_pairwise_ci,
-        h_gain = mean_std_scalar(&h_static_gain).0,
-        h_gain_p = format_p_value(h_static_gain_p),
-        h_gain_method = h_static_gain_method,
-        r_gain = mean_std_scalar(&r_static_gain).0,
-        r_gain_p = format_p_value(r_static_gain_p),
-        r_gain_method = r_static_gain_method,
-        adv = mean_std_scalar(&static_adv).0,
-        adv_p = format_p_value(static_adv_p),
-        adv_method = static_adv_method,
-    );
-    write_with_log(out_dir.join("paper_e6_static_test.txt"), e6_static_text)?;
+            pop_size = E6_POP_SIZE,
+            range_oct = 2.0f32,
+            h_base_mean = h_base_mean,
+            h_base_ci = h_base_ci,
+            h_static_mean = h_static_mean,
+            h_static_ci = h_static_ci,
+            r_base_mean = r_base_mean,
+            r_base_ci = r_base_ci,
+            r_static_mean = r_static_mean,
+            r_static_ci = r_static_ci,
+            h_static_occ_mean = h_static_occ_mean,
+            h_static_occ_ci = h_static_occ_ci,
+            r_static_occ_mean = r_static_occ_mean,
+            r_static_occ_ci = r_static_occ_ci,
+            h_static_pairwise_mean = h_static_pairwise_mean,
+            h_static_pairwise_ci = h_static_pairwise_ci,
+            r_static_pairwise_mean = r_static_pairwise_mean,
+            r_static_pairwise_ci = r_static_pairwise_ci,
+            h_gain = mean_std_scalar(&h_static_gain).0,
+            h_gain_p = format_p_value(h_static_gain_p),
+            h_gain_method = h_static_gain_method,
+            r_gain = mean_std_scalar(&r_static_gain).0,
+            r_gain_p = format_p_value(r_static_gain_p),
+            r_gain_method = r_static_gain_method,
+            adv = mean_std_scalar(&static_adv).0,
+            adv_p = format_p_value(static_adv_p),
+            adv_method = static_adv_method,
+        );
+        write_with_log(out_dir.join("paper_e6_static_test.txt"), e6_static_text)?;
 
-    let oracle_global_pop_sweep_sizes: [usize; 6] = [1, 2, 4, 8, 16, 32];
-    let oracle_global_pop_sweep_jobs: Vec<(usize, u64)> = oracle_global_pop_sweep_sizes
-        .iter()
-        .copied()
-        .flat_map(|pop_size| E6_SEEDS.iter().copied().map(move |seed| (pop_size, seed)))
-        .collect();
-    let oracle_global_pop_sweep_worker_count = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
-        .min(oracle_global_pop_sweep_jobs.len())
-        .max(1);
-    let oracle_global_pop_sweep_next = AtomicUsize::new(0);
-    let oracle_global_pop_sweep_slots: Mutex<Vec<Option<(usize, u64, E6RunResult)>>> = Mutex::new(
-        (0..oracle_global_pop_sweep_jobs.len())
-            .map(|_| None)
-            .collect(),
-    );
-    std::thread::scope(|scope| {
-        for _ in 0..oracle_global_pop_sweep_worker_count {
-            scope.spawn(|| {
-                loop {
-                    let idx = oracle_global_pop_sweep_next.fetch_add(1, Ordering::Relaxed);
-                    if idx >= oracle_global_pop_sweep_jobs.len() {
-                        break;
+        let oracle_global_pop_sweep_sizes: [usize; 6] = [1, 2, 4, 8, 16, 32];
+        let oracle_global_pop_sweep_jobs: Vec<(usize, u64)> = oracle_global_pop_sweep_sizes
+            .iter()
+            .copied()
+            .flat_map(|pop_size| E6_SEEDS.iter().copied().map(move |seed| (pop_size, seed)))
+            .collect();
+        let oracle_global_pop_sweep_worker_count = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .min(oracle_global_pop_sweep_jobs.len())
+            .max(1);
+        let oracle_global_pop_sweep_next = AtomicUsize::new(0);
+        let oracle_global_pop_sweep_slots: Mutex<Vec<Option<(usize, u64, E6RunResult)>>> =
+            Mutex::new(
+                (0..oracle_global_pop_sweep_jobs.len())
+                    .map(|_| None)
+                    .collect(),
+            );
+        std::thread::scope(|scope| {
+            for _ in 0..oracle_global_pop_sweep_worker_count {
+                scope.spawn(|| {
+                    loop {
+                        let idx = oracle_global_pop_sweep_next.fetch_add(1, Ordering::Relaxed);
+                        if idx >= oracle_global_pop_sweep_jobs.len() {
+                            break;
+                        }
+                        let (pop_size, seed) = oracle_global_pop_sweep_jobs[idx];
+                        let cfg = E6RunConfig {
+                            seed,
+                            steps_cap: E6_STEPS_CAP,
+                            min_deaths: usize::MAX,
+                            pop_size,
+                            first_k: E6_FIRST_K,
+                            condition: E6Condition::Random,
+                            snapshot_interval: E6_SNAPSHOT_INTERVAL,
+                            landscape_weight: 0.0,
+                            shuffle_landscape: false,
+                            env_partials: None,
+                            oracle_azimuth_radius_st: None,
+                            oracle_global_anchor_c: true,
+                            oracle_freeze_pitch_after_respawn: false,
+                            crowding_strength_override: None,
+                            adaptation_enabled_override: None,
+                            range_oct_override: None,
+                            e2_aligned_exact_local_search_radius_st: None,
+                            disable_within_life_pitch_movement: false,
+                            selection_enabled: true,
+                            selection_contextual_mix_weight: 0.0,
+                            selection_score_mode: E6SelectionScoreMode::LegacyAnchorContextMix,
+                            juvenile_contextual_settlement_enabled: true,
+                            juvenile_cull_enabled: false,
+                            record_life_diagnostics: true,
+                            family_occupancy_strength_override: None,
+                            family_nfd_mode: E6FamilyNfdMode::Off,
+                            respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
+                        };
+                        let result = run_e6(&cfg);
+                        oracle_global_pop_sweep_slots.lock().unwrap()[idx] =
+                            Some((pop_size, seed, result));
                     }
-                    let (pop_size, seed) = oracle_global_pop_sweep_jobs[idx];
-                    let cfg = E6RunConfig {
-                        seed,
-                        steps_cap: E6_STEPS_CAP,
-                        min_deaths: usize::MAX,
-                        pop_size,
-                        first_k: E6_FIRST_K,
-                        condition: E6Condition::Random,
-                        snapshot_interval: E6_SNAPSHOT_INTERVAL,
-                        landscape_weight: 0.0,
-                        shuffle_landscape: false,
-                        env_partials: None,
-                        oracle_azimuth_radius_st: None,
-                        oracle_global_anchor_c: true,
-                        oracle_freeze_pitch_after_respawn: false,
-                        crowding_strength_override: None,
-                        adaptation_enabled_override: None,
-                        range_oct_override: None,
-                        e2_aligned_exact_local_search_radius_st: None,
-                        disable_within_life_pitch_movement: false,
-                        selection_enabled: true,
-                        selection_contextual_mix_weight: 0.0,
-                        juvenile_cull_enabled: false,
-                    };
-                    let result = run_e6(&cfg);
-                    oracle_global_pop_sweep_slots.lock().unwrap()[idx] =
-                        Some((pop_size, seed, result));
-                }
-            });
-        }
-    });
-    let oracle_global_pop_sweep_results = oracle_global_pop_sweep_slots
-        .into_inner()
-        .unwrap()
-        .into_iter()
-        .map(|opt| opt.unwrap())
-        .collect::<Vec<_>>();
-
-    let mut oracle_global_pop_sweep_csv =
-        String::from("pop_size,seed,final_mean_c,late20_mean_c,final_occ,final_pairwise_ji\n");
-    let mut oracle_global_pop_sweep_by_n: BTreeMap<usize, Vec<(f32, f32, f32, f32)>> =
-        BTreeMap::new();
-    for (pop_size, seed, result) in &oracle_global_pop_sweep_results {
-        let mut run_points: Vec<E6SnapshotPoint> = Vec::with_capacity(result.snapshots.len());
-        for snap in &result.snapshots {
-            run_points.push(e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape));
-        }
-        let final_point = run_points.last().copied().unwrap_or(E6SnapshotPoint {
-            mean_c_score: 0.0,
-            consonant_occupation: 0.0,
-            pairwise_entropy: 0.0,
-            n_alive: 0,
-        });
-        let late20_mean_c = if run_points.is_empty() {
-            0.0
-        } else {
-            let tail = run_points.iter().rev().take(20).map(|p| p.mean_c_score);
-            let mut sum = 0.0f32;
-            let mut count = 0usize;
-            for value in tail {
-                sum += value;
-                count += 1;
+                });
             }
-            if count > 0 { sum / count as f32 } else { 0.0 }
-        };
-        let final_pairwise_ji = result
-            .snapshots
-            .last()
-            .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
-            .unwrap_or(0.0);
-        oracle_global_pop_sweep_csv.push_str(&format!(
-            "{},{},{:.6},{:.6},{:.6},{:.6}\n",
-            pop_size,
-            seed,
-            final_point.mean_c_score,
-            late20_mean_c,
-            final_point.consonant_occupation,
-            final_pairwise_ji
-        ));
-        oracle_global_pop_sweep_by_n
-            .entry(*pop_size)
-            .or_default()
-            .push((
+        });
+        let oracle_global_pop_sweep_results = oracle_global_pop_sweep_slots
+            .into_inner()
+            .unwrap()
+            .into_iter()
+            .map(|opt| opt.unwrap())
+            .collect::<Vec<_>>();
+
+        let mut oracle_global_pop_sweep_csv =
+            String::from("pop_size,seed,final_mean_c,late20_mean_c,final_occ,final_pairwise_ji\n");
+        let mut oracle_global_pop_sweep_by_n: BTreeMap<usize, Vec<(f32, f32, f32, f32)>> =
+            BTreeMap::new();
+        for (pop_size, seed, result) in &oracle_global_pop_sweep_results {
+            let mut run_points: Vec<E6SnapshotPoint> = Vec::with_capacity(result.snapshots.len());
+            for snap in &result.snapshots {
+                run_points.push(e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape));
+            }
+            let final_point = run_points.last().copied().unwrap_or(E6SnapshotPoint {
+                mean_c_score: 0.0,
+                consonant_occupation: 0.0,
+                pairwise_entropy: 0.0,
+                n_alive: 0,
+            });
+            let late20_mean_c = if run_points.is_empty() {
+                0.0
+            } else {
+                let tail = run_points.iter().rev().take(20).map(|p| p.mean_c_score);
+                let mut sum = 0.0f32;
+                let mut count = 0usize;
+                for value in tail {
+                    sum += value;
+                    count += 1;
+                }
+                if count > 0 { sum / count as f32 } else { 0.0 }
+            };
+            let final_pairwise_ji = result
+                .snapshots
+                .last()
+                .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
+                .unwrap_or(0.0);
+            oracle_global_pop_sweep_csv.push_str(&format!(
+                "{},{},{:.6},{:.6},{:.6},{:.6}\n",
+                pop_size,
+                seed,
                 final_point.mean_c_score,
                 late20_mean_c,
                 final_point.consonant_occupation,
-                final_pairwise_ji,
+                final_pairwise_ji
             ));
-    }
-    write_with_log(
-        out_dir.join("paper_e6_oracle_global_pop_sweep.csv"),
-        oracle_global_pop_sweep_csv,
-    )?;
-    let mut oracle_global_pop_sweep_text = String::from(
-        "E6 Oracle Global Anchor-C Population Sweep\n\
+            oracle_global_pop_sweep_by_n
+                .entry(*pop_size)
+                .or_default()
+                .push((
+                    final_point.mean_c_score,
+                    late20_mean_c,
+                    final_point.consonant_occupation,
+                    final_pairwise_ji,
+                ));
+        }
+        write_with_log(
+            out_dir.join("paper_e6_oracle_global_pop_sweep.csv"),
+            oracle_global_pop_sweep_csv,
+        )?;
+        let mut oracle_global_pop_sweep_text = String::from(
+            "E6 Oracle Global Anchor-C Population Sweep\n\
          ========================================\n\
          Respawn is forced to the global anchor-C argmax, movement remains enabled,\n\
          and only population size N is varied. Condition is random because oracle\n\
          births make heredity/random equivalent here.\n\
          \n",
-    );
-    for (pop_size, rows) in &oracle_global_pop_sweep_by_n {
-        let final_c: Vec<f32> = rows.iter().map(|r| r.0).collect();
-        let late20_c: Vec<f32> = rows.iter().map(|r| r.1).collect();
-        let occ: Vec<f32> = rows.iter().map(|r| r.2).collect();
-        let pairwise: Vec<f32> = rows.iter().map(|r| r.3).collect();
-        let (final_c_mean, final_c_ci) = mean_ci(&final_c);
-        let (late20_mean, late20_ci) = mean_ci(&late20_c);
-        let (occ_mean, occ_ci) = mean_ci(&occ);
-        let (pairwise_mean, pairwise_ci) = mean_ci(&pairwise);
-        oracle_global_pop_sweep_text.push_str(&format!(
+        );
+        for (pop_size, rows) in &oracle_global_pop_sweep_by_n {
+            let final_c: Vec<f32> = rows.iter().map(|r| r.0).collect();
+            let late20_c: Vec<f32> = rows.iter().map(|r| r.1).collect();
+            let occ: Vec<f32> = rows.iter().map(|r| r.2).collect();
+            let pairwise: Vec<f32> = rows.iter().map(|r| r.3).collect();
+            let (final_c_mean, final_c_ci) = mean_ci(&final_c);
+            let (late20_mean, late20_ci) = mean_ci(&late20_c);
+            let (occ_mean, occ_ci) = mean_ci(&occ);
+            let (pairwise_mean, pairwise_ci) = mean_ci(&pairwise);
+            oracle_global_pop_sweep_text.push_str(&format!(
             "N={:<2}  final C={:.4} +/- {:.4}  late20 C={:.4} +/- {:.4}  final occ={:.4} +/- {:.4}  final pairwise JI={:.4} +/- {:.4}\n",
             pop_size,
             final_c_mean,
@@ -8647,155 +9479,164 @@ fn plot_e6_hereditary_adaptation(
             pairwise_mean,
             pairwise_ci,
         ));
-    }
-    write_with_log(
-        out_dir.join("paper_e6_oracle_global_pop_sweep.txt"),
-        oracle_global_pop_sweep_text,
-    )?;
+        }
+        write_with_log(
+            out_dir.join("paper_e6_oracle_global_pop_sweep.txt"),
+            oracle_global_pop_sweep_text,
+        )?;
 
-    let oracle_global_crowding_sweep_strengths: [f32; 4] = [0.0, 0.0375, 0.075, 0.15];
-    let oracle_global_crowding_sweep_jobs: Vec<(f32, u64)> = oracle_global_crowding_sweep_strengths
-        .iter()
-        .copied()
-        .flat_map(|crowding_strength| {
-            E6_SEEDS
+        let oracle_global_crowding_sweep_strengths: [f32; 4] = [0.0, 0.0375, 0.075, 0.15];
+        let oracle_global_crowding_sweep_jobs: Vec<(f32, u64)> =
+            oracle_global_crowding_sweep_strengths
                 .iter()
                 .copied()
-                .map(move |seed| (crowding_strength, seed))
-        })
-        .collect();
-    let oracle_global_crowding_sweep_worker_count = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
-        .min(oracle_global_crowding_sweep_jobs.len())
-        .max(1);
-    let oracle_global_crowding_sweep_next = AtomicUsize::new(0);
-    let oracle_global_crowding_sweep_slots: Mutex<Vec<Option<(f32, u64, E6RunResult)>>> =
-        Mutex::new(
-            (0..oracle_global_crowding_sweep_jobs.len())
-                .map(|_| None)
-                .collect(),
-        );
-    std::thread::scope(|scope| {
-        for _ in 0..oracle_global_crowding_sweep_worker_count {
-            scope.spawn(|| {
-                loop {
-                    let idx = oracle_global_crowding_sweep_next.fetch_add(1, Ordering::Relaxed);
-                    if idx >= oracle_global_crowding_sweep_jobs.len() {
-                        break;
+                .flat_map(|crowding_strength| {
+                    E6_SEEDS
+                        .iter()
+                        .copied()
+                        .map(move |seed| (crowding_strength, seed))
+                })
+                .collect();
+        let oracle_global_crowding_sweep_worker_count = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .min(oracle_global_crowding_sweep_jobs.len())
+            .max(1);
+        let oracle_global_crowding_sweep_next = AtomicUsize::new(0);
+        let oracle_global_crowding_sweep_slots: Mutex<Vec<Option<(f32, u64, E6RunResult)>>> =
+            Mutex::new(
+                (0..oracle_global_crowding_sweep_jobs.len())
+                    .map(|_| None)
+                    .collect(),
+            );
+        std::thread::scope(|scope| {
+            for _ in 0..oracle_global_crowding_sweep_worker_count {
+                scope.spawn(|| {
+                    loop {
+                        let idx = oracle_global_crowding_sweep_next.fetch_add(1, Ordering::Relaxed);
+                        if idx >= oracle_global_crowding_sweep_jobs.len() {
+                            break;
+                        }
+                        let (crowding_strength, seed) = oracle_global_crowding_sweep_jobs[idx];
+                        let cfg = E6RunConfig {
+                            seed,
+                            steps_cap: E6_STEPS_CAP,
+                            min_deaths: usize::MAX,
+                            pop_size: E6_POP_SIZE,
+                            first_k: E6_FIRST_K,
+                            condition: E6Condition::Random,
+                            snapshot_interval: E6_SNAPSHOT_INTERVAL,
+                            landscape_weight: 0.0,
+                            shuffle_landscape: false,
+                            env_partials: None,
+                            oracle_azimuth_radius_st: None,
+                            oracle_global_anchor_c: true,
+                            oracle_freeze_pitch_after_respawn: false,
+                            crowding_strength_override: Some(crowding_strength),
+                            adaptation_enabled_override: None,
+                            range_oct_override: None,
+                            e2_aligned_exact_local_search_radius_st: None,
+                            disable_within_life_pitch_movement: false,
+                            selection_enabled: true,
+                            selection_contextual_mix_weight: 0.0,
+                            selection_score_mode: E6SelectionScoreMode::LegacyAnchorContextMix,
+                            juvenile_contextual_settlement_enabled: true,
+                            juvenile_cull_enabled: false,
+                            record_life_diagnostics: true,
+                            family_occupancy_strength_override: None,
+                            family_nfd_mode: E6FamilyNfdMode::Off,
+                            respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
+                        };
+                        let result = run_e6(&cfg);
+                        oracle_global_crowding_sweep_slots.lock().unwrap()[idx] =
+                            Some((crowding_strength, seed, result));
                     }
-                    let (crowding_strength, seed) = oracle_global_crowding_sweep_jobs[idx];
-                    let cfg = E6RunConfig {
-                        seed,
-                        steps_cap: E6_STEPS_CAP,
-                        min_deaths: usize::MAX,
-                        pop_size: E6_POP_SIZE,
-                        first_k: E6_FIRST_K,
-                        condition: E6Condition::Random,
-                        snapshot_interval: E6_SNAPSHOT_INTERVAL,
-                        landscape_weight: 0.0,
-                        shuffle_landscape: false,
-                        env_partials: None,
-                        oracle_azimuth_radius_st: None,
-                        oracle_global_anchor_c: true,
-                        oracle_freeze_pitch_after_respawn: false,
-                        crowding_strength_override: Some(crowding_strength),
-                        adaptation_enabled_override: None,
-                        range_oct_override: None,
-                        e2_aligned_exact_local_search_radius_st: None,
-                        disable_within_life_pitch_movement: false,
-                        selection_enabled: true,
-                        selection_contextual_mix_weight: 0.0,
-                        juvenile_cull_enabled: false,
-                    };
-                    let result = run_e6(&cfg);
-                    oracle_global_crowding_sweep_slots.lock().unwrap()[idx] =
-                        Some((crowding_strength, seed, result));
-                }
-            });
-        }
-    });
-    let oracle_global_crowding_sweep_results = oracle_global_crowding_sweep_slots
-        .into_inner()
-        .unwrap()
-        .into_iter()
-        .map(|opt| opt.unwrap())
-        .collect::<Vec<_>>();
-
-    let mut oracle_global_crowding_sweep_csv = String::from(
-        "crowding_strength,seed,final_mean_c,late20_mean_c,final_occ,final_pairwise_ji\n",
-    );
-    let mut oracle_global_crowding_sweep_by_strength: BTreeMap<String, Vec<(f32, f32, f32, f32)>> =
-        BTreeMap::new();
-    for (crowding_strength, seed, result) in &oracle_global_crowding_sweep_results {
-        let mut run_points: Vec<E6SnapshotPoint> = Vec::with_capacity(result.snapshots.len());
-        for snap in &result.snapshots {
-            run_points.push(e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape));
-        }
-        let final_point = run_points.last().copied().unwrap_or(E6SnapshotPoint {
-            mean_c_score: 0.0,
-            consonant_occupation: 0.0,
-            pairwise_entropy: 0.0,
-            n_alive: 0,
-        });
-        let late20_mean_c = if run_points.is_empty() {
-            0.0
-        } else {
-            let tail = run_points.iter().rev().take(20).map(|p| p.mean_c_score);
-            let mut sum = 0.0f32;
-            let mut count = 0usize;
-            for value in tail {
-                sum += value;
-                count += 1;
+                });
             }
-            if count > 0 { sum / count as f32 } else { 0.0 }
-        };
-        let final_pairwise_ji = result
-            .snapshots
-            .last()
-            .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
-            .unwrap_or(0.0);
-        oracle_global_crowding_sweep_csv.push_str(&format!(
-            "{:.6},{},{:.6},{:.6},{:.6},{:.6}\n",
-            crowding_strength,
-            seed,
-            final_point.mean_c_score,
-            late20_mean_c,
-            final_point.consonant_occupation,
-            final_pairwise_ji
-        ));
-        oracle_global_crowding_sweep_by_strength
-            .entry(format!("{crowding_strength:.4}"))
-            .or_default()
-            .push((
+        });
+        let oracle_global_crowding_sweep_results = oracle_global_crowding_sweep_slots
+            .into_inner()
+            .unwrap()
+            .into_iter()
+            .map(|opt| opt.unwrap())
+            .collect::<Vec<_>>();
+
+        let mut oracle_global_crowding_sweep_csv = String::from(
+            "crowding_strength,seed,final_mean_c,late20_mean_c,final_occ,final_pairwise_ji\n",
+        );
+        let mut oracle_global_crowding_sweep_by_strength: BTreeMap<
+            String,
+            Vec<(f32, f32, f32, f32)>,
+        > = BTreeMap::new();
+        for (crowding_strength, seed, result) in &oracle_global_crowding_sweep_results {
+            let mut run_points: Vec<E6SnapshotPoint> = Vec::with_capacity(result.snapshots.len());
+            for snap in &result.snapshots {
+                run_points.push(e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape));
+            }
+            let final_point = run_points.last().copied().unwrap_or(E6SnapshotPoint {
+                mean_c_score: 0.0,
+                consonant_occupation: 0.0,
+                pairwise_entropy: 0.0,
+                n_alive: 0,
+            });
+            let late20_mean_c = if run_points.is_empty() {
+                0.0
+            } else {
+                let tail = run_points.iter().rev().take(20).map(|p| p.mean_c_score);
+                let mut sum = 0.0f32;
+                let mut count = 0usize;
+                for value in tail {
+                    sum += value;
+                    count += 1;
+                }
+                if count > 0 { sum / count as f32 } else { 0.0 }
+            };
+            let final_pairwise_ji = result
+                .snapshots
+                .last()
+                .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
+                .unwrap_or(0.0);
+            oracle_global_crowding_sweep_csv.push_str(&format!(
+                "{:.6},{},{:.6},{:.6},{:.6},{:.6}\n",
+                crowding_strength,
+                seed,
                 final_point.mean_c_score,
                 late20_mean_c,
                 final_point.consonant_occupation,
-                final_pairwise_ji,
+                final_pairwise_ji
             ));
-    }
-    write_with_log(
-        out_dir.join("paper_e6_oracle_global_crowding_sweep.csv"),
-        oracle_global_crowding_sweep_csv,
-    )?;
-    let mut oracle_global_crowding_sweep_text = String::from(
-        "E6 Oracle Global Anchor-C Crowding Sweep\n\
+            oracle_global_crowding_sweep_by_strength
+                .entry(format!("{crowding_strength:.4}"))
+                .or_default()
+                .push((
+                    final_point.mean_c_score,
+                    late20_mean_c,
+                    final_point.consonant_occupation,
+                    final_pairwise_ji,
+                ));
+        }
+        write_with_log(
+            out_dir.join("paper_e6_oracle_global_crowding_sweep.csv"),
+            oracle_global_crowding_sweep_csv,
+        )?;
+        let mut oracle_global_crowding_sweep_text = String::from(
+            "E6 Oracle Global Anchor-C Crowding Sweep\n\
          =====================================\n\
          Respawn is forced to the global anchor-C argmax, N is fixed at 32,\n\
          movement remains enabled, and only crowding_strength is varied.\n\
          Condition is random because oracle births make heredity/random equivalent here.\n\
          \n",
-    );
-    for (crowding_strength, rows) in &oracle_global_crowding_sweep_by_strength {
-        let final_c: Vec<f32> = rows.iter().map(|r| r.0).collect();
-        let late20_c: Vec<f32> = rows.iter().map(|r| r.1).collect();
-        let occ: Vec<f32> = rows.iter().map(|r| r.2).collect();
-        let pairwise: Vec<f32> = rows.iter().map(|r| r.3).collect();
-        let (final_c_mean, final_c_ci) = mean_ci(&final_c);
-        let (late20_mean, late20_ci) = mean_ci(&late20_c);
-        let (occ_mean, occ_ci) = mean_ci(&occ);
-        let (pairwise_mean, pairwise_ci) = mean_ci(&pairwise);
-        oracle_global_crowding_sweep_text.push_str(&format!(
+        );
+        for (crowding_strength, rows) in &oracle_global_crowding_sweep_by_strength {
+            let final_c: Vec<f32> = rows.iter().map(|r| r.0).collect();
+            let late20_c: Vec<f32> = rows.iter().map(|r| r.1).collect();
+            let occ: Vec<f32> = rows.iter().map(|r| r.2).collect();
+            let pairwise: Vec<f32> = rows.iter().map(|r| r.3).collect();
+            let (final_c_mean, final_c_ci) = mean_ci(&final_c);
+            let (late20_mean, late20_ci) = mean_ci(&late20_c);
+            let (occ_mean, occ_ci) = mean_ci(&occ);
+            let (pairwise_mean, pairwise_ci) = mean_ci(&pairwise);
+            oracle_global_crowding_sweep_text.push_str(&format!(
             "crowding={:<6}  final C={:.4} +/- {:.4}  late20 C={:.4} +/- {:.4}  final occ={:.4} +/- {:.4}  final pairwise JI={:.4} +/- {:.4}\n",
             crowding_strength,
             final_c_mean,
@@ -8807,165 +9648,173 @@ fn plot_e6_hereditary_adaptation(
             pairwise_mean,
             pairwise_ci,
         ));
-    }
-    write_with_log(
-        out_dir.join("paper_e6_oracle_global_crowding_sweep.txt"),
-        oracle_global_crowding_sweep_text,
-    )?;
+        }
+        write_with_log(
+            out_dir.join("paper_e6_oracle_global_crowding_sweep.txt"),
+            oracle_global_crowding_sweep_text,
+        )?;
 
-    let oracle_global_adaptation_jobs: Vec<(f32, bool, u64)> = [0.0f32, 0.15f32]
-        .iter()
-        .copied()
-        .flat_map(|crowding_strength| {
-            [false, true]
-                .iter()
-                .copied()
-                .flat_map(move |adaptation_enabled| {
-                    E6_SEEDS
-                        .iter()
-                        .copied()
-                        .map(move |seed| (crowding_strength, adaptation_enabled, seed))
-                })
-        })
-        .collect();
-    let oracle_global_adaptation_worker_count = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
-        .min(oracle_global_adaptation_jobs.len())
-        .max(1);
-    let oracle_global_adaptation_next = AtomicUsize::new(0);
-    let oracle_global_adaptation_slots: Mutex<Vec<Option<(f32, bool, u64, E6RunResult)>>> =
-        Mutex::new(
-            (0..oracle_global_adaptation_jobs.len())
-                .map(|_| None)
-                .collect(),
-        );
-    std::thread::scope(|scope| {
-        for _ in 0..oracle_global_adaptation_worker_count {
-            scope.spawn(|| {
-                loop {
-                    let idx = oracle_global_adaptation_next.fetch_add(1, Ordering::Relaxed);
-                    if idx >= oracle_global_adaptation_jobs.len() {
-                        break;
+        let oracle_global_adaptation_jobs: Vec<(f32, bool, u64)> = [0.0f32, 0.15f32]
+            .iter()
+            .copied()
+            .flat_map(|crowding_strength| {
+                [false, true]
+                    .iter()
+                    .copied()
+                    .flat_map(move |adaptation_enabled| {
+                        E6_SEEDS
+                            .iter()
+                            .copied()
+                            .map(move |seed| (crowding_strength, adaptation_enabled, seed))
+                    })
+            })
+            .collect();
+        let oracle_global_adaptation_worker_count = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .min(oracle_global_adaptation_jobs.len())
+            .max(1);
+        let oracle_global_adaptation_next = AtomicUsize::new(0);
+        let oracle_global_adaptation_slots: Mutex<Vec<Option<(f32, bool, u64, E6RunResult)>>> =
+            Mutex::new(
+                (0..oracle_global_adaptation_jobs.len())
+                    .map(|_| None)
+                    .collect(),
+            );
+        std::thread::scope(|scope| {
+            for _ in 0..oracle_global_adaptation_worker_count {
+                scope.spawn(|| {
+                    loop {
+                        let idx = oracle_global_adaptation_next.fetch_add(1, Ordering::Relaxed);
+                        if idx >= oracle_global_adaptation_jobs.len() {
+                            break;
+                        }
+                        let (crowding_strength, adaptation_enabled, seed) =
+                            oracle_global_adaptation_jobs[idx];
+                        let cfg = E6RunConfig {
+                            seed,
+                            steps_cap: E6_STEPS_CAP,
+                            min_deaths: usize::MAX,
+                            pop_size: E6_POP_SIZE,
+                            first_k: E6_FIRST_K,
+                            condition: E6Condition::Random,
+                            snapshot_interval: E6_SNAPSHOT_INTERVAL,
+                            landscape_weight: 0.0,
+                            shuffle_landscape: false,
+                            env_partials: None,
+                            oracle_azimuth_radius_st: None,
+                            oracle_global_anchor_c: true,
+                            oracle_freeze_pitch_after_respawn: false,
+                            crowding_strength_override: Some(crowding_strength),
+                            adaptation_enabled_override: Some(adaptation_enabled),
+                            range_oct_override: None,
+                            e2_aligned_exact_local_search_radius_st: None,
+                            disable_within_life_pitch_movement: false,
+                            selection_enabled: true,
+                            selection_contextual_mix_weight: 0.0,
+                            selection_score_mode: E6SelectionScoreMode::LegacyAnchorContextMix,
+                            juvenile_contextual_settlement_enabled: true,
+                            juvenile_cull_enabled: false,
+                            record_life_diagnostics: true,
+                            family_occupancy_strength_override: None,
+                            family_nfd_mode: E6FamilyNfdMode::Off,
+                            respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
+                        };
+                        let result = run_e6(&cfg);
+                        oracle_global_adaptation_slots.lock().unwrap()[idx] =
+                            Some((crowding_strength, adaptation_enabled, seed, result));
                     }
-                    let (crowding_strength, adaptation_enabled, seed) =
-                        oracle_global_adaptation_jobs[idx];
-                    let cfg = E6RunConfig {
-                        seed,
-                        steps_cap: E6_STEPS_CAP,
-                        min_deaths: usize::MAX,
-                        pop_size: E6_POP_SIZE,
-                        first_k: E6_FIRST_K,
-                        condition: E6Condition::Random,
-                        snapshot_interval: E6_SNAPSHOT_INTERVAL,
-                        landscape_weight: 0.0,
-                        shuffle_landscape: false,
-                        env_partials: None,
-                        oracle_azimuth_radius_st: None,
-                        oracle_global_anchor_c: true,
-                        oracle_freeze_pitch_after_respawn: false,
-                        crowding_strength_override: Some(crowding_strength),
-                        adaptation_enabled_override: Some(adaptation_enabled),
-                        range_oct_override: None,
-                        e2_aligned_exact_local_search_radius_st: None,
-                        disable_within_life_pitch_movement: false,
-                        selection_enabled: true,
-                        selection_contextual_mix_weight: 0.0,
-                        juvenile_cull_enabled: false,
-                    };
-                    let result = run_e6(&cfg);
-                    oracle_global_adaptation_slots.lock().unwrap()[idx] =
-                        Some((crowding_strength, adaptation_enabled, seed, result));
-                }
-            });
-        }
-    });
-    let oracle_global_adaptation_results = oracle_global_adaptation_slots
-        .into_inner()
-        .unwrap()
-        .into_iter()
-        .map(|opt| opt.unwrap())
-        .collect::<Vec<_>>();
-
-    let mut oracle_global_adaptation_csv = String::from(
-        "crowding_strength,adaptation_enabled,seed,final_mean_c,late20_mean_c,final_occ,final_pairwise_ji\n",
-    );
-    let mut oracle_global_adaptation_by_key: BTreeMap<String, Vec<(f32, f32, f32, f32)>> =
-        BTreeMap::new();
-    for (crowding_strength, adaptation_enabled, seed, result) in &oracle_global_adaptation_results {
-        let mut run_points: Vec<E6SnapshotPoint> = Vec::with_capacity(result.snapshots.len());
-        for snap in &result.snapshots {
-            run_points.push(e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape));
-        }
-        let final_point = run_points.last().copied().unwrap_or(E6SnapshotPoint {
-            mean_c_score: 0.0,
-            consonant_occupation: 0.0,
-            pairwise_entropy: 0.0,
-            n_alive: 0,
-        });
-        let late20_mean_c = if run_points.is_empty() {
-            0.0
-        } else {
-            let tail = run_points.iter().rev().take(20).map(|p| p.mean_c_score);
-            let mut sum = 0.0f32;
-            let mut count = 0usize;
-            for value in tail {
-                sum += value;
-                count += 1;
+                });
             }
-            if count > 0 { sum / count as f32 } else { 0.0 }
-        };
-        let final_pairwise_ji = result
-            .snapshots
-            .last()
-            .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
-            .unwrap_or(0.0);
-        oracle_global_adaptation_csv.push_str(&format!(
-            "{:.6},{},{},{:.6},{:.6},{:.6},{:.6}\n",
-            crowding_strength,
-            if *adaptation_enabled { 1 } else { 0 },
-            seed,
-            final_point.mean_c_score,
-            late20_mean_c,
-            final_point.consonant_occupation,
-            final_pairwise_ji
-        ));
-        oracle_global_adaptation_by_key
-            .entry(format!(
-                "crowding={:.4}, adaptation={}",
+        });
+        let oracle_global_adaptation_results = oracle_global_adaptation_slots
+            .into_inner()
+            .unwrap()
+            .into_iter()
+            .map(|opt| opt.unwrap())
+            .collect::<Vec<_>>();
+
+        let mut oracle_global_adaptation_csv = String::from(
+            "crowding_strength,adaptation_enabled,seed,final_mean_c,late20_mean_c,final_occ,final_pairwise_ji\n",
+        );
+        let mut oracle_global_adaptation_by_key: BTreeMap<String, Vec<(f32, f32, f32, f32)>> =
+            BTreeMap::new();
+        for (crowding_strength, adaptation_enabled, seed, result) in
+            &oracle_global_adaptation_results
+        {
+            let mut run_points: Vec<E6SnapshotPoint> = Vec::with_capacity(result.snapshots.len());
+            for snap in &result.snapshots {
+                run_points.push(e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape));
+            }
+            let final_point = run_points.last().copied().unwrap_or(E6SnapshotPoint {
+                mean_c_score: 0.0,
+                consonant_occupation: 0.0,
+                pairwise_entropy: 0.0,
+                n_alive: 0,
+            });
+            let late20_mean_c = if run_points.is_empty() {
+                0.0
+            } else {
+                let tail = run_points.iter().rev().take(20).map(|p| p.mean_c_score);
+                let mut sum = 0.0f32;
+                let mut count = 0usize;
+                for value in tail {
+                    sum += value;
+                    count += 1;
+                }
+                if count > 0 { sum / count as f32 } else { 0.0 }
+            };
+            let final_pairwise_ji = result
+                .snapshots
+                .last()
+                .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
+                .unwrap_or(0.0);
+            oracle_global_adaptation_csv.push_str(&format!(
+                "{:.6},{},{},{:.6},{:.6},{:.6},{:.6}\n",
                 crowding_strength,
-                if *adaptation_enabled { "on" } else { "off" }
-            ))
-            .or_default()
-            .push((
+                if *adaptation_enabled { 1 } else { 0 },
+                seed,
                 final_point.mean_c_score,
                 late20_mean_c,
                 final_point.consonant_occupation,
-                final_pairwise_ji,
+                final_pairwise_ji
             ));
-    }
-    write_with_log(
-        out_dir.join("paper_e6_oracle_global_adaptation_sweep.csv"),
-        oracle_global_adaptation_csv,
-    )?;
-    let mut oracle_global_adaptation_text = String::from(
-        "E6 Oracle Global Anchor-C Adaptation Sweep\n\
+            oracle_global_adaptation_by_key
+                .entry(format!(
+                    "crowding={:.4}, adaptation={}",
+                    crowding_strength,
+                    if *adaptation_enabled { "on" } else { "off" }
+                ))
+                .or_default()
+                .push((
+                    final_point.mean_c_score,
+                    late20_mean_c,
+                    final_point.consonant_occupation,
+                    final_pairwise_ji,
+                ));
+        }
+        write_with_log(
+            out_dir.join("paper_e6_oracle_global_adaptation_sweep.csv"),
+            oracle_global_adaptation_csv,
+        )?;
+        let mut oracle_global_adaptation_text = String::from(
+            "E6 Oracle Global Anchor-C Adaptation Sweep\n\
          =======================================\n\
          Respawn is forced to the global anchor-C argmax, N is fixed at 32,\n\
          and we vary crowding strength and whether adaptation is enabled.\n\
          Condition is random because oracle births make heredity/random equivalent here.\n\
          \n",
-    );
-    for (label, rows) in &oracle_global_adaptation_by_key {
-        let final_c: Vec<f32> = rows.iter().map(|r| r.0).collect();
-        let late20_c: Vec<f32> = rows.iter().map(|r| r.1).collect();
-        let occ: Vec<f32> = rows.iter().map(|r| r.2).collect();
-        let pairwise: Vec<f32> = rows.iter().map(|r| r.3).collect();
-        let (final_c_mean, final_c_ci) = mean_ci(&final_c);
-        let (late20_mean, late20_ci) = mean_ci(&late20_c);
-        let (occ_mean, occ_ci) = mean_ci(&occ);
-        let (pairwise_mean, pairwise_ci) = mean_ci(&pairwise);
-        oracle_global_adaptation_text.push_str(&format!(
+        );
+        for (label, rows) in &oracle_global_adaptation_by_key {
+            let final_c: Vec<f32> = rows.iter().map(|r| r.0).collect();
+            let late20_c: Vec<f32> = rows.iter().map(|r| r.1).collect();
+            let occ: Vec<f32> = rows.iter().map(|r| r.2).collect();
+            let pairwise: Vec<f32> = rows.iter().map(|r| r.3).collect();
+            let (final_c_mean, final_c_ci) = mean_ci(&final_c);
+            let (late20_mean, late20_ci) = mean_ci(&late20_c);
+            let (occ_mean, occ_ci) = mean_ci(&occ);
+            let (pairwise_mean, pairwise_ci) = mean_ci(&pairwise);
+            oracle_global_adaptation_text.push_str(&format!(
             "{}  final C={:.4} +/- {:.4}  late20 C={:.4} +/- {:.4}  final occ={:.4} +/- {:.4}  final pairwise JI={:.4} +/- {:.4}\n",
             label,
             final_c_mean,
@@ -8977,11 +9826,12 @@ fn plot_e6_hereditary_adaptation(
             pairwise_mean,
             pairwise_ci,
         ));
+        }
+        write_with_log(
+            out_dir.join("paper_e6_oracle_global_adaptation_sweep.txt"),
+            oracle_global_adaptation_text,
+        )?;
     }
-    write_with_log(
-        out_dir.join("paper_e6_oracle_global_adaptation_sweep.txt"),
-        oracle_global_adaptation_text,
-    )?;
 
     {
         let global_max_step = heat_counts.keys().map(|(s, _)| *s).max().unwrap_or(0);
@@ -9356,7 +10206,7 @@ fn plot_e6_hereditary_adaptation(
         let contextual_text = format!(
             "E6 Contextual Readout Diagnostic\n\
              =============================\n\
-             Mainline dynamics: no-selection runs use anchor-only recharge; selection-on runs use mixed anchor/contextual recharge (lambda=0.25).\n\
+             Mainline dynamics: no-selection runs use anchor-only recharge; selection-on runs use mixed anchor/leave-one-out contextual recharge (lambda=0.25).\n\
              Metrics below are evaluated from the final population context.\n\
              \n\
              Mean LOO C_score by 2x2 condition:\n\
@@ -9419,6 +10269,432 @@ fn plot_e6_hereditary_adaptation(
             out_dir.join("paper_e6_contextual_eval.txt"),
             contextual_text,
         )?;
+    }
+
+    {
+        let final_selection_score = |result: &E6RunResult, lambda: f32| -> f32 {
+            result
+                .snapshots
+                .last()
+                .map(|snap| {
+                    e6_mean_selection_score_for_freqs(&snap.freqs_hz, anchor_hz, lambda, None, None)
+                })
+                .unwrap_or(0.0)
+        };
+        let final_contextual_metrics = |result: &E6RunResult| -> (f32, f32) {
+            result
+                .snapshots
+                .last()
+                .map(|snap| {
+                    e6_contextual_endpoint_metrics(
+                        &snap.freqs_hz,
+                        anchor_hz,
+                        &contextual_space,
+                        &contextual_workspace,
+                        &contextual_du_scan,
+                    )
+                })
+                .unwrap_or((0.0, 0.0))
+        };
+        let final_pairwise_ji = |result: &E6RunResult| -> f32 {
+            result
+                .snapshots
+                .last()
+                .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
+                .unwrap_or(0.0)
+        };
+        let same_family_inheritance_rate = |result: &E6RunResult| -> f32 {
+            let values: Vec<f32> = result
+                .respawns
+                .iter()
+                .filter_map(|rec| rec.family_inherited)
+                .map(|b| if b { 1.0 } else { 0.0 })
+                .collect();
+            if values.is_empty() {
+                0.0
+            } else {
+                values.iter().copied().sum::<f32>() / values.len() as f32
+            }
+        };
+        let final_unison_oct_share = |result: &E6RunResult| -> f32 {
+            let Some(last) = result.snapshots.last() else {
+                return 0.0;
+            };
+            let mut n_valid = 0usize;
+            let mut n_hit = 0usize;
+            for &freq in &last.freqs_hz {
+                if !freq.is_finite() || freq <= 0.0 {
+                    continue;
+                }
+                n_valid += 1;
+                let st = 12.0 * (freq / anchor_hz).log2();
+                let d = ((st + 6.0).rem_euclid(12.0) - 6.0).abs();
+                if d <= 0.35 {
+                    n_hit += 1;
+                }
+            }
+            if n_valid == 0 {
+                0.0
+            } else {
+                n_hit as f32 / n_valid as f32
+            }
+        };
+        let final_octave_class_stats = |result: &E6RunResult| -> (usize, f32) {
+            let Some(last) = result.snapshots.last() else {
+                return (0, 0.0);
+            };
+            let mut counts: HashMap<i32, usize> = HashMap::new();
+            let mut total = 0usize;
+            for &freq in &last.freqs_hz {
+                if !freq.is_finite() || freq <= 0.0 {
+                    continue;
+                }
+                let st = 12.0 * (freq / anchor_hz).log2();
+                let oct_class = st.rem_euclid(12.0);
+                let bin = (oct_class / 0.25).floor() as i32;
+                *counts.entry(bin).or_insert(0) += 1;
+                total += 1;
+            }
+            if total == 0 {
+                return (0, 0.0);
+            }
+            let entropy = counts.values().fold(0.0f32, |acc, &count| {
+                let p = count as f32 / total as f32;
+                if p > 0.0 { acc - p * p.ln() } else { acc }
+            });
+            (counts.len(), entropy)
+        };
+        let mean_ci = |values: &[f32]| -> (f32, f32) {
+            if values.is_empty() {
+                (0.0, 0.0)
+            } else {
+                (mean_std_scalar(values).0, ci95_half_width(values))
+            }
+        };
+        let collect_main_values =
+            |label: &'static str, metric: &dyn Fn(&E6RunResult) -> f32| -> Vec<f32> {
+                E6_SEEDS
+                    .iter()
+                    .filter_map(|&seed| {
+                        all_results
+                            .iter()
+                            .find(|(candidate_label, _, _, candidate_seed, _)| {
+                                *candidate_label == label && *candidate_seed == seed
+                            })
+                            .map(|(_, _, _, _, result)| metric(result))
+                    })
+                    .collect()
+            };
+        let collect_nfd_values = |nfd_mode: Option<E6FamilyNfdMode>,
+                                  occupancy_strength: f32,
+                                  selection_enabled: bool,
+                                  condition: E6Condition,
+                                  metric: &dyn Fn(&E6RunResult) -> f32|
+         -> Vec<f32> {
+            nfd_sweep_seeds
+                .iter()
+                .filter_map(|&seed| {
+                    family_nfd_results
+                        .iter()
+                        .find(|(mode, strength, sel, c, candidate_seed, _)| {
+                            *mode == nfd_mode
+                                && (*strength - occupancy_strength).abs() < 1e-6
+                                && *sel == selection_enabled
+                                && *c == condition
+                                && *candidate_seed == seed
+                        })
+                        .map(|(_, _, _, _, _, result)| metric(result))
+                })
+                .collect()
+        };
+
+        let no_sel_h_score =
+            collect_main_values("heredity_nosel", &|r| final_selection_score(r, 0.0));
+        let no_sel_r_score =
+            collect_main_values("random_nosel", &|r| final_selection_score(r, 0.0));
+        let no_sel_h_loo =
+            collect_main_values("heredity_nosel", &|r| final_contextual_metrics(r).0);
+        let no_sel_r_loo = collect_main_values("random_nosel", &|r| final_contextual_metrics(r).0);
+        let no_sel_h_g = collect_main_values("heredity_nosel", &|r| final_contextual_metrics(r).1);
+        let no_sel_r_g = collect_main_values("random_nosel", &|r| final_contextual_metrics(r).1);
+        let no_sel_h_ji = collect_main_values("heredity_nosel", &final_pairwise_ji);
+        let no_sel_r_ji = collect_main_values("random_nosel", &final_pairwise_ji);
+        let no_sel_h_unison = collect_main_values("heredity_nosel", &final_unison_oct_share);
+        let no_sel_r_unison = collect_main_values("random_nosel", &final_unison_oct_share);
+        let no_sel_h_entropy =
+            collect_main_values("heredity_nosel", &|r| final_octave_class_stats(r).1);
+        let no_sel_r_entropy =
+            collect_main_values("random_nosel", &|r| final_octave_class_stats(r).1);
+        let no_sel_h_unique =
+            collect_main_values("heredity_nosel", &|r| final_octave_class_stats(r).0 as f32);
+        let no_sel_r_unique =
+            collect_main_values("random_nosel", &|r| final_octave_class_stats(r).0 as f32);
+
+        let mut sweep_csv = String::from(
+            "nfd_mode,family_occupancy_strength,selection_enabled,condition,seed,selection_score,mean_c_score_loo,g_scene,pairwise_ji,unison_oct_share,octave_class_entropy,unique_octave_bins,same_family_inheritance_rate\n",
+        );
+        let mut sweep_text = String::from(
+            "E6 Family-Choice NFD Sweep\n\
+             =========================\n\
+             Provisional diagnostic only: 4 seeds, min_deaths=600.\n\
+             Adult movement remains locked, juvenile settlement is off, lambda_context is fixed at 0.25 for selection-on runs,\n\
+             and weak negative frequency dependence is applied only in the heredity family-choice operator.\n\
+             \n",
+        );
+
+        let append_baseline = |text: &mut String,
+                               label: &str,
+                               score: &[f32],
+                               loo: &[f32],
+                               g: &[f32],
+                               ji: &[f32],
+                               unison: &[f32],
+                               entropy: &[f32],
+                               unique: &[f32]| {
+            let (score_mean, score_ci) = mean_ci(score);
+            let (loo_mean, loo_ci) = mean_ci(loo);
+            let (g_mean, g_ci) = mean_ci(g);
+            let (ji_mean, ji_ci) = mean_ci(ji);
+            let (unison_mean, unison_ci) = mean_ci(unison);
+            let (entropy_mean, entropy_ci) = mean_ci(entropy);
+            let (unique_mean, unique_ci) = mean_ci(unique);
+            text.push_str(&format!(
+                "{label}\n\
+                 selection_score={score_mean:.4} +/- {score_ci:.4}  \
+                 LOO={loo_mean:.4} +/- {loo_ci:.4}  \
+                 G_scene={g_mean:.4} +/- {g_ci:.4}\n\
+                 pairwise_JI={ji_mean:.4} +/- {ji_ci:.4}  \
+                 unison_share={unison_mean:.4} +/- {unison_ci:.4}  \
+                 octave_entropy={entropy_mean:.4} +/- {entropy_ci:.4}  \
+                 unique_octave_bins={unique_mean:.2} +/- {unique_ci:.2}\n\n"
+            ));
+        };
+
+        sweep_text.push_str("Shared full-run no-selection baselines (main 2x2):\n");
+        append_baseline(
+            &mut sweep_text,
+            "heredity, no selection",
+            &no_sel_h_score,
+            &no_sel_h_loo,
+            &no_sel_h_g,
+            &no_sel_h_ji,
+            &no_sel_h_unison,
+            &no_sel_h_entropy,
+            &no_sel_h_unique,
+        );
+        append_baseline(
+            &mut sweep_text,
+            "random, no selection",
+            &no_sel_r_score,
+            &no_sel_r_loo,
+            &no_sel_r_g,
+            &no_sel_r_ji,
+            &no_sel_r_unison,
+            &no_sel_r_entropy,
+            &no_sel_r_unique,
+        );
+        sweep_text.push_str("Provisional random baselines (4 seeds, min_deaths=600):\n");
+        for &(selection_enabled, label) in
+            &[(false, "random, no selection"), (true, "random, selection")]
+        {
+            let score =
+                collect_nfd_values(None, 0.0, selection_enabled, E6Condition::Random, &|r| {
+                    final_selection_score(r, if selection_enabled { 0.25 } else { 0.0 })
+                });
+            let loo = collect_nfd_values(None, 0.0, selection_enabled, E6Condition::Random, &|r| {
+                final_contextual_metrics(r).0
+            });
+            let g = collect_nfd_values(None, 0.0, selection_enabled, E6Condition::Random, &|r| {
+                final_contextual_metrics(r).1
+            });
+            let ji = collect_nfd_values(
+                None,
+                0.0,
+                selection_enabled,
+                E6Condition::Random,
+                &final_pairwise_ji,
+            );
+            let unison = collect_nfd_values(
+                None,
+                0.0,
+                selection_enabled,
+                E6Condition::Random,
+                &final_unison_oct_share,
+            );
+            let entropy =
+                collect_nfd_values(None, 0.0, selection_enabled, E6Condition::Random, &|r| {
+                    final_octave_class_stats(r).1
+                });
+            let unique =
+                collect_nfd_values(None, 0.0, selection_enabled, E6Condition::Random, &|r| {
+                    final_octave_class_stats(r).0 as f32
+                });
+            append_baseline(
+                &mut sweep_text,
+                label,
+                &score,
+                &loo,
+                &g,
+                &ji,
+                &unison,
+                &entropy,
+                &unique,
+            );
+        }
+
+        for &(nfd_mode, occupancy_strength) in family_nfd_specs {
+            for &(selection_enabled, baseline_label) in
+                &[(false, "random, no selection"), (true, "random, selection")]
+            {
+                let h_score = collect_nfd_values(
+                    Some(nfd_mode),
+                    occupancy_strength,
+                    selection_enabled,
+                    E6Condition::Heredity,
+                    &|r| final_selection_score(r, if selection_enabled { 0.25 } else { 0.0 }),
+                );
+                let h_loo = collect_nfd_values(
+                    Some(nfd_mode),
+                    occupancy_strength,
+                    selection_enabled,
+                    E6Condition::Heredity,
+                    &|r| final_contextual_metrics(r).0,
+                );
+                let h_g = collect_nfd_values(
+                    Some(nfd_mode),
+                    occupancy_strength,
+                    selection_enabled,
+                    E6Condition::Heredity,
+                    &|r| final_contextual_metrics(r).1,
+                );
+                let h_ji = collect_nfd_values(
+                    Some(nfd_mode),
+                    occupancy_strength,
+                    selection_enabled,
+                    E6Condition::Heredity,
+                    &final_pairwise_ji,
+                );
+                let h_unison = collect_nfd_values(
+                    Some(nfd_mode),
+                    occupancy_strength,
+                    selection_enabled,
+                    E6Condition::Heredity,
+                    &final_unison_oct_share,
+                );
+                let h_entropy = collect_nfd_values(
+                    Some(nfd_mode),
+                    occupancy_strength,
+                    selection_enabled,
+                    E6Condition::Heredity,
+                    &|r| final_octave_class_stats(r).1,
+                );
+                let h_unique = collect_nfd_values(
+                    Some(nfd_mode),
+                    occupancy_strength,
+                    selection_enabled,
+                    E6Condition::Heredity,
+                    &|r| final_octave_class_stats(r).0 as f32,
+                );
+                let h_same = collect_nfd_values(
+                    Some(nfd_mode),
+                    occupancy_strength,
+                    selection_enabled,
+                    E6Condition::Heredity,
+                    &same_family_inheritance_rate,
+                );
+                let r_score =
+                    collect_nfd_values(None, 0.0, selection_enabled, E6Condition::Random, &|r| {
+                        final_selection_score(r, if selection_enabled { 0.25 } else { 0.0 })
+                    });
+                let r_unison = collect_nfd_values(
+                    None,
+                    0.0,
+                    selection_enabled,
+                    E6Condition::Random,
+                    &final_unison_oct_share,
+                );
+
+                for &seed in nfd_sweep_seeds {
+                    if let Some((_, _, _, _, _, result)) = family_nfd_results.iter().find(
+                        |(mode, strength, sel, c, candidate_seed, _)| {
+                            *mode == Some(nfd_mode)
+                                && (*strength - occupancy_strength).abs() < 1e-6
+                                && *sel == selection_enabled
+                                && *c == E6Condition::Heredity
+                                && *candidate_seed == seed
+                        },
+                    ) {
+                        let (loo, g_scene) = final_contextual_metrics(result);
+                        let (unique_octave_bins, octave_entropy) = final_octave_class_stats(result);
+                        sweep_csv.push_str(&format!(
+                            "{},{:.2},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{},{}\n",
+                            nfd_mode.label(),
+                            occupancy_strength,
+                            if selection_enabled { 1 } else { 0 },
+                            "heredity",
+                            seed,
+                            final_selection_score(
+                                result,
+                                if selection_enabled { 0.25 } else { 0.0 }
+                            ),
+                            loo,
+                            g_scene,
+                            final_pairwise_ji(result),
+                            final_unison_oct_share(result),
+                            octave_entropy,
+                            unique_octave_bins,
+                            same_family_inheritance_rate(result)
+                        ));
+                    }
+                }
+
+                let (h_score_mean, h_score_ci) = mean_ci(&h_score);
+                let (h_loo_mean, h_loo_ci) = mean_ci(&h_loo);
+                let (h_g_mean, h_g_ci) = mean_ci(&h_g);
+                let (h_ji_mean, h_ji_ci) = mean_ci(&h_ji);
+                let (h_unison_mean, h_unison_ci) = mean_ci(&h_unison);
+                let (h_entropy_mean, h_entropy_ci) = mean_ci(&h_entropy);
+                let (h_unique_mean, h_unique_ci) = mean_ci(&h_unique);
+                let (h_same_mean, h_same_ci) = mean_ci(&h_same);
+                let score_gap: Vec<f32> =
+                    h_score.iter().zip(&r_score).map(|(h, r)| h - r).collect();
+                let unison_gap: Vec<f32> =
+                    h_unison.iter().zip(&r_unison).map(|(h, r)| h - r).collect();
+                let (score_gap_p, score_gap_method) = permutation_pvalue_one_sample(
+                    &score_gap,
+                    100_000,
+                    0xE6D1_3303
+                        ^ ((occupancy_strength * 1000.0) as u64)
+                        ^ ((selection_enabled as u64) << 8)
+                        ^ ((nfd_mode as u64) << 16),
+                );
+                let (unison_gap_p, unison_gap_method) = permutation_pvalue_one_sample(
+                    &unison_gap,
+                    100_000,
+                    0xE6D1_4404
+                        ^ ((occupancy_strength * 1000.0) as u64)
+                        ^ ((selection_enabled as u64) << 8)
+                        ^ ((nfd_mode as u64) << 16),
+                );
+                sweep_text.push_str(&format!(
+                    "{}, gamma={:.2}, selection={}\n\
+                     heredity: selection_score={:.4} +/- {:.4}  LOO={:.4} +/- {:.4}  G_scene={:.4} +/- {:.4}\n\
+                               pairwise_JI={:.4} +/- {:.4}  unison_share={:.4} +/- {:.4}  octave_entropy={:.4} +/- {:.4}  unique_octave_bins={:.2} +/- {:.2}  same_family_rate={:.4} +/- {:.4}\n\
+                     gap vs {}: score(H-R)={:.4}, p={} ({})  unison_share(H-R)={:.4}, p={} ({})\n\n",
+                    nfd_mode.label(),
+                    occupancy_strength,
+                    if selection_enabled { "on" } else { "off" },
+                    h_score_mean, h_score_ci, h_loo_mean, h_loo_ci, h_g_mean, h_g_ci,
+                    h_ji_mean, h_ji_ci, h_unison_mean, h_unison_ci, h_entropy_mean, h_entropy_ci, h_unique_mean, h_unique_ci, h_same_mean, h_same_ci,
+                    baseline_label,
+                    mean_std_scalar(&score_gap).0, format_p_value(score_gap_p), score_gap_method,
+                    mean_std_scalar(&unison_gap).0, format_p_value(unison_gap_p), unison_gap_method,
+                ));
+            }
+        }
+
+        write_with_log(out_dir.join("paper_e6_family_nfd_sweep.csv"), sweep_csv)?;
+        write_with_log(out_dir.join("paper_e6_family_nfd_sweep.txt"), sweep_text)?;
     }
 
     // ── C3: Contextual-selection variant diagnostic ──
@@ -9524,11 +10800,17 @@ fn plot_e6_hereditary_adaptation(
                 int_method,
             )
         };
-        let render_mode =
-            |mode_label: &str,
-             selection_results: &[(&'static str, E6Condition, bool, u64, E6RunResult)],
-             heredity_label: &'static str,
-             random_label: &'static str|
+        if emit_e6_extra_diagnostics {
+            let render_mode = |mode_label: &str,
+                               selection_results: &[(
+                &'static str,
+                E6Condition,
+                bool,
+                u64,
+                E6RunResult,
+            )],
+                               heredity_label: &'static str,
+                               random_label: &'static str|
              -> String {
                 let anchor_h0 = seed_aligned_metric(&all_results, "heredity_nosel", &anchor_metric);
                 let anchor_r0 = seed_aligned_metric(&all_results, "random_nosel", &anchor_metric);
@@ -9679,36 +10961,37 @@ fn plot_e6_hereditary_adaptation(
                 )
             };
 
-        let variant_text = format!(
-            "E6 Contextual-Selection Variant Evaluation\n\
+            let variant_text = format!(
+                "E6 Contextual-Selection Variant Evaluation\n\
              =========================================\n\
              No-selection conditions are shared from the anchor-baseline 2x2.\n\
              Selection variants only modify the recharge field during the selection-on runs.\n\
              \n\
             {}{}{}",
-            render_mode(
-                "Anchor baseline (lambda = 0.00)",
-                &anchor_baseline_results,
-                "heredity",
-                "random"
-            ),
-            render_mode(
-                "Mixed selection field (lambda = 0.25)",
-                &contextual_selection_results,
-                "heredity_sel_mix025",
-                "random_sel_mix025",
-            ),
-            render_mode(
-                "Pure contextual selection field (lambda = 1.00)",
-                &contextual_selection_results,
-                "heredity_sel_contextual",
-                "random_sel_contextual",
-            ),
-        );
-        write_with_log(
-            out_dir.join("paper_e6_contextual_selection_variant.txt"),
-            variant_text,
-        )?;
+                render_mode(
+                    "Anchor baseline (lambda = 0.00)",
+                    &anchor_baseline_results,
+                    "heredity",
+                    "random"
+                ),
+                render_mode(
+                    "Mixed selection field (lambda = 0.25)",
+                    &contextual_selection_results,
+                    "heredity_sel_mix025",
+                    "random_sel_mix025",
+                ),
+                render_mode(
+                    "Pure contextual selection field (lambda = 1.00)",
+                    &contextual_selection_results,
+                    "heredity_sel_contextual",
+                    "random_sel_contextual",
+                ),
+            );
+            write_with_log(
+                out_dir.join("paper_e6_contextual_selection_variant.txt"),
+                variant_text,
+            )?;
+        }
     }
 
     Ok(())
@@ -10020,6 +11303,101 @@ fn render_e6_figure(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+fn render_e6b_figure(
+    out_path: &Path,
+    c_heredity_nosel: &[(f32, f32, f32)],
+    c_random_nosel: &[(f32, f32, f32)],
+    c_heredity: &[(f32, f32, f32)],
+    c_random: &[(f32, f32, f32)],
+    heat_counts: &HashMap<(usize, i32), f32>,
+    final_loo_heredity_nosel: &[f32],
+    final_loo_random_nosel: &[f32],
+    final_loo_heredity: &[f32],
+    final_loo_random: &[f32],
+    final_entropy_heredity_nosel: &[f32],
+    final_entropy_random_nosel: &[f32],
+    final_entropy_heredity: &[f32],
+    final_entropy_random: &[f32],
+) -> Result<(), Box<dyn Error>> {
+    let root = bitmap_root(out_path, (3720, 935)).into_drawing_area();
+    root.fill(&WHITE)?;
+    let (left, right) = root.split_horizontally(2400);
+    let left_panels = left.split_evenly((1, 2));
+    let right_panels = right.split_evenly((1, 2));
+
+    let series_specs = [
+        E6FigureSeries {
+            label: "heredity",
+            series: c_heredity,
+            color: PAL_H.to_rgba(),
+        },
+        E6FigureSeries {
+            label: "random",
+            series: c_random,
+            color: PAL_R.to_rgba(),
+        },
+        E6FigureSeries {
+            label: "heredity (no sel)",
+            series: c_heredity_nosel,
+            color: PAL_H.mix(0.45),
+        },
+        E6FigureSeries {
+            label: "random (no sel)",
+            series: c_random_nosel,
+            color: PAL_R.mix(0.45),
+        },
+    ];
+    draw_e6_series_panel_with_x_desc(
+        &left_panels[0],
+        "A. Mean LOO C_score",
+        "LOO C_score",
+        "deaths",
+        &series_specs,
+        0.0,
+        1.0,
+    )?;
+    draw_e6_heatmap_panel_with_caption(
+        &left_panels[1],
+        "B. H+S pitch heatmap",
+        "deaths",
+        heat_counts,
+    )?;
+    draw_e6_factorial_metric_panel(
+        &right_panels[0],
+        "C. Final LOO C_score",
+        "LOO C_score",
+        final_loo_heredity_nosel,
+        final_loo_random_nosel,
+        final_loo_heredity,
+        final_loo_random,
+        0.0,
+        Some(1.0),
+        64,
+        48,
+        50,
+        126,
+    )?;
+    draw_e6_factorial_metric_panel(
+        &right_panels[1],
+        "D. Final Interval Entropy",
+        "entropy (nats)",
+        final_entropy_heredity_nosel,
+        final_entropy_random_nosel,
+        final_entropy_heredity,
+        final_entropy_random,
+        0.0,
+        Some(5.6),
+        62,
+        46,
+        50,
+        126,
+    )?;
+
+    root.present()?;
+    Ok(())
+}
+
 struct E6FigureSeries<'a> {
     label: &'a str,
     series: &'a [(f32, f32, f32)],
@@ -10030,6 +11408,21 @@ fn draw_e6_series_panel<DB: DrawingBackend>(
     area: &DrawingArea<DB, Shift>,
     caption: &str,
     y_desc: &str,
+    series_specs: &[E6FigureSeries<'_>],
+    y_lo: f32,
+    y_hi: f32,
+) -> Result<(), Box<dyn Error>>
+where
+    <DB as DrawingBackend>::ErrorType: 'static,
+{
+    draw_e6_series_panel_with_x_desc(area, caption, y_desc, "step", series_specs, y_lo, y_hi)
+}
+
+fn draw_e6_series_panel_with_x_desc<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    caption: &str,
+    y_desc: &str,
+    x_desc: &str,
     series_specs: &[E6FigureSeries<'_>],
     y_lo: f32,
     y_hi: f32,
@@ -10052,7 +11445,7 @@ where
 
     chart
         .configure_mesh()
-        .x_desc("step")
+        .x_desc(x_desc)
         .y_desc(y_desc)
         .x_labels(11)
         .x_label_formatter(&|v| format!("{}", *v as i64))
@@ -10229,6 +11622,23 @@ fn draw_e6_heatmap_panel<DB: DrawingBackend>(
 where
     <DB as DrawingBackend>::ErrorType: 'static,
 {
+    draw_e6_heatmap_panel_with_caption(
+        area,
+        "B. Heredity + selection pitch heatmap",
+        "step",
+        heat_counts,
+    )
+}
+
+fn draw_e6_heatmap_panel_with_caption<DB: DrawingBackend>(
+    area: &DrawingArea<DB, Shift>,
+    caption: &str,
+    x_desc: &str,
+    heat_counts: &HashMap<(usize, i32), f32>,
+) -> Result<(), Box<dyn Error>>
+where
+    <DB as DrawingBackend>::ErrorType: 'static,
+{
     let (min_range_st, max_range_st) = e6_effective_range_bounds_st();
     let min_range_cents = min_range_st * 100.0;
     let max_range_cents = max_range_st * 100.0;
@@ -10239,7 +11649,7 @@ where
         .min(E6_FIG_X_MAX - E6_SNAPSHOT_INTERVAL as f32)
         + E6_SNAPSHOT_INTERVAL as f32;
     let mut chart = ChartBuilder::on(area)
-        .caption("B. Heredity + selection pitch heatmap", ("sans-serif", 64))
+        .caption(caption, ("sans-serif", 64))
         .margin(20)
         .x_label_area_size(90)
         .y_label_area_size(120)
@@ -10247,7 +11657,7 @@ where
 
     chart
         .configure_mesh()
-        .x_desc("step")
+        .x_desc(x_desc)
         .y_desc("cents")
         .x_labels(11)
         .x_label_formatter(&|v| format!("{}", *v as i64))
@@ -10516,7 +11926,13 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
                                 disable_within_life_pitch_movement: false,
                                 selection_enabled: true,
                                 selection_contextual_mix_weight: 0.0,
+                                selection_score_mode: E6SelectionScoreMode::LegacyAnchorContextMix,
+                                juvenile_contextual_settlement_enabled: true,
                                 juvenile_cull_enabled: true,
+                                record_life_diagnostics: true,
+                                family_occupancy_strength_override: None,
+                                family_nfd_mode: E6FamilyNfdMode::Off,
+                                respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
                             };
                             let result = run_e6(&cfg);
                             int_slots.lock().unwrap()[idx] = Some((seed, result));
@@ -10840,7 +12256,14 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
                                         disable_within_life_pitch_movement: false,
                                         selection_enabled: true,
                                         selection_contextual_mix_weight: 0.0,
+                                        selection_score_mode:
+                                            E6SelectionScoreMode::LegacyAnchorContextMix,
+                                        juvenile_contextual_settlement_enabled: true,
                                         juvenile_cull_enabled: true,
+                                        record_life_diagnostics: true,
+                                        family_occupancy_strength_override: None,
+                                        family_nfd_mode: E6FamilyNfdMode::Off,
+                                        respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
                                     };
                                     let result = run_e6(&cfg);
                                     result
@@ -11050,7 +12473,13 @@ fn generate_e6_sampler_debug_plots() -> Result<(), Box<dyn Error>> {
         disable_within_life_pitch_movement: false,
         selection_enabled: true,
         selection_contextual_mix_weight: 0.0,
+        selection_score_mode: E6SelectionScoreMode::LegacyAnchorContextMix,
+        juvenile_contextual_settlement_enabled: true,
         juvenile_cull_enabled: true,
+        record_life_diagnostics: true,
+        family_occupancy_strength_override: None,
+        family_nfd_mode: E6FamilyNfdMode::Off,
+        respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
     };
     let result = run_e6(&cfg);
     let final_snapshot = result
@@ -32288,6 +33717,13 @@ mod tests {
     }
 
     #[test]
+    fn parse_experiments_accepts_e6b() {
+        let args = vec!["--exp".to_string(), "e6b,e2".to_string()];
+        let experiments = parse_experiments(&args).expect("parse_experiments failed");
+        assert_eq!(experiments, vec![Experiment::E6b, Experiment::E2]);
+    }
+
+    #[test]
     fn e2_marker_steps_includes_phase_switch_when_dtc() {
         let steps = e2_marker_steps(E2PhaseMode::DissonanceThenConsonance);
         assert!(
@@ -33796,7 +35232,9 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             selection_enabled: true,
         },
     ];
-    let e6_seeds: [u64; 2] = [E6_SEEDS[0], E6_SEEDS[10]];
+    let e6_seed_a = E6_SEEDS[0];
+    let e6_seed_b = *E6_SEEDS.last().unwrap_or(&E6_SEEDS[0]);
+    let e6_seeds: [u64; 2] = [e6_seed_a, e6_seed_b];
 
     eprintln!("  [audio-rhai] Running E6 simulations...");
     let mut e6_results: Vec<(String, E6RunResult)> = Vec::new();
@@ -33804,7 +35242,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         for &seed in &e6_seeds {
             let label = format!(
                 "seed{}_{}",
-                if seed == e6_seeds[0] { "0" } else { "10" },
+                if seed == e6_seed_a { "0" } else { "1" },
                 cond.label
             );
             eprintln!("    E6 {label}");
@@ -33824,12 +35262,18 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
                 oracle_freeze_pitch_after_respawn: false,
                 crowding_strength_override: Some(0.0),
                 adaptation_enabled_override: Some(false),
-                range_oct_override: Some(E2_PAPER_RANGE_OCT),
+                range_oct_override: Some(E6_MAIN_RANGE_OCT),
                 e2_aligned_exact_local_search_radius_st: None,
                 disable_within_life_pitch_movement: true,
                 selection_enabled: cond.selection_enabled,
-                selection_contextual_mix_weight: 0.0,
+                selection_contextual_mix_weight: if cond.selection_enabled { 0.25 } else { 0.0 },
+                selection_score_mode: E6SelectionScoreMode::PolyphonicLooCrowding,
+                juvenile_contextual_settlement_enabled: false,
                 juvenile_cull_enabled: false,
+                record_life_diagnostics: true,
+                family_occupancy_strength_override: None,
+                family_nfd_mode: E6FamilyNfdMode::Off,
+                respawn_mode: E6RespawnMode::VacantNicheByParentPrior,
             };
             let result = run_e6(&cfg);
             e6_results.push((label, result));
@@ -33849,8 +35293,8 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
              //   heredity only      : hereditary respawn, no selection\n\
              //   random only        : random respawn, no selection\n\
              //\n\
-             //   E6_SEEDS[0]  = {}\n\
-             //   E6_SEEDS[10] = {}",
+             //   E6_SEEDS[first] = {}\n\
+             //   E6_SEEDS[last]  = {}",
             AUDIO_E6_POP_SIZE,
             AUDIO_E6_TAIL_SNAPSHOTS,
             E6_SNAPSHOT_INTERVAL,
@@ -33859,8 +35303,8 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             AUDIO_E6_AGENT_DECAY_SEC,
             AUDIO_E6_AGENT_SUSTAIN_LEVEL,
             AUDIO_E6_AGENT_RELEASE_SEC,
-            E6_SEEDS[0],
-            E6_SEEDS[10],
+            e6_seed_a,
+            e6_seed_b,
         );
         let mut rhai = rhai_replay_header(
             "20_integration.rhai -- E6: Selection x heredity replay",
@@ -33871,10 +35315,10 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             "seed0_random_sel",
             "seed0_heredity_nosel",
             "seed0_random_nosel",
-            "seed10_heredity_sel",
-            "seed10_random_sel",
-            "seed10_heredity_nosel",
-            "seed10_random_nosel",
+            "seed1_heredity_sel",
+            "seed1_random_sel",
+            "seed1_heredity_nosel",
+            "seed1_random_nosel",
         ];
         for (i, label) in integration_order.iter().enumerate() {
             let (_, result) = e6_results
