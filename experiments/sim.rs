@@ -43,9 +43,9 @@ const E4_ENV_PARTIAL_DECAY_DEFAULT: f32 = 1.0;
 const E3_GROUP_AGENTS: u64 = 2;
 const E3_FS: f32 = 48_000.0;
 const E3_HOP: usize = 512;
-const E3_BINS_PER_OCT: u32 = 96;
-const E3_FMIN: f32 = 80.0;
-const E3_FMAX: f32 = 2000.0;
+pub(crate) const E3_BINS_PER_OCT: u32 = 96;
+pub(crate) const E3_FMIN: f32 = 40.0;
+pub(crate) const E3_FMAX: f32 = 2000.0;
 const E3_RANGE_OCT: f32 = 2.0; // +/- 1 octave around anchor
 const E3_THETA_FREQ_HZ: f32 = 1.0;
 const E3_METABOLISM_RATE: f32 = 0.5;
@@ -60,7 +60,7 @@ const E6_HEREDITY_PEAK_MIN_RELATIVE_MASS: f32 = 0.20;
 const E6_HEREDITY_INHERIT_SAME_FAMILY_PROB: f32 = 0.80;
 const E6_HEREDITY_AZIMUTH_SIGMA_ST: f32 = 0.25;
 const E6_HEREDITY_AZIMUTH_CLIP_ST: f32 = 1.5;
-const E6_POST_RESPAWN_AZIMUTH_TUNING_RADIUS_ST: f32 = 1.0;
+const E6_POST_RESPAWN_AZIMUTH_TUNING_RADIUS_ST: f32 = 0.5;
 const E6_JUVENILE_CULL_TICKS: u32 = 20;
 const E6_JUVENILE_CULL_C_LEVEL_THRESHOLD: f32 = 0.75;
 const E6_JUVENILE_CULL_PROB_PER_TICK: f32 = 0.25;
@@ -620,10 +620,8 @@ pub fn run_e3_collect_deaths(cfg: &E3RunConfig) -> Vec<E3DeathRecord> {
                 if !agent.is_alive() {
                     continue;
                 }
-                let c_level = landscape
-                    .evaluate_pitch_level(agent.body.base_freq_hz())
-                    .clamp(0.0, 1.0);
-                apply_selection_recharge(agent, c_level, E3_SELECTION_RECHARGE_PER_SEC, dt);
+                let c_score = landscape.evaluate_pitch_score(agent.body.base_freq_hz());
+                apply_selection_recharge(agent, c_score, E3_SELECTION_RECHARGE_PER_SEC, dt);
             }
         }
 
@@ -882,11 +880,10 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
             if !agent.is_alive() {
                 continue;
             }
-            let c_level = selection_reference_landscape
-                .evaluate_pitch_level(agent.body.base_freq_hz())
-                .clamp(0.0, 1.0);
+            let c_score =
+                selection_reference_landscape.evaluate_pitch_score(agent.body.base_freq_hz());
             if cfg.selection_enabled {
-                apply_selection_recharge(agent, c_level, E6_SELECTION_RECHARGE_PER_SEC, dt);
+                apply_selection_recharge(agent, c_score, E6_SELECTION_RECHARGE_PER_SEC, dt);
             }
         }
         pop.advance(E3_HOP, E3_FS, step as u64, dt, &landscape);
@@ -2938,7 +2935,11 @@ fn sample_standard_normal<R: Rng + ?Sized>(rng: &mut R) -> f32 {
     mag * angle.cos()
 }
 
-fn e3_tessitura_bounds_for_range(anchor_hz: f32, space: &Log2Space, range_oct: f32) -> (f32, f32) {
+pub(crate) fn e3_tessitura_bounds_for_range(
+    anchor_hz: f32,
+    space: &Log2Space,
+    range_oct: f32,
+) -> (f32, f32) {
     let half = 0.5 * range_oct.max(1e-6);
     let min_freq = anchor_hz * 2.0f32.powf(-half);
     let max_freq = anchor_hz * 2.0f32.powf(half);
@@ -3052,8 +3053,8 @@ fn e6_apply_exact_e2_aligned_local_search(
     }
 }
 
-fn apply_selection_recharge(agent: &mut Individual, c_level: f32, rate_per_sec: f32, dt_sec: f32) {
-    let delta = rate_per_sec * c_level.clamp(0.0, 1.0) * dt_sec.max(0.0);
+fn apply_selection_recharge(agent: &mut Individual, c_score: f32, rate_per_sec: f32, dt_sec: f32) {
+    let delta = rate_per_sec * c_score.max(0.0) * dt_sec.max(0.0);
     if delta <= 0.0 || !delta.is_finite() {
         return;
     }

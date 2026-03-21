@@ -6,5 +6,5 @@ Condition is random because oracle births make heredity/random equivalent here.
 
 crowding=0.0000, adaptation=off  final C=0.9999 +/- 0.0000  late20 C=0.9999 +/- 0.0000  final occ=1.0000 +/- 0.0000  final pairwise JI=1.0000 +/- 0.0000
 crowding=0.0000, adaptation=on  final C=0.9999 +/- 0.0000  late20 C=0.9999 +/- 0.0000  final occ=1.0000 +/- 0.0000  final pairwise JI=1.0000 +/- 0.0000
-crowding=0.1500, adaptation=off  final C=0.9999 +/- 0.0000  late20 C=0.9999 +/- 0.0000  final occ=1.0000 +/- 0.0000  final pairwise JI=1.0000 +/- 0.0000
-crowding=0.1500, adaptation=on  final C=0.9999 +/- 0.0000  late20 C=0.9999 +/- 0.0000  final occ=1.0000 +/- 0.0000  final pairwise JI=1.0000 +/- 0.0000
+crowding=0.1500, adaptation=off  final C=0.9999 +/- 0.0000  late20 C=0.9937 +/- 0.0015  final occ=1.0000 +/- 0.0000  final pairwise JI=1.0000 +/- 0.0000
+crowding=0.1500, adaptation=on  final C=0.9999 +/- 0.0000  late20 C=0.9937 +/- 0.0015  final occ=1.0000 +/- 0.0000  final pairwise JI=1.0000 +/- 0.0000

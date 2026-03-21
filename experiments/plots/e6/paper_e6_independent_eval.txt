@@ -1,15 +1,15 @@
 E6 Independent Consonance Evaluation (JI ratio-complexity metric)
 ================================================================
-Spearman rho(JI_score, C_score): 0.6330
+Spearman rho(JI_score, C_score): 0.6753
 Permutation p-value (9999 perms): p<0.001
 
 JI score by 2x2 condition:
-heredity, no selection: 0.3144 +/- 0.0343
-random,   no selection: 0.1624 +/- 0.0121
-heredity, selection:    0.5257 +/- 0.0717
-random,   selection:    0.2008 +/- 0.0275
+heredity, no selection: 0.2472 +/- 0.0368
+random,   no selection: 0.1213 +/- 0.0047
+heredity, selection:    0.7504 +/- 0.0634
+random,   selection:    0.1421 +/- 0.0103
 
 Main effects and interaction (paired sign-flip permutation):
-selection main effect: 0.1248, p=p<0.001 (exact)
-heredity main effect:  0.2385, p=p<0.001 (exact)
-interaction:           0.1729, p=p<0.001 (exact)
+selection main effect: 0.2620, p=p<0.001 (exact)
+heredity main effect:  0.3671, p=p<0.001 (exact)
+interaction:           0.4823, p=p<0.001 (exact)

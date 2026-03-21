@@ -222,10 +222,10 @@ Each agent proposes local pitch perturbations of magnitude $\lambda=15$\,ct samp
 Agents possess energy $E$. Dynamics follow:
 
 \begin{equation}
-E \leftarrow E - c_b \Delta t + r_E \cdot C_{\text{level01}} \cdot \Delta t,
+E \leftarrow E - c_b \Delta t + r_E \cdot \max(0, C_{\text{score}}) \cdot \Delta t,
 \end{equation}
 
-where $c_b$ is basal cost and $r_E$ is a consonance-dependent recharge rate. Agents start with $E=1.0$ and perish when $E\leq 0$. We set $c_b=0.5$/s and $r_E=0.4$/s; time advances in hops of $512$ samples at $48\,$kHz ($\Delta t\approx 10.7\,$ms). In the baseline condition, recharge scales continuously with consonance ($r_E=0.4$/s); in the ablation condition, $r_E=0$. An agent's \emph{vitality} $v = \sqrt{E/E_{\text{cap}}}$ (where $E_{\text{cap}}=1.0$) provides a normalised vigour signal available to downstream dynamics such as phase coupling.
+where $c_b$ is basal cost and $r_E$ is a consonance-dependent recharge rate. Only positive raw consonance contributes to recharge. Agents start with $E=1.0$ and perish when $E\leq 0$. We set $c_b=0.5$/s and $r_E=0.4$/s; time advances in hops of $512$ samples at $48\,$kHz ($\Delta t\approx 10.7\,$ms). In the baseline condition, recharge scales continuously with positive consonance ($r_E=0.4$/s); in the ablation condition, $r_E=0$. An agent's \emph{vitality} $v = \sqrt{E/E_{\text{cap}}}$ (where $E_{\text{cap}}=1.0$) provides a normalised vigour signal available to downstream dynamics such as phase coupling.
 
 \subsection{Temporal Oscillation}
 
@@ -338,12 +338,7 @@ Heredity runs yielded significantly higher final consonance than random controls
 
 The four experiments form a cumulative argument. Self-organized polyphony (Exp.~1) shows that the landscape admits structured configurations beyond trivial collapse; metabolic selection (Exp.~2) validates that consonance-dependent recharge produces quantifiable survival differentials; temporal scaffolding (Exp.~3) shows that a shared oscillatory field can organize agent timing; and hereditary adaptation (Exp.~4) shows that selection pressure, once established, can accumulate across generations via inheritance alone. Each experiment isolates one mechanism; together they show that a psychoacoustic landscape can sustain the core ingredients of an artificial ecology without symbolic encoding. A supplementary mechanism check then documents one possible way the spectral and temporal axes can be linked in the current implementation, while leaving that bridge open as a configurable design choice rather than a uniquely validated law. As an integration test, we ran the Exp.~4 protocol under four conditions crossing heredity/random respawn with hill-climbing on/off (20 seeds each). Figure~\ref{fig:e6-integration} shows that combining heredity with hill-climbing yields $C_{\text{score}} = 0.53$, exceeding heredity-only ($0.19$), hill-only ($0.11$), and random ($0.06$). Because all four conditions share the same 20 random seeds, the interaction contrast is computed per-seed (HH$_i$ $-$ H$_i$ $-$ RH$_i$ $+$ R$_i$; mean $0.30$, 95\% CI $[0.20, 0.39]$; $p < 0.001$, sign-flip permutation), confirming that the combination exceeds the sum of individual effects. Repeating all four conditions on a shuffled landscape (Supplementary S8.4) eliminates the interaction entirely (contrast $0.03$, $p = 0.19$), confirming that the synergy requires coherent terrain structure.
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\columnwidth]{experiments/plots/e6/paper_e6_integration_figure.pdf}
-\caption{Integration: heredity $\times$ hill-climbing (20 seeds, 95\% CI). (A)~Mean $C_{\text{score}}$ over time; divergence begins after $\approx$250 steps of turnover. (B)~Final $C_{\text{score}}$; lighter/darker bars = hill-climbing off/on.}
-\label{fig:e6-integration}
-\end{figure}
+% Fig.6 integration figure removed; E6 analysis now focuses on the Fig.5 2x2.
 
 \subsection{The Ecological--Aesthetic Duality}
 

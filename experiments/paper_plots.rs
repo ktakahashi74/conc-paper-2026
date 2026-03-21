@@ -14,12 +14,13 @@ use plotters::element::DashedPathElement;
 use plotters::prelude::*;
 
 use crate::sim::{
-    E3Condition, E3DeathRecord, E3RunConfig, E4_ANCHOR_HZ, E4RuntimeOverrides, E4TailSamples,
-    E6AgentSnapshot, E6Condition, E6PitchSnapshot, E6RespawnRecord, E6RunConfig, E6RunResult,
-    configure_shared_hillclimb_core, e3_policy_params, e3_reference_landscape,
-    e3_reference_landscape_with_partials, e4_paper_meta, e6_sampler_debug_scan,
-    run_e3_collect_deaths, run_e4_condition_tail_samples, run_e4_condition_tail_samples_with_wr,
-    run_e4_mirror_schedule_samples, run_e6, set_e4_runtime_overrides, shared_hill_move_cost_coeff,
+    E3_BINS_PER_OCT, E3_FMAX, E3_FMIN, E3Condition, E3DeathRecord, E3RunConfig, E4_ANCHOR_HZ,
+    E4RuntimeOverrides, E4TailSamples, E6AgentSnapshot, E6Condition, E6PitchSnapshot,
+    E6RespawnRecord, E6RunConfig, E6RunResult, configure_shared_hillclimb_core, e3_policy_params,
+    e3_reference_landscape, e3_reference_landscape_with_partials, e3_tessitura_bounds_for_range,
+    e4_paper_meta, e6_sampler_debug_scan, run_e3_collect_deaths, run_e4_condition_tail_samples,
+    run_e4_condition_tail_samples_with_wr, run_e4_mirror_schedule_samples, run_e6,
+    set_e4_runtime_overrides, shared_hill_move_cost_coeff,
 };
 use conchordal::core::consonance_kernel::{ConsonanceKernel, ConsonanceRepresentationParams};
 use conchordal::core::erb::hz_to_erb;
@@ -392,6 +393,16 @@ const E6_SEEDS: [u64; 20] = [
 ];
 const PAPER_PLOTS_LOCK_FILE: &str = "experiments/.paper_plots.lock";
 const PAPER_PLOTS_BASE_DIR: &str = "experiments/plots";
+
+fn e6_effective_range_bounds_st() -> (f32, f32) {
+    let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
+    let (min_freq, max_freq) =
+        e3_tessitura_bounds_for_range(E4_ANCHOR_HZ, &space, E2_PAPER_RANGE_OCT);
+    (
+        12.0 * (min_freq / E4_ANCHOR_HZ).log2(),
+        12.0 * (max_freq / E4_ANCHOR_HZ).log2(),
+    )
+}
 
 fn log_output_path(path: &Path) {
     println!("write {}", path.display());
@@ -1319,19 +1330,17 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
         generate_e6_sampler_debug_plots()?;
         return Ok(());
     }
-    // Handle --e3-audio: generate supplementary Experiment 3 scenarios
+    // Handle --e3-audio: generate supplementary Experiment 3 scenarios.
+    // WAV rendering is intentionally left to supplementary_audio/render.sh,
+    // which routes all scenarios through conchordal-render.
     if args.iter().any(|arg| arg == "--e3-audio") {
         let cfg_shared = crate::sim::E3AudioConfig::default_shared();
         let cfg_scrambled = crate::sim::E3AudioConfig::default_scrambled();
         let cfg_off = crate::sim::E3AudioConfig::default_off();
         let scenario_dir = PathBuf::from("supplementary_audio/scenarios");
-        let audio_dir = PathBuf::from("supplementary_audio/audio");
         crate::sim::generate_e3_rhai(&cfg_shared, &scenario_dir.join("30_e3_shared.rhai"))?;
-        crate::sim::render_e3_audio(&cfg_shared, &audio_dir.join("30_e3_shared.wav"))?;
         crate::sim::generate_e3_rhai(&cfg_scrambled, &scenario_dir.join("30_e3_scrambled.rhai"))?;
-        crate::sim::render_e3_audio(&cfg_scrambled, &audio_dir.join("30_e3_scrambled.wav"))?;
         crate::sim::generate_e3_rhai(&cfg_off, &scenario_dir.join("30_e3_off.rhai"))?;
-        crate::sim::render_e3_audio(&cfg_off, &audio_dir.join("30_e3_off.wav"))?;
         return Ok(());
     }
     if args.iter().any(|arg| arg == "--postprocess-quicklisten") {
@@ -6812,6 +6821,7 @@ fn plot_e6_hereditary_adaptation(
     let mut heat_counts: HashMap<(usize, i32), f32> = HashMap::new();
     let mut hered_seed_last_step: HashMap<u64, usize> = HashMap::new();
     let mut hered_seed_last_bins: HashMap<u64, Vec<i32>> = HashMap::new();
+    let (e6_min_range_st, e6_max_range_st) = e6_effective_range_bounds_st();
     let mut final_occ_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut endpoint_metrics_csv =
         String::from("condition,seed,anchor_ji_mass,pairwise_ji_score\n");
@@ -6992,9 +7002,8 @@ fn plot_e6_hereditary_adaptation(
                     if is_consonant { 1 } else { 0 }
                 ));
                 if *cond_label == "heredity" {
-                    let half_range_st = 0.5 * E2_PAPER_RANGE_OCT * 12.0;
-                    let clamped = semitone.clamp(-half_range_st, half_range_st - f32::EPSILON);
-                    let bin = ((clamped + half_range_st) / E6_INTERVAL_BIN_ST).floor() as i32;
+                    let clamped = semitone.clamp(e6_min_range_st, e6_max_range_st - f32::EPSILON);
+                    let bin = ((clamped - e6_min_range_st) / E6_INTERVAL_BIN_ST).floor() as i32;
                     *heat_counts.entry((snap.step, bin)).or_insert(0.0) += 1.0;
                     let entry = hered_seed_last_bins.entry(*seed).or_default();
                     if hered_seed_last_step.get(seed).copied() != Some(snap.step) {
@@ -9052,9 +9061,6 @@ fn plot_e6_hereditary_adaptation(
         write_with_log(out_dir.join("paper_e6_independent_eval.txt"), eval_text)?;
     }
 
-    // ── C2: Integration figure (heredity/random × lw=0.0/1.0) ──
-    plot_e6_integration_figure(out_dir, anchor_hz)?;
-
     Ok(())
 }
 
@@ -9252,16 +9258,6 @@ fn render_e6_figure(
 
     let series_specs = [
         E6FigureSeries {
-            label: "heredity (no sel)",
-            series: c_heredity_nosel,
-            color: PAL_H.mix(0.45),
-        },
-        E6FigureSeries {
-            label: "random (no sel)",
-            series: c_random_nosel,
-            color: PAL_R.mix(0.45),
-        },
-        E6FigureSeries {
             label: "heredity",
             series: c_heredity,
             color: PAL_H.to_rgba(),
@@ -9270,6 +9266,16 @@ fn render_e6_figure(
             label: "random",
             series: c_random,
             color: PAL_R.to_rgba(),
+        },
+        E6FigureSeries {
+            label: "heredity (no sel)",
+            series: c_heredity_nosel,
+            color: PAL_H.mix(0.45),
+        },
+        E6FigureSeries {
+            label: "random (no sel)",
+            series: c_random_nosel,
+            color: PAL_R.mix(0.45),
         },
     ];
     draw_e6_series_panel(
@@ -9404,7 +9410,7 @@ where
 
     chart
         .configure_series_labels()
-        .position(SeriesLabelPosition::Coordinate(95, 135))
+        .position(SeriesLabelPosition::LowerRight)
         .background_style(WHITE.mix(0.85))
         .border_style(BLACK)
         .label_font(("sans-serif", 48).into_font())
@@ -9518,8 +9524,9 @@ fn draw_e6_heatmap_panel<DB: DrawingBackend>(
 where
     <DB as DrawingBackend>::ErrorType: 'static,
 {
-    let half_range_st = 0.5 * E2_PAPER_RANGE_OCT * 12.0;
-    let half_range_cents = half_range_st * 100.0;
+    let (min_range_st, max_range_st) = e6_effective_range_bounds_st();
+    let min_range_cents = min_range_st * 100.0;
+    let max_range_cents = max_range_st * 100.0;
     let x_max = heat_counts
         .keys()
         .map(|(step, _)| *step as f32)
@@ -9531,7 +9538,7 @@ where
         .margin(20)
         .x_label_area_size(90)
         .y_label_area_size(120)
-        .build_cartesian_2d(0.0f32..x_max.max(1.0), -half_range_cents..half_range_cents)?;
+        .build_cartesian_2d(0.0f32..x_max.max(1.0), min_range_cents..max_range_cents)?;
 
     chart
         .configure_mesh()
@@ -9551,7 +9558,7 @@ where
     for ((step, bin), count) in heat_counts {
         let x0 = *step as f32;
         let x1 = x0 + E6_SNAPSHOT_INTERVAL as f32;
-        let y0 = (-half_range_st + *bin as f32 * E6_INTERVAL_BIN_ST) * 100.0;
+        let y0 = (min_range_st + *bin as f32 * E6_INTERVAL_BIN_ST) * 100.0;
         let y1 = y0 + E6_INTERVAL_BIN_ST * 100.0;
         let t = (*count / max_count).clamp(0.0, 1.0).sqrt();
         let color = HSLColor(
@@ -9570,10 +9577,13 @@ where
     }
 
     for &target in &E2_CONSONANT_STEPS {
-        let mut y_st = target - half_range_st;
-        while y_st <= half_range_st {
+        let mut y_st = target;
+        while y_st > min_range_st {
+            y_st -= 12.0;
+        }
+        while y_st <= max_range_st {
             let y = y_st * 100.0;
-            if (-half_range_cents..=half_range_cents).contains(&y) {
+            if (min_range_cents..=max_range_cents).contains(&y) {
                 chart.draw_series(std::iter::once(PathElement::new(
                     vec![(0.0, y), (x_max.max(1.0), y)],
                     BLACK.mix(0.18),
@@ -23614,13 +23624,15 @@ fn e3_metric_definition_text() -> String {
     let mut out = String::new();
     out.push_str("E3 metric definitions\n");
     out.push_str(
-        "C is the 0-1 score passed into ArticulationCore::process as `consonance` (agent.last_consonance_level01()).\n",
+        "Plots report C_level01 (agent.last_consonance_level01()), while the continuous recharge term uses positive raw C_score from the reference landscape.\n",
     );
     out.push_str("C_firstK definition: mean over first K=20 ticks after birth (0..1).\n");
     out.push_str("Metabolism update (conceptual):\n");
-    out.push_str("  E <- E - basal_cost_per_sec * dt + continuous_recharge_per_sec * C * dt\n");
     out.push_str(
-        "C is clamped to [0,1] before applying recharge. NoRecharge sets continuous_recharge_per_sec=0, so the C-dependent recharge term is removed.\n",
+        "  E <- E - basal_cost_per_sec * dt + continuous_recharge_per_sec * max(0, C_score) * dt\n",
+    );
+    out.push_str(
+        "Only positive raw C_score contributes to recharge. NoRecharge sets continuous_recharge_per_sec=0, so the C-dependent recharge term is removed.\n",
     );
     out.push_str(
         "Representative seed is chosen by the median Pearson r of baseline C_firstK vs lifetime; pooled plots concatenate all seeds.\n",
@@ -33052,28 +33064,28 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
     struct E6AudioSeg {
         label: &'static str,
         condition: E6Condition,
-        landscape_weight: f32,
+        selection_enabled: bool,
     }
     let e6_conditions = [
         E6AudioSeg {
-            label: "neither",
+            label: "random_nosel",
             condition: E6Condition::Random,
-            landscape_weight: 0.0,
+            selection_enabled: false,
         },
         E6AudioSeg {
-            label: "honly",
+            label: "heredity_nosel",
             condition: E6Condition::Heredity,
-            landscape_weight: 0.0,
+            selection_enabled: false,
         },
         E6AudioSeg {
-            label: "hillonly",
+            label: "random_sel",
             condition: E6Condition::Random,
-            landscape_weight: E6_HILL_LANDSCAPE_WEIGHT,
+            selection_enabled: true,
         },
         E6AudioSeg {
-            label: "both",
+            label: "heredity_sel",
             condition: E6Condition::Heredity,
-            landscape_weight: E6_HILL_LANDSCAPE_WEIGHT,
+            selection_enabled: true,
         },
     ];
     let e6_seeds: [u64; 2] = [E6_SEEDS[0], E6_SEEDS[10]];
@@ -33096,19 +33108,19 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
                 first_k: E6_FIRST_K,
                 condition: cond.condition,
                 snapshot_interval: E6_SNAPSHOT_INTERVAL,
-                landscape_weight: cond.landscape_weight,
+                landscape_weight: 0.0,
                 shuffle_landscape: false,
                 env_partials: None,
                 oracle_azimuth_radius_st: None,
                 oracle_global_anchor_c: false,
                 oracle_freeze_pitch_after_respawn: false,
-                crowding_strength_override: None,
-                adaptation_enabled_override: None,
+                crowding_strength_override: Some(0.0),
+                adaptation_enabled_override: Some(false),
                 range_oct_override: Some(E2_PAPER_RANGE_OCT),
                 e2_aligned_exact_local_search_radius_st: None,
-                disable_within_life_pitch_movement: false,
-                selection_enabled: true,
-                juvenile_cull_enabled: true,
+                disable_within_life_pitch_movement: true,
+                selection_enabled: cond.selection_enabled,
+                juvenile_cull_enabled: false,
             };
             let result = run_e6(&cfg);
             e6_results.push((label, result));
@@ -33122,11 +33134,11 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
              // snapshot_interval={} steps, replay_step_sec={:.3}\n\
              // each life uses harmonic ADSR atk={:.2}s dec={:.2}s sus={:.2} rel={:.2}s\n\
              //\n\
-             // 8 segments: 4 conditions x 2 seeds, ordered from most integrated to random within each seed\n\
-             //   both      : heredity + landscape_weight={:.1}\n\
-             //   H-only    : heredity + landscape_weight=0.0\n\
-             //   hill-only : random   + landscape_weight={:.1}\n\
-             //   neither   : random   + landscape_weight=0.0\n\
+             // 8 segments: 2x2 selection x heredity, 2 seeds\n\
+             //   heredity+selection : hereditary respawn + continuous C recharge\n\
+             //   random+selection   : random respawn + continuous C recharge\n\
+             //   heredity only      : hereditary respawn, no selection\n\
+             //   random only        : random respawn, no selection\n\
              //\n\
              //   E6_SEEDS[0]  = {}\n\
              //   E6_SEEDS[10] = {}",
@@ -33138,24 +33150,22 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             AUDIO_E6_AGENT_DECAY_SEC,
             AUDIO_E6_AGENT_SUSTAIN_LEVEL,
             AUDIO_E6_AGENT_RELEASE_SEC,
-            E6_HILL_LANDSCAPE_WEIGHT,
-            E6_HILL_LANDSCAPE_WEIGHT,
             E6_SEEDS[0],
             E6_SEEDS[10],
         );
         let mut rhai = rhai_replay_header(
-            "20_integration.rhai -- E6: Heredity x hill-climbing integration replay",
+            "20_integration.rhai -- E6: Selection x heredity replay",
             &detail,
         );
         let integration_order = [
-            "seed0_both",
-            "seed0_honly",
-            "seed0_hillonly",
-            "seed0_neither",
-            "seed10_both",
-            "seed10_honly",
-            "seed10_hillonly",
-            "seed10_neither",
+            "seed0_heredity_sel",
+            "seed0_random_sel",
+            "seed0_heredity_nosel",
+            "seed0_random_nosel",
+            "seed10_heredity_sel",
+            "seed10_random_sel",
+            "seed10_heredity_nosel",
+            "seed10_random_nosel",
         ];
         for (i, label) in integration_order.iter().enumerate() {
             let (_, result) = e6_results
@@ -33181,10 +33191,9 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             "// 4 segments (curated highlights); all E2 segments include 1 fixed drone at 220 Hz,\n\
              // and E6 segments use per-life harmonic ADSR voices plus a fixed 220 Hz sine anchor:\n\
              //   1. E2 baseline  (seed 0) -- hill-climbing + crowding\n\
-             //   2. E6 both      (seed 0) -- heredity + landscape_weight={:.1}\n\
+             //   2. E6 selection+heredity (seed 0)\n\
              //   3. E2 no-hill   (seed 0) -- crowding only\n\
-             //   4. E6 neither   (seed 0) -- random control",
-            E6_HILL_LANDSCAPE_WEIGHT
+             //   4. E6 random/no-selection (seed 0) -- pure null control"
         );
         let mut rhai = rhai_replay_header(
             "00_quicklisten.rhai -- Orientation montage (replay)",
@@ -33202,13 +33211,17 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         ));
         rhai.push_str(&format!("wait({AUDIO_QUICKLISTEN_GAP_SEC:.1});\n\n"));
 
-        // Segment 2: E6 both seed0 (e6_results index 6: both=cond[3], seed[0])
-        let e6_both_seed0 = &e6_results[6].1;
-        let snaps = &e6_both_seed0.snapshots;
+        // Segment 2: E6 heredity + selection, seed 0
+        let e6_sel_hered_seed0 = &e6_results
+            .iter()
+            .find(|(label, _)| label == "seed0_heredity_sel")
+            .expect("missing E6 audio result for seed0_heredity_sel")
+            .1;
+        let snaps = &e6_sel_hered_seed0.snapshots;
         let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
         let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
         rhai.push_str(&rhai_e6_segment(
-            "ql2_e6_both",
+            "ql2_e6_sel_hered",
             &tail,
             AUDIO_E6_STEP_SEC,
             None,
@@ -33226,13 +33239,17 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         ));
         rhai.push_str(&format!("wait({AUDIO_QUICKLISTEN_GAP_SEC:.1});\n\n"));
 
-        // Segment 4: E6 neither seed0 (e6_results index 0: neither=cond[0], seed[0])
-        let e6_neither_seed0 = &e6_results[0].1;
-        let snaps = &e6_neither_seed0.snapshots;
+        // Segment 4: E6 random + no selection, seed 0
+        let e6_random_nosel_seed0 = &e6_results
+            .iter()
+            .find(|(label, _)| label == "seed0_random_nosel")
+            .expect("missing E6 audio result for seed0_random_nosel")
+            .1;
+        let snaps = &e6_random_nosel_seed0.snapshots;
         let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
         let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
         rhai.push_str(&rhai_e6_segment(
-            "ql4_e6_neither",
+            "ql4_e6_random_nosel",
             &tail,
             AUDIO_E6_STEP_SEC,
             None,

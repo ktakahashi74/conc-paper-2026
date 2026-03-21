@@ -4,20 +4,20 @@ One-shot oracle anchor-C maximization applied immediately after respawn.
 Radius = +/-5 st, grid = 25 cents
 
 Final C_score by condition:
-H baseline:  mean=0.6937 +/- 0.0732
-H oracle:    mean=0.8914 +/- 0.0468
-R baseline:  mean=0.4391 +/- 0.0356
-R oracle:    mean=0.8460 +/- 0.0170
+H baseline:  mean=0.8574 +/- 0.0477
+H oracle:    mean=0.9911 +/- 0.0060
+R baseline:  mean=0.3063 +/- 0.0196
+R oracle:    mean=0.8339 +/- 0.0201
 
 Final consonant occupation:
 H oracle:    mean=1.0000 +/- 0.0000
 R oracle:    mean=1.0000 +/- 0.0000
 
 Final pairwise JI:
-H oracle:    mean=0.8963 +/- 0.0491
-R oracle:    mean=0.8040 +/- 0.0323
+H oracle:    mean=0.9703 +/- 0.0247
+R oracle:    mean=0.7227 +/- 0.0486
 
 Paired contrasts (per-seed):
-H oracle - H baseline: mean=0.1977, p=p<0.001 (exact)
-R oracle - R baseline: mean=0.4069, p=p<0.001 (exact)
-H oracle - R oracle:   mean=0.0455, p=p=0.070 (exact)
+H oracle - H baseline: mean=0.1336, p=p<0.001 (exact)
+R oracle - R baseline: mean=0.5277, p=p<0.001 (exact)
+H oracle - R oracle:   mean=0.1571, p=p<0.001 (exact)
