@@ -6511,7 +6511,18 @@ fn plot_e6_hereditary_adaptation(
 ) -> Result<(), Box<dyn Error>> {
     let anchor_hz = E4_ANCHOR_HZ;
     let landscape = e3_reference_landscape(anchor_hz);
-    let run_jobs = |specs: &[(&'static str, E6Condition, bool, Option<f32>, bool, bool)]| {
+    let contextual_space = landscape.space.clone();
+    let (_contextual_erb_scan, contextual_du_scan) = erb_grid(&contextual_space);
+    let contextual_workspace = build_consonance_workspace(&contextual_space);
+    let run_jobs = |specs: &[(
+        &'static str,
+        E6Condition,
+        bool,
+        Option<f32>,
+        bool,
+        bool,
+        f32,
+    )]| {
         let mut jobs: Vec<(
             &'static str,
             E6Condition,
@@ -6519,6 +6530,7 @@ fn plot_e6_hereditary_adaptation(
             Option<f32>,
             bool,
             bool,
+            f32,
             u64,
         )> = Vec::new();
         for &(
@@ -6528,6 +6540,7 @@ fn plot_e6_hereditary_adaptation(
             oracle_radius_st,
             oracle_global_anchor_c,
             oracle_freeze_pitch_after_respawn,
+            selection_contextual_mix_weight,
         ) in specs
         {
             for &seed in &E6_SEEDS {
@@ -6538,6 +6551,7 @@ fn plot_e6_hereditary_adaptation(
                     oracle_radius_st,
                     oracle_global_anchor_c,
                     oracle_freeze_pitch_after_respawn,
+                    selection_contextual_mix_weight,
                     seed,
                 ));
             }
@@ -6565,6 +6579,7 @@ fn plot_e6_hereditary_adaptation(
                             oracle_radius_st,
                             oracle_global_anchor_c,
                             oracle_freeze_pitch_after_respawn,
+                            selection_contextual_mix_weight,
                             seed,
                         ) = jobs[idx];
                         let cfg = E6RunConfig {
@@ -6587,6 +6602,7 @@ fn plot_e6_hereditary_adaptation(
                             e2_aligned_exact_local_search_radius_st: None,
                             disable_within_life_pitch_movement: true,
                             selection_enabled,
+                            selection_contextual_mix_weight,
                             juvenile_cull_enabled: false,
                         };
                         let result = run_e6(&cfg);
@@ -6612,6 +6628,7 @@ fn plot_e6_hereditary_adaptation(
             None,
             false,
             false,
+            0.0,
         ),
         (
             "random_nosel",
@@ -6620,9 +6637,56 @@ fn plot_e6_hereditary_adaptation(
             None,
             false,
             false,
+            0.0,
         ),
-        ("heredity", E6Condition::Heredity, true, None, false, false),
-        ("random", E6Condition::Random, true, None, false, false),
+        (
+            "heredity",
+            E6Condition::Heredity,
+            true,
+            None,
+            false,
+            false,
+            0.0,
+        ),
+        ("random", E6Condition::Random, true, None, false, false, 0.0),
+    ]);
+    let contextual_selection_results = run_jobs(&[
+        (
+            "heredity_sel_mix025",
+            E6Condition::Heredity,
+            true,
+            None,
+            false,
+            false,
+            0.25,
+        ),
+        (
+            "random_sel_mix025",
+            E6Condition::Random,
+            true,
+            None,
+            false,
+            false,
+            0.25,
+        ),
+        (
+            "heredity_sel_contextual",
+            E6Condition::Heredity,
+            true,
+            None,
+            false,
+            false,
+            1.0,
+        ),
+        (
+            "random_sel_contextual",
+            E6Condition::Random,
+            true,
+            None,
+            false,
+            false,
+            1.0,
+        ),
     ]);
     let oracle_results = run_jobs(&[
         (
@@ -6632,6 +6696,7 @@ fn plot_e6_hereditary_adaptation(
             Some(5.0),
             false,
             false,
+            0.0,
         ),
         (
             "random_oracle",
@@ -6640,6 +6705,7 @@ fn plot_e6_hereditary_adaptation(
             Some(5.0),
             false,
             false,
+            0.0,
         ),
     ]);
     let global_oracle_results = run_jobs(&[
@@ -6650,6 +6716,7 @@ fn plot_e6_hereditary_adaptation(
             None,
             true,
             false,
+            0.0,
         ),
         (
             "random_oracle_global",
@@ -6658,6 +6725,7 @@ fn plot_e6_hereditary_adaptation(
             None,
             true,
             false,
+            0.0,
         ),
     ]);
     let global_oracle_freeze_results = run_jobs(&[
@@ -6668,6 +6736,7 @@ fn plot_e6_hereditary_adaptation(
             None,
             true,
             true,
+            0.0,
         ),
         (
             "random_oracle_global_freeze",
@@ -6676,6 +6745,7 @@ fn plot_e6_hereditary_adaptation(
             None,
             true,
             true,
+            0.0,
         ),
     ]);
     let e2_aligned_jobs: Vec<(&'static str, E6Condition, u64)> = E6_SEEDS
@@ -6725,6 +6795,7 @@ fn plot_e6_hereditary_adaptation(
                         e2_aligned_exact_local_search_radius_st: Some(2.0),
                         disable_within_life_pitch_movement: false,
                         selection_enabled: true,
+                        selection_contextual_mix_weight: 0.0,
                         juvenile_cull_enabled: false,
                     };
                     let result = run_e6(&cfg);
@@ -6786,6 +6857,7 @@ fn plot_e6_hereditary_adaptation(
                         e2_aligned_exact_local_search_radius_st: Some(0.0),
                         disable_within_life_pitch_movement: false,
                         selection_enabled: true,
+                        selection_contextual_mix_weight: 0.0,
                         juvenile_cull_enabled: false,
                     };
                     let result = run_e6(&cfg);
@@ -6825,6 +6897,8 @@ fn plot_e6_hereditary_adaptation(
     let mut final_occ_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut endpoint_metrics_csv =
         String::from("condition,seed,anchor_ji_mass,pairwise_ji_score\n");
+    let mut contextual_endpoint_metrics_csv =
+        String::from("condition,seed,mean_c_score_loo,g_scene\n");
     let mut final_pairwise_ji_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
 
     for (cond_label, _condition, _selection_enabled, seed, result) in &all_results {
@@ -7032,6 +7106,19 @@ fn plot_e6_hereditary_adaptation(
             .last()
             .map(|snap| ji_population_score(&snap.freqs_hz, anchor_hz))
             .unwrap_or(0.0);
+        let (final_contextual_loo, final_contextual_g) = result
+            .snapshots
+            .last()
+            .map(|snap| {
+                e6_contextual_endpoint_metrics(
+                    &snap.freqs_hz,
+                    anchor_hz,
+                    &contextual_space,
+                    &contextual_workspace,
+                    &contextual_du_scan,
+                )
+            })
+            .unwrap_or((0.0, 0.0));
         let mean_n_alive = if run_points.is_empty() {
             0.0
         } else {
@@ -7048,6 +7135,10 @@ fn plot_e6_hereditary_adaptation(
         endpoint_metrics_csv.push_str(&format!(
             "{},{},{:.6},{:.6}\n",
             cond_label, seed, final_anchor_ji_mass, final_pairwise_ji_score
+        ));
+        contextual_endpoint_metrics_csv.push_str(&format!(
+            "{},{},{:.6},{:.6}\n",
+            cond_label, seed, final_contextual_loo, final_contextual_g
         ));
         final_c_by_label_seed
             .entry(*cond_label)
@@ -7144,6 +7235,10 @@ fn plot_e6_hereditary_adaptation(
     write_with_log(
         out_dir.join("paper_e6_endpoint_metrics.csv"),
         endpoint_metrics_csv,
+    )?;
+    write_with_log(
+        out_dir.join("paper_e6_contextual_endpoint_metrics.csv"),
+        contextual_endpoint_metrics_csv,
     )?;
 
     #[derive(Clone, Copy, Debug)]
@@ -8386,6 +8481,7 @@ fn plot_e6_hereditary_adaptation(
                         e2_aligned_exact_local_search_radius_st: None,
                         disable_within_life_pitch_movement: false,
                         selection_enabled: true,
+                        selection_contextual_mix_weight: 0.0,
                         juvenile_cull_enabled: false,
                     };
                     let result = run_e6(&cfg);
@@ -8544,6 +8640,7 @@ fn plot_e6_hereditary_adaptation(
                         e2_aligned_exact_local_search_radius_st: None,
                         disable_within_life_pitch_movement: false,
                         selection_enabled: true,
+                        selection_contextual_mix_weight: 0.0,
                         juvenile_cull_enabled: false,
                     };
                     let result = run_e6(&cfg);
@@ -8708,6 +8805,7 @@ fn plot_e6_hereditary_adaptation(
                         e2_aligned_exact_local_search_radius_st: None,
                         disable_within_life_pitch_movement: false,
                         selection_enabled: true,
+                        selection_contextual_mix_weight: 0.0,
                         juvenile_cull_enabled: false,
                     };
                     let result = run_e6(&cfg);
@@ -9061,6 +9159,482 @@ fn plot_e6_hereditary_adaptation(
         write_with_log(out_dir.join("paper_e6_independent_eval.txt"), eval_text)?;
     }
 
+    // ── C2: Contextual readout diagnostic (LOO C_score and G_scene) ──
+    {
+        let mut loo_h0: Vec<f32> = Vec::new();
+        let mut loo_r0: Vec<f32> = Vec::new();
+        let mut loo_h1: Vec<f32> = Vec::new();
+        let mut loo_r1: Vec<f32> = Vec::new();
+        let mut g_h0: Vec<f32> = Vec::new();
+        let mut g_r0: Vec<f32> = Vec::new();
+        let mut g_h1: Vec<f32> = Vec::new();
+        let mut g_r1: Vec<f32> = Vec::new();
+
+        for (label, _condition, _selection_enabled, _seed, result) in &all_results {
+            let Some(last_snap) = result.snapshots.last() else {
+                continue;
+            };
+            let (loo, g_scene) = e6_contextual_endpoint_metrics(
+                &last_snap.freqs_hz,
+                anchor_hz,
+                &contextual_space,
+                &contextual_workspace,
+                &contextual_du_scan,
+            );
+            match *label {
+                "heredity_nosel" => {
+                    loo_h0.push(loo);
+                    g_h0.push(g_scene);
+                }
+                "random_nosel" => {
+                    loo_r0.push(loo);
+                    g_r0.push(g_scene);
+                }
+                "heredity" => {
+                    loo_h1.push(loo);
+                    g_h1.push(g_scene);
+                }
+                "random" => {
+                    loo_r1.push(loo);
+                    g_r1.push(g_scene);
+                }
+                _ => {}
+            }
+        }
+
+        let mean_ci = |values: &[f32]| -> (f32, f32) {
+            if values.is_empty() {
+                (0.0, 0.0)
+            } else {
+                (mean_std_scalar(values).0, ci95_half_width(values))
+            }
+        };
+        let factorial_effects = |h0: &[f32], r0: &[f32], h1: &[f32], r1: &[f32]| {
+            let interaction: Vec<f32> = h1
+                .iter()
+                .zip(r1)
+                .zip(h0.iter().zip(r0))
+                .map(|((&h1, &r1), (&h0, &r0))| (h1 - r1) - (h0 - r0))
+                .collect();
+            let main_selection: Vec<f32> = h1
+                .iter()
+                .zip(r1)
+                .zip(h0.iter().zip(r0))
+                .map(|((&h1, &r1), (&h0, &r0))| 0.5 * ((h1 - h0) + (r1 - r0)))
+                .collect();
+            let main_heredity: Vec<f32> = h1
+                .iter()
+                .zip(r1)
+                .zip(h0.iter().zip(r0))
+                .map(|((&h1, &r1), (&h0, &r0))| 0.5 * ((h1 - r1) + (h0 - r0)))
+                .collect();
+            let (sel_p, sel_method) =
+                permutation_pvalue_one_sample(&main_selection, 100_000, 0xE6C2_0101);
+            let (her_p, her_method) =
+                permutation_pvalue_one_sample(&main_heredity, 100_000, 0xE6C2_0102);
+            let (int_p, int_method) =
+                permutation_pvalue_one_sample(&interaction, 100_000, 0xE6C2_0103);
+            (
+                mean_std_scalar(&main_selection).0,
+                sel_p,
+                sel_method,
+                mean_std_scalar(&main_heredity).0,
+                her_p,
+                her_method,
+                mean_std_scalar(&interaction).0,
+                int_p,
+                int_method,
+            )
+        };
+
+        let (loo_h0_mean, loo_h0_ci) = mean_ci(&loo_h0);
+        let (loo_r0_mean, loo_r0_ci) = mean_ci(&loo_r0);
+        let (loo_h1_mean, loo_h1_ci) = mean_ci(&loo_h1);
+        let (loo_r1_mean, loo_r1_ci) = mean_ci(&loo_r1);
+        let (g_h0_mean, g_h0_ci) = mean_ci(&g_h0);
+        let (g_r0_mean, g_r0_ci) = mean_ci(&g_r0);
+        let (g_h1_mean, g_h1_ci) = mean_ci(&g_h1);
+        let (g_r1_mean, g_r1_ci) = mean_ci(&g_r1);
+        let (
+            loo_sel_eff,
+            loo_sel_p,
+            loo_sel_method,
+            loo_her_eff,
+            loo_her_p,
+            loo_her_method,
+            loo_int_eff,
+            loo_int_p,
+            loo_int_method,
+        ) = factorial_effects(&loo_h0, &loo_r0, &loo_h1, &loo_r1);
+        let (
+            g_sel_eff,
+            g_sel_p,
+            g_sel_method,
+            g_her_eff,
+            g_her_p,
+            g_her_method,
+            g_int_eff,
+            g_int_p,
+            g_int_method,
+        ) = factorial_effects(&g_h0, &g_r0, &g_h1, &g_r1);
+
+        let contextual_text = format!(
+            "E6 Contextual Readout Diagnostic\n\
+             =============================\n\
+             Readout-only: dynamics remain anchor-based; metrics below are evaluated from the final population context.\n\
+             \n\
+             Mean LOO C_score by 2x2 condition:\n\
+             heredity, no selection: {:.4} +/- {:.4}\n\
+             random,   no selection: {:.4} +/- {:.4}\n\
+             heredity, selection:    {:.4} +/- {:.4}\n\
+             random,   selection:    {:.4} +/- {:.4}\n\
+             \n\
+             Mean G_scene by 2x2 condition:\n\
+             heredity, no selection: {:.4} +/- {:.4}\n\
+             random,   no selection: {:.4} +/- {:.4}\n\
+             heredity, selection:    {:.4} +/- {:.4}\n\
+             random,   selection:    {:.4} +/- {:.4}\n\
+             \n\
+             LOO main effects and interaction:\n\
+             selection main effect: {:.4}, p={} ({})\n\
+             heredity main effect:  {:.4}, p={} ({})\n\
+             interaction:           {:.4}, p={} ({})\n\
+             \n\
+             G_scene main effects and interaction:\n\
+             selection main effect: {:.4}, p={} ({})\n\
+             heredity main effect:  {:.4}, p={} ({})\n\
+             interaction:           {:.4}, p={} ({})\n",
+            loo_h0_mean,
+            loo_h0_ci,
+            loo_r0_mean,
+            loo_r0_ci,
+            loo_h1_mean,
+            loo_h1_ci,
+            loo_r1_mean,
+            loo_r1_ci,
+            g_h0_mean,
+            g_h0_ci,
+            g_r0_mean,
+            g_r0_ci,
+            g_h1_mean,
+            g_h1_ci,
+            g_r1_mean,
+            g_r1_ci,
+            loo_sel_eff,
+            format_p_value(loo_sel_p),
+            loo_sel_method,
+            loo_her_eff,
+            format_p_value(loo_her_p),
+            loo_her_method,
+            loo_int_eff,
+            format_p_value(loo_int_p),
+            loo_int_method,
+            g_sel_eff,
+            format_p_value(g_sel_p),
+            g_sel_method,
+            g_her_eff,
+            format_p_value(g_her_p),
+            g_her_method,
+            g_int_eff,
+            format_p_value(g_int_p),
+            g_int_method,
+        );
+        write_with_log(
+            out_dir.join("paper_e6_contextual_eval.txt"),
+            contextual_text,
+        )?;
+    }
+
+    // ── C3: Contextual-selection variant diagnostic ──
+    {
+        let seed_aligned_metric =
+            |results: &[(&'static str, E6Condition, bool, u64, E6RunResult)],
+             label: &'static str,
+             metric: &dyn Fn(&E6RunResult) -> f32|
+             -> Vec<f32> {
+                E6_SEEDS
+                    .iter()
+                    .map(|&seed| {
+                        results
+                            .iter()
+                            .find(|(candidate_label, _, _, candidate_seed, _)| {
+                                *candidate_label == label && *candidate_seed == seed
+                            })
+                            .map(|(_, _, _, _, result)| metric(result))
+                            .unwrap_or(0.0)
+                    })
+                    .collect()
+            };
+        let anchor_metric = |result: &E6RunResult| -> f32 {
+            result
+                .snapshots
+                .last()
+                .map(|snap| e6_snapshot_point(&snap.freqs_hz, anchor_hz, &landscape).mean_c_score)
+                .unwrap_or(0.0)
+        };
+        let contextual_loo_metric = |result: &E6RunResult| -> f32 {
+            result
+                .snapshots
+                .last()
+                .map(|snap| {
+                    e6_contextual_endpoint_metrics(
+                        &snap.freqs_hz,
+                        anchor_hz,
+                        &contextual_space,
+                        &contextual_workspace,
+                        &contextual_du_scan,
+                    )
+                    .0
+                })
+                .unwrap_or(0.0)
+        };
+        let g_scene_metric = |result: &E6RunResult| -> f32 {
+            result
+                .snapshots
+                .last()
+                .map(|snap| {
+                    e6_contextual_endpoint_metrics(
+                        &snap.freqs_hz,
+                        anchor_hz,
+                        &contextual_space,
+                        &contextual_workspace,
+                        &contextual_du_scan,
+                    )
+                    .1
+                })
+                .unwrap_or(0.0)
+        };
+        let mean_ci = |values: &[f32]| -> (f32, f32) {
+            if values.is_empty() {
+                (0.0, 0.0)
+            } else {
+                (mean_std_scalar(values).0, ci95_half_width(values))
+            }
+        };
+        let factorial_effects = |h0: &[f32], r0: &[f32], h1: &[f32], r1: &[f32]| {
+            let interaction: Vec<f32> = h1
+                .iter()
+                .zip(r1)
+                .zip(h0.iter().zip(r0))
+                .map(|((&h1, &r1), (&h0, &r0))| (h1 - r1) - (h0 - r0))
+                .collect();
+            let main_selection: Vec<f32> = h1
+                .iter()
+                .zip(r1)
+                .zip(h0.iter().zip(r0))
+                .map(|((&h1, &r1), (&h0, &r0))| 0.5 * ((h1 - h0) + (r1 - r0)))
+                .collect();
+            let main_heredity: Vec<f32> = h1
+                .iter()
+                .zip(r1)
+                .zip(h0.iter().zip(r0))
+                .map(|((&h1, &r1), (&h0, &r0))| 0.5 * ((h1 - r1) + (h0 - r0)))
+                .collect();
+            let (sel_p, sel_method) =
+                permutation_pvalue_one_sample(&main_selection, 100_000, 0xE6C3_0101);
+            let (her_p, her_method) =
+                permutation_pvalue_one_sample(&main_heredity, 100_000, 0xE6C3_0102);
+            let (int_p, int_method) =
+                permutation_pvalue_one_sample(&interaction, 100_000, 0xE6C3_0103);
+            (
+                mean_std_scalar(&main_selection).0,
+                sel_p,
+                sel_method,
+                mean_std_scalar(&main_heredity).0,
+                her_p,
+                her_method,
+                mean_std_scalar(&interaction).0,
+                int_p,
+                int_method,
+            )
+        };
+        let render_mode =
+            |mode_label: &str,
+             selection_results: &[(&'static str, E6Condition, bool, u64, E6RunResult)],
+             heredity_label: &'static str,
+             random_label: &'static str|
+             -> String {
+                let anchor_h0 = seed_aligned_metric(&all_results, "heredity_nosel", &anchor_metric);
+                let anchor_r0 = seed_aligned_metric(&all_results, "random_nosel", &anchor_metric);
+                let anchor_h1 =
+                    seed_aligned_metric(selection_results, heredity_label, &anchor_metric);
+                let anchor_r1 =
+                    seed_aligned_metric(selection_results, random_label, &anchor_metric);
+                let loo_h0 =
+                    seed_aligned_metric(&all_results, "heredity_nosel", &contextual_loo_metric);
+                let loo_r0 =
+                    seed_aligned_metric(&all_results, "random_nosel", &contextual_loo_metric);
+                let loo_h1 =
+                    seed_aligned_metric(selection_results, heredity_label, &contextual_loo_metric);
+                let loo_r1 =
+                    seed_aligned_metric(selection_results, random_label, &contextual_loo_metric);
+                let g_h0 = seed_aligned_metric(&all_results, "heredity_nosel", &g_scene_metric);
+                let g_r0 = seed_aligned_metric(&all_results, "random_nosel", &g_scene_metric);
+                let g_h1 = seed_aligned_metric(selection_results, heredity_label, &g_scene_metric);
+                let g_r1 = seed_aligned_metric(selection_results, random_label, &g_scene_metric);
+
+                let (anchor_h0_mean, anchor_h0_ci) = mean_ci(&anchor_h0);
+                let (anchor_r0_mean, anchor_r0_ci) = mean_ci(&anchor_r0);
+                let (anchor_h1_mean, anchor_h1_ci) = mean_ci(&anchor_h1);
+                let (anchor_r1_mean, anchor_r1_ci) = mean_ci(&anchor_r1);
+                let (loo_h0_mean, loo_h0_ci) = mean_ci(&loo_h0);
+                let (loo_r0_mean, loo_r0_ci) = mean_ci(&loo_r0);
+                let (loo_h1_mean, loo_h1_ci) = mean_ci(&loo_h1);
+                let (loo_r1_mean, loo_r1_ci) = mean_ci(&loo_r1);
+                let (g_h0_mean, g_h0_ci) = mean_ci(&g_h0);
+                let (g_r0_mean, g_r0_ci) = mean_ci(&g_r0);
+                let (g_h1_mean, g_h1_ci) = mean_ci(&g_h1);
+                let (g_r1_mean, g_r1_ci) = mean_ci(&g_r1);
+
+                let (
+                    anchor_sel_eff,
+                    anchor_sel_p,
+                    anchor_sel_method,
+                    anchor_her_eff,
+                    anchor_her_p,
+                    anchor_her_method,
+                    anchor_int_eff,
+                    anchor_int_p,
+                    anchor_int_method,
+                ) = factorial_effects(&anchor_h0, &anchor_r0, &anchor_h1, &anchor_r1);
+                let (
+                    loo_sel_eff,
+                    loo_sel_p,
+                    loo_sel_method,
+                    loo_her_eff,
+                    loo_her_p,
+                    loo_her_method,
+                    loo_int_eff,
+                    loo_int_p,
+                    loo_int_method,
+                ) = factorial_effects(&loo_h0, &loo_r0, &loo_h1, &loo_r1);
+                let (
+                    g_sel_eff,
+                    g_sel_p,
+                    g_sel_method,
+                    g_her_eff,
+                    g_her_p,
+                    g_her_method,
+                    g_int_eff,
+                    g_int_p,
+                    g_int_method,
+                ) = factorial_effects(&g_h0, &g_r0, &g_h1, &g_r1);
+
+                format!(
+                    "{mode_label}\n\
+                 ----------------------------------------\n\
+                 Anchor readout (final C_score):\n\
+                 heredity, no selection: {:.4} +/- {:.4}\n\
+                 random,   no selection: {:.4} +/- {:.4}\n\
+                 heredity, selection:    {:.4} +/- {:.4}\n\
+                 random,   selection:    {:.4} +/- {:.4}\n\
+                 selection main effect: {:.4}, p={} ({})\n\
+                 heredity main effect:  {:.4}, p={} ({})\n\
+                 interaction:           {:.4}, p={} ({})\n\
+                 \n\
+                 Contextual local readout (mean LOO C_score):\n\
+                 heredity, no selection: {:.4} +/- {:.4}\n\
+                 random,   no selection: {:.4} +/- {:.4}\n\
+                 heredity, selection:    {:.4} +/- {:.4}\n\
+                 random,   selection:    {:.4} +/- {:.4}\n\
+                 selection main effect: {:.4}, p={} ({})\n\
+                 heredity main effect:  {:.4}, p={} ({})\n\
+                 interaction:           {:.4}, p={} ({})\n\
+                 \n\
+                 Contextual global readout (G_scene):\n\
+                 heredity, no selection: {:.4} +/- {:.4}\n\
+                 random,   no selection: {:.4} +/- {:.4}\n\
+                 heredity, selection:    {:.4} +/- {:.4}\n\
+                 random,   selection:    {:.4} +/- {:.4}\n\
+                 selection main effect: {:.4}, p={} ({})\n\
+                 heredity main effect:  {:.4}, p={} ({})\n\
+                 interaction:           {:.4}, p={} ({})\n\n",
+                    anchor_h0_mean,
+                    anchor_h0_ci,
+                    anchor_r0_mean,
+                    anchor_r0_ci,
+                    anchor_h1_mean,
+                    anchor_h1_ci,
+                    anchor_r1_mean,
+                    anchor_r1_ci,
+                    anchor_sel_eff,
+                    format_p_value(anchor_sel_p),
+                    anchor_sel_method,
+                    anchor_her_eff,
+                    format_p_value(anchor_her_p),
+                    anchor_her_method,
+                    anchor_int_eff,
+                    format_p_value(anchor_int_p),
+                    anchor_int_method,
+                    loo_h0_mean,
+                    loo_h0_ci,
+                    loo_r0_mean,
+                    loo_r0_ci,
+                    loo_h1_mean,
+                    loo_h1_ci,
+                    loo_r1_mean,
+                    loo_r1_ci,
+                    loo_sel_eff,
+                    format_p_value(loo_sel_p),
+                    loo_sel_method,
+                    loo_her_eff,
+                    format_p_value(loo_her_p),
+                    loo_her_method,
+                    loo_int_eff,
+                    format_p_value(loo_int_p),
+                    loo_int_method,
+                    g_h0_mean,
+                    g_h0_ci,
+                    g_r0_mean,
+                    g_r0_ci,
+                    g_h1_mean,
+                    g_h1_ci,
+                    g_r1_mean,
+                    g_r1_ci,
+                    g_sel_eff,
+                    format_p_value(g_sel_p),
+                    g_sel_method,
+                    g_her_eff,
+                    format_p_value(g_her_p),
+                    g_her_method,
+                    g_int_eff,
+                    format_p_value(g_int_p),
+                    g_int_method,
+                )
+            };
+
+        let variant_text = format!(
+            "E6 Contextual-Selection Variant Evaluation\n\
+             =========================================\n\
+             No-selection conditions are shared from the anchor-baseline 2x2.\n\
+             Selection variants only modify the recharge field during the selection-on runs.\n\
+             \n\
+             {}{}{}",
+            render_mode(
+                "Anchor baseline (lambda = 0.00)",
+                &all_results,
+                "heredity",
+                "random"
+            ),
+            render_mode(
+                "Mixed selection field (lambda = 0.25)",
+                &contextual_selection_results,
+                "heredity_sel_mix025",
+                "random_sel_mix025",
+            ),
+            render_mode(
+                "Pure contextual selection field (lambda = 1.00)",
+                &contextual_selection_results,
+                "heredity_sel_contextual",
+                "random_sel_contextual",
+            ),
+        );
+        write_with_log(
+            out_dir.join("paper_e6_contextual_selection_variant.txt"),
+            variant_text,
+        )?;
+    }
+
     Ok(())
 }
 
@@ -9106,6 +9680,54 @@ fn e6_snapshot_point(
         pairwise_entropy,
         n_alive: valid_freqs.len(),
     }
+}
+
+fn e6_contextual_endpoint_metrics(
+    freqs_hz: &[f32],
+    anchor_hz: f32,
+    space: &Log2Space,
+    workspace: &ConsonanceWorkspace,
+    du_scan: &[f32],
+) -> (f32, f32) {
+    let clean_freqs: Vec<f32> = freqs_hz
+        .iter()
+        .copied()
+        .filter(|f| f.is_finite() && *f > 0.0)
+        .collect();
+    if clean_freqs.is_empty() {
+        return (0.0, 0.0);
+    }
+
+    let fixed = e2_fixed_drone(space, anchor_hz);
+    let agent_indices: Vec<usize> = clean_freqs
+        .iter()
+        .map(|&f| space.nearest_index(f))
+        .collect();
+    let (env_scan, density_scan) = build_env_scans_with_fixed_sources(
+        space,
+        std::slice::from_ref(&fixed.idx),
+        &agent_indices,
+        du_scan,
+    );
+    let mut env_loo = Vec::new();
+    let mut density_loo = Vec::new();
+    let (mean_c_score_loo, _) = mean_c_score_loo_pair_at_indices_with_prev_reused(
+        space,
+        workspace,
+        &env_scan,
+        &density_scan,
+        du_scan,
+        &agent_indices,
+        &agent_indices,
+        &agent_indices,
+        &mut env_loo,
+        &mut density_loo,
+    );
+
+    let mut freqs_with_anchor = clean_freqs;
+    freqs_with_anchor.push(fixed.hz);
+    let g_scene = e2_scene_g_point_for_freqs(space, workspace, du_scan, &freqs_with_anchor).g_scene;
+    (mean_c_score_loo, g_scene)
 }
 
 fn e6_consonant_occupation(freqs: &[f32], anchor_hz: f32, window_st: f32) -> f32 {
@@ -9810,6 +10432,7 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
                                 e2_aligned_exact_local_search_radius_st: None,
                                 disable_within_life_pitch_movement: false,
                                 selection_enabled: true,
+                                selection_contextual_mix_weight: 0.0,
                                 juvenile_cull_enabled: true,
                             };
                             let result = run_e6(&cfg);
@@ -10133,6 +10756,7 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
                                         e2_aligned_exact_local_search_radius_st: None,
                                         disable_within_life_pitch_movement: false,
                                         selection_enabled: true,
+                                        selection_contextual_mix_weight: 0.0,
                                         juvenile_cull_enabled: true,
                                     };
                                     let result = run_e6(&cfg);
@@ -10342,6 +10966,7 @@ fn generate_e6_sampler_debug_plots() -> Result<(), Box<dyn Error>> {
         e2_aligned_exact_local_search_radius_st: None,
         disable_within_life_pitch_movement: false,
         selection_enabled: true,
+        selection_contextual_mix_weight: 0.0,
         juvenile_cull_enabled: true,
     };
     let result = run_e6(&cfg);
@@ -33120,6 +33745,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
                 e2_aligned_exact_local_search_radius_st: None,
                 disable_within_life_pitch_movement: true,
                 selection_enabled: cond.selection_enabled,
+                selection_contextual_mix_weight: 0.0,
                 juvenile_cull_enabled: false,
             };
             let result = run_e6(&cfg);

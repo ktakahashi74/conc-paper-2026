@@ -161,6 +161,7 @@ pub struct E6RunConfig {
     pub e2_aligned_exact_local_search_radius_st: Option<f32>,
     pub disable_within_life_pitch_movement: bool,
     pub selection_enabled: bool,
+    pub selection_contextual_mix_weight: f32,
     pub juvenile_cull_enabled: bool,
 }
 
@@ -853,7 +854,7 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
 
     for step in 0..cfg.steps_cap {
         // Recompute landscape from all alive agents on every update (includes roughness).
-        if step > 0 {
+        if step > 0 || cfg.selection_contextual_mix_weight > 0.0 {
             update_e4_landscape_from_population(
                 &space,
                 &params,
@@ -880,8 +881,12 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
             if !agent.is_alive() {
                 continue;
             }
-            let c_score =
-                selection_reference_landscape.evaluate_pitch_score(agent.body.base_freq_hz());
+            let c_score = e6_selection_score(
+                &selection_reference_landscape,
+                &landscape,
+                agent.body.base_freq_hz(),
+                cfg.selection_contextual_mix_weight,
+            );
             if cfg.selection_enabled {
                 apply_selection_recharge(agent, c_score, E6_SELECTION_RECHARGE_PER_SEC, dt);
             }
@@ -2769,6 +2774,90 @@ fn oracle_azimuth_search(
     (best_freq, best_score, best_level)
 }
 
+fn collect_alive_erbs(pop: &Population) -> Vec<f32> {
+    pop.individuals
+        .iter()
+        .filter(|agent| agent.is_alive())
+        .filter_map(|agent| {
+            let freq_hz = agent.body.base_freq_hz();
+            if !freq_hz.is_finite() || freq_hz <= 0.0 {
+                return None;
+            }
+            Some(hz_to_erb(freq_hz))
+        })
+        .collect()
+}
+
+fn e2_aligned_azimuth_search(
+    reference_landscape: &Landscape,
+    center_freq_hz: f32,
+    radius_st: f32,
+    tessitura_min_hz: f32,
+    tessitura_max_hz: f32,
+    neighbor_erbs: &[f32],
+) -> (f32, f32, f32) {
+    if !center_freq_hz.is_finite() || center_freq_hz <= 0.0 {
+        return (center_freq_hz, 0.0, 0.0);
+    }
+
+    let current_pitch_log2 = center_freq_hz.max(1e-6).log2();
+    let current_erb = hz_to_erb(center_freq_hz.max(1e-6));
+    let kernel_params = KernelParams::default();
+    let mut current_crowding = 0.0f32;
+    for &other_erb in neighbor_erbs {
+        current_crowding += crowding_runtime_delta_erb(&kernel_params, current_erb - other_erb);
+    }
+
+    let mut best_freq = center_freq_hz;
+    let mut best_raw_score = reference_landscape.evaluate_pitch_score(center_freq_hz);
+    let mut best_level = reference_landscape
+        .evaluate_pitch_level(center_freq_hz)
+        .clamp(0.0, 1.0);
+    let mut best_objective = best_raw_score - E2_MATCH_CROWDING_WEIGHT * current_crowding;
+    let mut best_abs_delta = 0.0f32;
+
+    let radius_steps = (radius_st.max(0.0) / 0.25).round() as i32;
+    let step_log2 = 0.25f32 / 12.0;
+    for offset_steps in -radius_steps..=radius_steps {
+        let candidate_pitch_log2 = current_pitch_log2 + offset_steps as f32 * step_log2;
+        let candidate_freq_hz = 2.0f32
+            .powf(candidate_pitch_log2)
+            .clamp(tessitura_min_hz, tessitura_max_hz);
+        if !candidate_freq_hz.is_finite() || candidate_freq_hz <= 0.0 {
+            continue;
+        }
+
+        let candidate_erb = hz_to_erb(candidate_freq_hz.max(1e-6));
+        let mut candidate_crowding = 0.0f32;
+        for &other_erb in neighbor_erbs {
+            candidate_crowding +=
+                crowding_runtime_delta_erb(&kernel_params, candidate_erb - other_erb);
+        }
+
+        let candidate_raw_score = reference_landscape.evaluate_pitch_score(candidate_freq_hz);
+        let candidate_level = reference_landscape
+            .evaluate_pitch_level(candidate_freq_hz)
+            .clamp(0.0, 1.0);
+        let candidate_abs_delta = (candidate_pitch_log2 - current_pitch_log2).abs();
+        let candidate_objective = candidate_raw_score
+            - E2_MATCH_CROWDING_WEIGHT * candidate_crowding
+            - shared_hill_move_cost_coeff() * candidate_abs_delta;
+
+        if candidate_objective > best_objective + 1e-6
+            || ((candidate_objective - best_objective).abs() <= 1e-6
+                && candidate_abs_delta < best_abs_delta)
+        {
+            best_freq = candidate_freq_hz;
+            best_raw_score = candidate_raw_score;
+            best_level = candidate_level;
+            best_objective = candidate_objective;
+            best_abs_delta = candidate_abs_delta;
+        }
+    }
+
+    (best_freq, best_raw_score, best_level)
+}
+
 fn oracle_global_anchor_search(
     reference_landscape: &Landscape,
     tessitura_min_hz: f32,
@@ -3061,6 +3150,21 @@ fn apply_selection_recharge(agent: &mut Individual, c_score: f32, rate_per_sec: 
     if let AnyArticulationCore::Entrain(ref mut core) = agent.articulation.core {
         core.energy = (core.energy + delta).max(0.0);
     }
+}
+
+fn e6_selection_score(
+    selection_reference_landscape: &Landscape,
+    contextual_landscape: &Landscape,
+    freq_hz: f32,
+    contextual_mix_weight: f32,
+) -> f32 {
+    let anchor_score = selection_reference_landscape.evaluate_pitch_score(freq_hz);
+    let w = contextual_mix_weight.clamp(0.0, 1.0);
+    if w <= 0.0 {
+        return anchor_score;
+    }
+    let contextual_score = contextual_landscape.evaluate_pitch_score(freq_hz);
+    (1.0 - w) * anchor_score + w * contextual_score
 }
 
 fn e6_agent_energy(agent: &Individual) -> Option<f32> {
