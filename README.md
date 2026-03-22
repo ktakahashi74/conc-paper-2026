@@ -2,7 +2,7 @@
 
 Paper and experiment code.
 
-**[Supplementary Material (PDF)](supplementary.pdf)** — terrain controls, ablation details, and additional tables (S1–S7).
+**[Supplementary Material (PDF)](supplementary.pdf)** — terrain controls, ablation details, and additional tables (S1–S8).
 
 ## Abstract
 

@@ -96,21 +96,23 @@
 </div>
 
 <div class="track">
-  <h2>40 &mdash; Hereditary Polyphony (Experiment 6b)</h2>
+  <h2>40 &mdash; Hereditary Polyphony (Experiment 4; internal E6b)</h2>
   <p class="meta">~107 s &middot; heredity/random &times; selection on/off, seeds 0 and 10</p>
-  <p>This replay tracks the current E6b hereditary-polyphony assay. The population
+  <p>This replay tracks the current paper-facing hereditary assay. The population
      is 16 agents, adult pitch remains locked, hereditary respawn is family-based,
-     and only newborns receive brief local settlement. Within each seed, segments
-     run from the strongest hereditary fuse condition toward the random controls.</p>
+     the final azimuth is chosen by local search, and only newborns receive a
+     brief slot-local settling phase. Within each seed, segments run from the
+     strongest hereditary condition toward the matched-random controls.</p>
   <table>
     <tr><th>Condition</th><th>respawn</th><th>selection</th></tr>
-    <tr><td>H+S</td><td>hereditary family replay</td><td>on</td></tr>
-    <tr><td>H-only</td><td>hereditary family replay</td><td>off</td></tr>
-    <tr><td>S-only</td><td>random</td><td>on</td></tr>
-    <tr><td>neither</td><td>random</td><td>off</td></tr>
+    <tr><td>H+S</td><td>family-biased respawn + local azimuth search</td><td>on</td></tr>
+    <tr><td>H-only</td><td>family-biased respawn + local azimuth search</td><td>off</td></tr>
+    <tr><td>S-only</td><td>matched log-random candidates</td><td>on</td></tr>
+    <tr><td>neither</td><td>matched log-random candidates</td><td>off</td></tr>
   </table>
-  <p>Listen for the few-band fusion in <strong>H+S</strong> and <strong>H-only</strong>,
-     contrasted with the broader pitch cloud of the random controls.</p>
+  <p>Listen for the clearest multi-band polyphony in <strong>H+S</strong>; the
+     heredity-only arm retains some structure, while the matched-random controls
+     remain broader and less musically focused.</p>
   <audio controls preload="none">
     <source src="audio/40_e6b_polyphony.wav?v=20260322-2" type="audio/wav">
   </audio>

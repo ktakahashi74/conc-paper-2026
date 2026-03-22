@@ -70,20 +70,27 @@
 \hspace*{2em}$\phi_i \gets \phi_i + \dot{\phi}_i \cdot dt$\\
 \hspace*{1em}Record PLV and onset phase relative to the canonical beat $\theta(t)$
 
-\subsection{S1.4 Hereditary Respawn (Experiment 4)}
+\subsection{S1.4 Hereditary Respawn (Hereditary Adaptation)}
 
-\noindent\textbf{Parameters:} mutation $\sigma\!=\!0.003\,\log_2$, crowding weight $\lambda_C$.
+\noindent\textbf{Key parameters:} $N\!=\!16$, range $\pm 2$\,oct, candidate count $K\!=\!16$, slot-local settling $=2$ ticks, family-local azimuth search radius $0.5$\,st.
 
 \smallskip
 \noindent\texttt{for} each time step:\\
-\hspace*{1em}Run metabolic policy (S1.2) with recharge enabled\\
-\hspace*{1em}\texttt{if} agent $a_i$ dies ($E_i \leq 0$):\\
-\hspace*{2em}Select parent $a_p$ uniformly from surviving agents\\
-\hspace*{2em}$x_{\text{new}} \sim \mathcal{N}(x_p,\,\sigma^2)$; clamp to anchor $\pm 1$\,oct\\
-\hspace*{2em}Respawn at $x_{\text{new}}$ with $E = 1.0$
+\hspace*{1em}Advance metabolism using the polyphonic leave-one-out score ($C_{\text{score}}$ with crowding/capacity penalties)\\
+\hspace*{1em}\texttt{if} selection = on: recharge and parent-choice weights depend on current score\\
+\hspace*{1em}\texttt{if} selection = off: use neutral turnover with a small background-death floor\\
+\hspace*{1em}\texttt{if} agent $a_i$ dies:\\
+\hspace*{2em}\texttt{if} respawn = heredity:\\
+\hspace*{3em}Choose parent $a_p$ from survivors\\
+\hspace*{3em}Form a parent-biased set of harmonic-family peaks under the shared scene filter\\
+\hspace*{2em}\texttt{else} (matched random control):\\
+\hspace*{3em}Sample $K$ log-random candidates across tessitura and score them with the same scene filter\\
+\hspace*{2em}Choose one target family / slot\\
+\hspace*{2em}Search locally within the chosen family to set the final azimuth\\
+\hspace*{2em}Respawn with initial energy $E_0$
 
 \smallskip
-\noindent\textbf{Random control:} respawn at $\mathrm{Uniform}(\text{anchor} \pm 1\,\text{oct})$ instead.
+\noindent\textbf{Matched random control:} adult pitch remains locked, the same metabolic policy is used, and the same short slot-local settling phase is applied; only the parent-biased family choice is removed.
 
 \section{S2. Normalization of $H_{01}$ and $R_{01}$}
 
@@ -124,9 +131,9 @@ Table~S1 lists all parameters used across experiments.
 \textbf{Parameter} & \textbf{Symbol} & \textbf{Exp.\,1} & \textbf{Exp.\,2} & \textbf{Exp.\,3} & \textbf{Exp.\,4} \\
 \midrule
 Anchor frequency & $f_0$ & 220\,Hz & 220\,Hz & 220\,Hz & 220\,Hz \\
-Population size & $N$ & 24 & 32 & 32 & 32 \\
-Seeds & & 20 & 20 & 20 & 20 \\
-Pitch range & & $\pm 2$\,oct & $\pm 1$\,oct & $\pm 1$\,oct & $\pm 1$\,oct \\
+Population size & $N$ & 24 & 32 & 32 & 16 \\
+Seeds & & 20 & 20 & 20 & 4 \\
+Pitch range & & $\pm 2$\,oct & $\pm 1$\,oct & $\pm 1$\,oct & $\pm 2$\,oct \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{Harmonicity / Roughness}} \\
 Harmonic order & $N_H$ & 16 & 16 & 16 & 16 \\
@@ -140,7 +147,8 @@ Sigmoid $(\beta,\theta)$ & & --- & $(2,0)$ & --- & $(2,0)$ \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{Pitch adaptation}} \\
 Step size & $\lambda$ & 0.15\,st & --- & --- & --- \\
-Crowding weight & $\lambda_C$ & 0.15 & --- & --- & 0.15 \\
+Crowding weight & $\lambda_C$ & 0.15 & --- & --- & 0.005 \\
+Capacity penalty & & --- & --- & --- & radius 35\,ct; 3 free voices; weight 0.07 \\
 Initial temperature & $T_0$ & 0.05 & --- & --- & --- \\
 Annealing time constant & $\tau$ & 30 steps & --- & --- & --- \\
 Duration & & 50 sweeps & --- & --- & --- \\
@@ -148,11 +156,12 @@ Phase switch & & step 25 & --- & --- & --- \\
 Burn-in discarded & & 10 steps & --- & --- & --- \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{Metabolism}} \\
-Basal cost & $c_b$ & --- & 0.5/s & --- & 0.5/s \\
-Recharge coefficient & $r_E$ & --- & 0.4/s & --- & 0.10/s \\
+Basal cost & $c_b$ & --- & 0.5/s & --- & 0.12/s \\
+Recharge coefficient & $r_E$ & --- & 0.4/s & --- & 0.20/s (selection-on) \\
 Energy cap & $E_{\text{cap}}$ & --- & 1.0 & --- & 1.0 \\
 Time step & $\Delta t$ & --- & 512/48k\,s & 0.02\,s & 512/48k\,s \\
-Termination & & --- & 200 deaths & 40\,s & 4000 deaths \\
+Background death & & --- & --- & --- & 0.03/s (selection-off only) \\
+Termination & & --- & 200 deaths & 40\,s & 12k steps \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{Temporal coupling}} \\
 Base coupling & $k_{\text{time}}$ & --- & --- & 3.0 & --- \\
@@ -161,8 +170,11 @@ Intrinsic frequency & $\omega_0$ & --- & --- & $1.8 \cdot 2\pi$ & --- \\
 Frequency jitter & & --- & --- & $\pm 2\%$ & --- \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{Heredity}} \\
-Mutation $\sigma$ & $\sigma_m$ & --- & --- & --- & $0.003\,\log_2$ \\
-Parent selection & & --- & --- & --- & uniform \\
+Respawn candidates & & --- & --- & --- & matched $K=16$ in both arms \\
+Parent proposal & & --- & --- & --- & contextual-$C$ family peaks \\
+Parent selection & & --- & --- & --- & score/energy-weighted (sel.\ on), uniform (sel.\ off) \\
+Juvenile settling & & --- & --- & --- & 2 ticks, 0.20\,st radius \\
+Azimuth policy & & --- & --- & --- & local search $\pm 0.5$\,st at 0.05\,st grid \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{JI cross-validation}} \\
 Proximity kernel & $\alpha$ & --- & --- & --- & $4.0 \times 10^{-4}\,\text{ct}^{-2}$ \\
@@ -184,38 +196,28 @@ The relation between Conchordal's spectral and temporal axes is not treated as a
 \label{fig:supp-e5-bridge}
 \end{figure*}
 
-\section{S4. Experiment 4: Full Sweep Results}
+\section{S4. Hereditary Adaptation: Current Supplementary Baselines}
 
-Table~S2 reports the hereditary adaptation parameter sweep. Each of the 15 conditions was run with 20 seeds per arm (heredity vs.\ random control). The reported setting in the main text ($\sigma\!=\!0.003$, deaths $=\!4{,}000$, $N\!=\!32$) is marked with $\star$.
+The current paper-facing hereditary assay is no longer the legacy parameter sweep reported in earlier drafts. The main text uses one fixed design and compares heredity against a \emph{matched log-random} baseline that shares the same scene filter and short slot-local settling phase. Table~S2 reports the current selection-on comparisons for the paper assay and two stronger supplementary random baselines. These additional baselines are useful diagnostically, but they are not equivalent controls for musical polyphony: the unrestricted hard-random restart can maximize raw $C_{\text{score}}$ by collapsing into very few occupied bands.
 
 \begin{table*}[t]
 \centering
-\caption{Full parameter sweep for Experiment~4 (hereditary adaptation). Each row reports one parameter setting; ``Sep.''\ is the mean $\Delta C_{\text{score}}$(heredity) $-$ mean $\Delta C_{\text{score}}$(random). Welch's $t$-test compares the two arms ($n\!=\!20$ seeds each). $\star$ marks the setting reported in the main text.}
-\label{tab:sweep}
+\caption{Current hereditary-adaptation baselines (selection-on arms, 4 matched seeds). The main paper comparison is heredity$+$selection vs.\ matched log-random$+$selection.}
+\label{tab:exp4-current}
 \footnotesize
-\begin{tabular}{@{}rrrccccc@{}}
+\begin{tabular}{@{}lccccc@{}}
 \toprule
-$\sigma$ & Deaths & $N$ & $\overline{\Delta C}_{\text{her}}$ & $\overline{\Delta C}_{\text{rnd}}$ & Sep. & $t$ & $p$ \\
+Condition & Baseline type & $C_{\text{score}}$ & Entropy & $\mathrm{JI}_{\text{score}}$ & Unique bins \\
 \midrule
-0.001 & 2000 & 32 & $0.074 \pm 0.150$ & $0.004 \pm 0.035$ & 0.071 & 2.06 & 0.052 \\
-0.001 & 3000 & 32 & $0.117 \pm 0.174$ & $0.007 \pm 0.025$ & 0.111 & 2.81 & 0.011$^*$ \\
-0.002 & 2000 & 32 & $0.067 \pm 0.119$ & $0.004 \pm 0.035$ & 0.063 & 2.29 & 0.032$^*$ \\
-0.002 & 3000 & 32 & $0.039 \pm 0.093$ & $0.007 \pm 0.025$ & 0.032 & 1.49 & 0.151 \\
-0.003 & 2000 & 16 & $0.035 \pm 0.101$ & $-0.004 \pm 0.036$ & 0.039 & 1.62 & 0.118 \\
-0.003 & 2000 & 24 & $0.089 \pm 0.155$ & $0.004 \pm 0.029$ & 0.085 & 2.41 & 0.025$^*$ \\
-0.003 & 2000 & 32 & $0.096 \pm 0.138$ & $0.004 \pm 0.035$ & 0.093 & 2.91 & 0.008$^*$ \\
-0.003 & 2000 & 48 & $0.061 \pm 0.141$ & $0.004 \pm 0.021$ & 0.058 & 1.80 & 0.087 \\
-0.003 & 3000 & 32 & $0.118 \pm 0.160$ & $0.007 \pm 0.025$ & 0.111 & 3.07 & 0.006$^*$ \\
-$\star$\,0.003 & 4000 & 32 & $0.121 \pm 0.177$ & $-0.003 \pm 0.027$ & 0.124 & 3.10 & 0.006$^*$ \\
-0.003 & 5000 & 32 & $0.113 \pm 0.167$ & $-0.003 \pm 0.025$ & 0.116 & 3.07 & 0.006$^*$ \\
-0.005 & 2000 & 32 & $0.078 \pm 0.135$ & $0.004 \pm 0.035$ & 0.075 & 2.40 & 0.026$^*$ \\
-0.005 & 3000 & 32 & $0.072 \pm 0.119$ & $0.007 \pm 0.025$ & 0.065 & 2.39 & 0.027$^*$ \\
-0.01 & 2000 & 32 & $0.058 \pm 0.102$ & $0.004 \pm 0.035$ & 0.054 & 2.25 & 0.034$^*$ \\
-0.02 & 2000 & 32 & $0.106 \pm 0.135$ & $0.004 \pm 0.035$ & 0.102 & 3.26 & 0.004$^*$ \\
+Heredity$+$selection & main heredity assay & 0.549 & 3.259 & 0.399 & 10.75 \\
+Random$+$selection & matched log-random & 0.341 & 4.325 & 0.191 & 14.00 \\
+Random$+$selection & scene-peak matched random & 0.346 & 4.137 & 0.288 & 14.00 \\
+Random$+$selection & unrestricted hard random-log & 0.837 & 1.165 & 0.598 & 5.25 \\
 \bottomrule
-\multicolumn{8}{@{}l}{\footnotesize $^*$Significant at $p < 0.05$. $\star$ = reported setting in the main text ($\sigma\!=\!0.003$, 4{,}000 deaths, $N\!=\!32$).}
 \end{tabular}
 \end{table*}
+
+The main hereditary claim is therefore intentionally conservative. It is made against the matched log-random baseline rather than against the unrestricted hard-random restart, because the latter is a much stronger optimizer and tends to over-concentrate into a few occupied bands. Under the matched baseline, the current assay supports the paper's mechanistic claim: lineage-biased family choice plus local azimuth search plus metabolic selection yields more musical, less diffuse polyphony than matched random respawn.
 
 \section{S5. Bilinear Consonance Core: Derivation}
 
@@ -239,17 +241,11 @@ This product is nonnegative and peaks where harmonicity is high and roughness is
 
 \noindent\textbf{$C_{\text{level01}}$}: $C_{\text{field}}$ passed through a logistic sigmoid $\sigma(\beta(x - \theta))$ with $\beta=2$, $\theta=0$. This bounds the metabolic signal to $[0,1]$ while preserving the ranking.
 
-\section{S6. Sign-Flip Permutation Test}
+\section{S6. Statistical Status of the Current Hereditary Assay}
 
-The interaction contrast for the Exp.~4 factorial (Figure~5 in the main text) is tested with a one-sample sign-flip permutation test:
+Earlier versions of this project reported a 20-seed factorial heredity analysis with an exact sign-flip permutation test. That legacy test no longer matches the present paper-facing hereditary assay and has therefore been removed from the main argument. The current Figure~4 is a 4-seed mechanism rerun of the revised design, so the paper reports seed-level means, 95\% confidence intervals, trajectory area ($\mathrm{AUC}_C$), and threshold-crossing counts rather than reusing the obsolete legacy permutation result.
 
-\begin{enumerate}
-\item For each of $n=20$ matched seeds, compute the contrast $d_i = C_i(\text{her,sel}) - C_i(\text{her,no\,sel}) - C_i(\text{rnd,sel}) + C_i(\text{rnd,no\,sel})$.
-\item Under $H_0$: $E[d_i] = 0$, each $d_i$ is equally likely to be positive or negative. For each of $2^{20} = 1{,}048{,}576$ sign patterns $s \in \{-1,+1\}^{20}$, compute $\bar{d}_s = \frac{1}{n}\sum_i s_i \, d_i$.
-\item The $p$-value is the fraction of sign patterns yielding $|\bar{d}_s| \geq |\bar{d}_{\text{obs}}|$.
-\end{enumerate}
-
-Because $n=20$, exact enumeration is feasible. The observed mean contrast is $0.49$ ($p < 0.001$).
+The intended next inferential step is a full 20-seed rerun of the \emph{current} assay, after which a renewed nonparametric seed-level test can be reinstated. Until then, the hereditary result should be read as mechanism-level evidence rather than as the final word on cross-seed inferential robustness.
 
 \section{S7. Consonance-Only Control (Experiment 1)}
 
@@ -403,81 +399,16 @@ Unique-bin counts ($5.8$--$6.5$) and entropy ($1.61$--$1.84$\,nats) are stable a
 $C_{\text{score}}$ increases when the roughness penalty $|b|$ decreases or the interaction weight $c$ increases ($0.729$--$0.814$), which is expected from the kernel definition.
 The overall level of unique bins ($\approx$6) matches the consonance-only control (S7), confirming that the crowding penalty---not the kernel coefficients---is the primary driver of the higher diversity ($9.4$ bins) seen in the full local-search condition.
 
-\subsection{S8.4 Terrain Control (Experiment~4)}
+\subsection{S8.4 Terrain Control (Hereditary Adaptation)}
 
-To test whether the synergistic selection$\times$heredity interaction (main text, \S5.1) depends on the coherent structure of the psychoacoustic landscape, all four Exp.~4 conditions were repeated on a shuffled landscape, yielding a complete $2 \times 2 \times 2$ factorial (heredity/random $\times$ selection on/off $\times$ real/shuffled terrain; 8 conditions $\times$ 20 seeds $= 160$ runs).
+The updated hereditary assay has \emph{not} yet been rerun on shuffled terrain. The corresponding legacy table was removed because it described an earlier design that no longer matches the current paper-facing hereditary mechanism. The present hereditary claim should therefore be read as mechanism-level evidence within one well-characterized psychoacoustic terrain, exactly as stated in the main text.
 
-% TODO: regenerate Table~\ref{tab:s7-integration-terrain} with new selection×heredity data
-\begin{table}[h]
-\centering
-\caption{Full $2{\times}2{\times}2$ terrain control (20 seeds each).}
-\label{tab:s7-integration-terrain}
-\footnotesize
-\begin{tabular}{@{}lccc@{}}
-\toprule
-Condition & Real & Shuffled & Diff. \\
-\midrule
-HS (her.\ + sel)     & --- & --- & --- \\
-HN (her., no sel)    & --- & --- & --- \\
-RS (rnd.\ + sel)     & --- & --- & --- \\
-RN (rnd., no sel)    & --- & --- & --- \\
-\midrule
-\multicolumn{4}{@{}l}{Interaction contrast (real): $0.49$, $p < 0.001$} \\
-\multicolumn{4}{@{}l}{Interaction contrast (shuffled): ---} \\
-\bottomrule
-\end{tabular}
-\end{table}
+\subsection{S8.5 Topology Generalization (Hereditary Adaptation)}
 
-On real terrain, the interaction contrast is large and significant ($0.49$, $p < 0.001$); the shuffled-landscape result is expected to eliminate the synergy, confirming that it requires coherent terrain structure.
-% TODO: update prose with shuffled-landscape numbers once data is regenerated
+Likewise, the updated hereditary assay has not yet been rerun across the partial-count topology battery used for the polyphony assay. No topology-generalization table is therefore reported here. When this battery is rerun, it will use the current paper-facing hereditary mechanism: family-biased respawn, local azimuth search, metabolic selection, and the matched log-random baseline.
 
-\subsection{S8.5 Topology Generalization (Experiment~4)}
+\subsection{S8.6 Phase Coherence (Hereditary Adaptation)}
 
-To test whether the selection$\times$heredity interaction depends on the specific harmonicity profile used in the default configuration, we repeated the four real-terrain conditions (HS, HN, RS, RN; 20 seeds each) under three landscape topologies, generated by varying the number of environment partials in the anchor harmonic series (3, 6, 10). Fewer partials produce a smoother, broader harmonicity landscape; more partials increase spectral fine structure.
-
-% TODO: regenerate Table~\ref{tab:s7-topology} with new selection×heredity data
-\begin{table}[h]
-\centering
-\caption{Topology generalization: interaction contrast across different numbers of environment partials (20 seeds each).}
-\label{tab:s7-topology}
-\footnotesize
-\begin{tabular}{@{}lccccc@{}}
-\toprule
-Partials & HN & HS & RN & RS & Contrast \\
-\midrule
-3  & --- & --- & --- & --- & --- \\
-6 (default)  & .282 & .857 & .223 & .306 & $.49^{***}$ \\
-10 & --- & --- & --- & --- & --- \\
-\bottomrule
-\multicolumn{6}{@{}l}{\footnotesize $^{***}p < 0.001$.}
-\end{tabular}
-\end{table}
-
-The default-topology interaction contrast is $0.49$ ($p < 0.001$); generalization across alternative topologies remains to be confirmed with the updated design.
-% TODO: update once topology sweep is re-run
-
-\subsection{S8.6 Phase Coherence (Experiment~4)}
-
-Each Experiment~4 agent entrains to a shared theta oscillator via a Kuramoto coupling mechanism. We computed the population Kuramoto order parameter $R = \lvert N^{-1} \sum_j e^{i(\phi_j - \phi_\theta)} \rvert$ at the final snapshot, where $\phi_j$ is each agent's rhythm phase and $\phi_\theta$ is the global theta phase ($R = 1$ indicates perfect synchrony; $R \approx 0$ indicates incoherence).
-
-% TODO: regenerate Table~\ref{tab:s7-phase} with new selection×heredity data
-\begin{table}[h]
-\centering
-\caption{Phase coherence $R$ (Kuramoto order parameter) at the final snapshot (20 seeds each).}
-\label{tab:s7-phase}
-\footnotesize
-\begin{tabular}{@{}lc@{}}
-\toprule
-Condition & $R$ \\
-\midrule
-HS (heredity + sel)   & --- \\
-HN (heredity, no sel) & --- \\
-RS (random + sel)     & --- \\
-RN (random, no sel)   & --- \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-% TODO: update prose once phase coherence data is regenerated
+Phase-coherence readouts from earlier hereditary builds are not carried forward into the present paper-facing assay. The current hereditary claim is intentionally spectral and lineage-based: it concerns where offspring are placed in pitch space and how that placement accumulates across generations. Any future reintroduction of rhythmic-order statistics for the hereditary assay should be treated as a separate supplementary extension rather than as part of the current main claim.
 
 \end{document}

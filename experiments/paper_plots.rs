@@ -7908,6 +7908,10 @@ fn plot_e6b_hereditary_polyphony(
     let final_ji_random_nosel = final_ji_by_label.remove("random_nosel").unwrap_or_default();
     let final_ji_heredity = final_ji_by_label.remove("heredity").unwrap_or_default();
     let final_ji_random = final_ji_by_label.remove("random").unwrap_or_default();
+    let ji_mean_heredity_nosel = mean_std_scalar(&final_ji_heredity_nosel).0;
+    let ji_mean_random_nosel = mean_std_scalar(&final_ji_random_nosel).0;
+    let ji_mean_heredity = mean_std_scalar(&final_ji_heredity).0;
+    let ji_mean_random = mean_std_scalar(&final_ji_random).0;
     let final_lifetime_heredity_nosel = final_lifetime_by_label
         .remove("heredity_nosel")
         .unwrap_or_default();
@@ -8078,12 +8082,7 @@ fn plot_e6b_hereditary_polyphony(
         });
         let hs_loo_mean = mean_std_scalar(&final_loo_heredity).0;
         let hs_entropy_mean = mean_std_scalar(&final_entropy_heredity).0;
-        let hs_ji_mean = mean_std_scalar(
-            final_ji_by_label
-                .get("heredity")
-                .map_or(&[][..], Vec::as_slice),
-        )
-        .0;
+        let hs_ji_mean = ji_mean_heredity;
         let hs_unique_bins_mean = mean_std_scalar(
             final_unique_bins_by_label
                 .get("heredity")
@@ -8275,30 +8274,10 @@ fn plot_e6b_hereditary_polyphony(
         ci95_half_width(&final_entropy_heredity),
         mean_std_scalar(&final_entropy_random).0,
         ci95_half_width(&final_entropy_random),
-        mean_std_scalar(
-            final_ji_by_label
-                .get("heredity_nosel")
-                .map_or(&[][..], Vec::as_slice)
-        )
-        .0,
-        mean_std_scalar(
-            final_ji_by_label
-                .get("random_nosel")
-                .map_or(&[][..], Vec::as_slice)
-        )
-        .0,
-        mean_std_scalar(
-            final_ji_by_label
-                .get("heredity")
-                .map_or(&[][..], Vec::as_slice)
-        )
-        .0,
-        mean_std_scalar(
-            final_ji_by_label
-                .get("random")
-                .map_or(&[][..], Vec::as_slice)
-        )
-        .0,
+        ji_mean_heredity_nosel,
+        ji_mean_random_nosel,
+        ji_mean_heredity,
+        ji_mean_random,
         mean_std_scalar(
             final_unique_bins_by_label
                 .get("heredity_nosel")

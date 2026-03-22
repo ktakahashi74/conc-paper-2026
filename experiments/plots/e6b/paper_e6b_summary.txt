@@ -3,71 +3,71 @@ E6b summary
 Tuning: crowding=0.0050, capacity_weight=0.0700, capacity_radius_cents=35.0, free_voices=3, parent_share_weight=1.00, parent_energy_weight=0.25, proposal_kind=contextual_c, proposal_sigma_st=9.00, proposal_candidates=16, azimuth_mode=search, juvenile_mode=on, juvenile_ticks=2, survival_low=0.30, survival_high=0.80, survival_recharge=0.200, background_death=0.0000, respawn_parent_prior_mix=0.15, same_band_discount=0.08, octave_discount=0.20
 
 Final LOO C_score:
-heredity, no selection: 0.4487 +/- 0.0191
-random,   no selection: 0.2706 +/- 0.0159
-heredity, selection:    0.5357 +/- 0.0172
-random,   selection:    0.3576 +/- 0.0194
+heredity, no selection: 0.4680 +/- 0.0481
+random,   no selection: 0.2728 +/- 0.0077
+heredity, selection:    0.5488 +/- 0.0108
+random,   selection:    0.3412 +/- 0.0219
 
 Final interval entropy:
-heredity, no selection: 3.8810 +/- 0.0810
-random,   no selection: 4.4795 +/- 0.0341
-heredity, selection:    3.2808 +/- 0.0975
-random,   selection:    4.2197 +/- 0.0603
+heredity, no selection: 3.8734 +/- 0.2405
+random,   no selection: 4.4220 +/- 0.0969
+heredity, selection:    3.2585 +/- 0.1163
+random,   selection:    4.3249 +/- 0.0685
 
 Final JI score (means):
-heredity, no selection: 0.2464
-random,   no selection: 0.1157
-heredity, selection:    0.3232
-random,   selection:    0.1973
+heredity, no selection: 0.2353
+random,   no selection: 0.1293
+heredity, selection:    0.3989
+random,   selection:    0.1908
 
 Final unique bins (means):
-heredity, no selection: 12.050
-random,   no selection: 15.050
-heredity, selection:    12.300
-random,   selection:    14.350
+heredity, no selection: 12.500
+random,   no selection: 14.750
+heredity, selection:    10.750
+random,   selection:    14.000
 
 Mean lifetime steps:
-heredity, no selection: 64.09
-random,   no selection: 64.02
-heredity, selection:    120.31
-random,   selection:    74.09
+heredity, no selection: 64.26
+random,   no selection: 63.90
+heredity, selection:    128.86
+random,   selection:    74.06
 
 Respawn redundancy diagnostics:
-same-pitch (<=15c): hered_nosel=0.0651  rand_nosel=0.0083  hered_sel=0.0668  rand_sel=0.0095
-same-family        : hered_nosel=0.0052  rand_nosel=0.0000  hered_sel=0.0044  rand_sel=0.0000
-same-octave        : hered_nosel=0.1387  rand_nosel=0.0000  hered_sel=0.1335  rand_sel=0.0000
-underfilled target : hered_nosel=0.9545  rand_nosel=0.9986  hered_sel=0.9412  rand_sel=0.9964
-mean band occupancy: hered_nosel=1.96  rand_nosel=1.28  hered_sel=2.10  rand_sel=1.34
-mean proposal rank : hered_nosel=2.51  rand_nosel=5.99  hered_sel=2.97  rand_sel=4.86
-mean proposal mass : hered_nosel=0.2911  rand_nosel=0.0864  hered_sel=0.2262  rand_sel=0.1220
-mean filter gain   : hered_nosel=0.0000  rand_nosel=0.0000  hered_sel=-0.0114  rand_sel=0.0000
+same-pitch (<=15c): hered_nosel=0.0654  rand_nosel=0.0062  hered_sel=0.0726  rand_sel=0.0081
+same-family        : hered_nosel=0.0067  rand_nosel=0.0000  hered_sel=0.0045  rand_sel=0.0000
+same-octave        : hered_nosel=0.1457  rand_nosel=0.0000  hered_sel=0.1304  rand_sel=0.0000
+underfilled target : hered_nosel=0.9539  rand_nosel=0.9986  hered_sel=0.9303  rand_sel=0.9964
+mean band occupancy: hered_nosel=1.95  rand_nosel=1.28  hered_sel=2.13  rand_sel=1.34
+mean proposal rank : hered_nosel=2.51  rand_nosel=6.07  hered_sel=2.94  rand_sel=4.81
+mean proposal mass : hered_nosel=0.2914  rand_nosel=0.0850  hered_sel=0.2285  rand_sel=0.1240
+mean filter gain   : hered_nosel=0.0012  rand_nosel=0.0000  hered_sel=-0.0101  rand_sel=0.0000
 mean local-opt dSt : hered_nosel=0.0000  rand_nosel=0.0000  hered_sel=0.0000  rand_sel=0.0000
 mean local-opt gap : hered_nosel=0.0000  rand_nosel=0.0000  hered_sel=0.0000  rand_sel=0.0000
 
 Stop reasons (min_deaths / steps_cap):
-heredity, no selection: 20/0
-random,   no selection: 20/0
-heredity, selection:    0/20
-random,   selection:    0/20
+heredity, no selection: 4/0
+random,   no selection: 4/0
+heredity, selection:    0/4
+random,   selection:    0/4
 
 Mean death cause counts:
-heredity, no selection: energy=2450.2, background=49.8, juvenile=0.0
-random,   no selection: energy=2451.1, background=49.0, juvenile=0.0
-heredity, selection:    energy=1073.9, background=0.0, juvenile=0.0
-random,   selection:    energy=1916.4, background=0.0, juvenile=0.0
+heredity, no selection: energy=2448.8, background=51.2, juvenile=0.0
+random,   no selection: energy=2449.8, background=50.2, juvenile=0.0
+heredity, selection:    energy=970.5, background=0.0, juvenile=0.0
+random,   selection:    energy=1973.5, background=0.0, juvenile=0.0
 
 Convergence diagnostics (selection conditions, normalized step):
-AUC_C                 : heredity=0.5101  random=0.3496
-step_to_C>=0.80       : heredity=0/20 mean=0.0000  random=0/20 mean=0.0000
-stable_step_to_C>=0.80: heredity=0/20 mean=0.0000  random=0/20 mean=0.0000
-step_to_JI>=0.50      : heredity=15/20 mean=0.2993  random=0/20 mean=0.0000
-step_to_entropy<=1.25 : heredity=0/20 mean=0.0000  random=0/20 mean=0.0000
+AUC_C                 : heredity=0.5174  random=0.3340
+step_to_C>=0.80       : heredity=0/4 mean=0.0000  random=0/4 mean=0.0000
+stable_step_to_C>=0.80: heredity=0/4 mean=0.0000  random=0/4 mean=0.0000
+step_to_JI>=0.50      : heredity=3/4 mean=0.5494  random=0/4 mean=0.0000
+step_to_entropy<=1.25 : heredity=0/4 mean=0.0000  random=0/4 mean=0.0000
 
 Main random baseline: log_random_filtered
 Scene-peak matched random baseline (supplementary):
-random,   no selection: C=0.2882  entropy=4.2973  JI=0.2159  bins=13.850  AUC_C=0.2566
-random,   selection:    C=0.3649  entropy=4.0295  JI=0.3220  bins=13.400  AUC_C=0.3659
+random,   no selection: C=0.2948  entropy=4.4190  JI=0.1815  bins=14.500  AUC_C=0.2544
+random,   selection:    C=0.3460  entropy=4.1367  JI=0.2880  bins=14.000  AUC_C=0.3651
 
 Hard random baseline (supplementary):
-random,   no selection: C=0.3893  entropy=3.7341  JI=0.1220  bins=14.000  AUC_C=0.3149
-random,   selection:    C=0.8454  entropy=1.1566  JI=0.5893  bins=5.750  AUC_C=0.8074
+random,   no selection: C=0.3803  entropy=3.6728  JI=0.1329  bins=13.500  AUC_C=0.3157
+random,   selection:    C=0.8371  entropy=1.1648  JI=0.5977  bins=5.250  AUC_C=0.7904
