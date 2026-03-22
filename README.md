@@ -69,13 +69,16 @@ just paper --clean --exp e2  # Clean plots directory first
 
 ### Experiment mapping
 
+Paper results are discussed in the order Exp. 1, Exp. 2, Exp. 4, Exp. 3. Internal IDs keep the historical `E1`...`E7` naming.
+
 | Paper        | Internal ID | Topic                        |
 |--------------|-------------|------------------------------|
 | Experiment 1 | E1, E2      | Landscape Attractors & Self-Organised Polyphony |
 | Experiment 2 | E3          | Consonance as Selection      |
+| Experiment 4 | E6b         | Hereditary Adaptation        |
 | Experiment 3 | E7          | Temporal Scaffold            |
 | *(E4 skipped)* | E4        | *(excluded from paper)*      |
-| Experiment 4 | E6          | Hereditary Adaptation        |
+| Legacy hereditary assay | E6 | Previous Exp. 4 implementation |
 | Supplementary mechanism check | E5 | Configurable spectral--temporal bridge |
 
 ### Verify

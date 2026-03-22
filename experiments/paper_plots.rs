@@ -681,7 +681,7 @@ impl Experiment {
             Experiment::E1,
             Experiment::E2,
             Experiment::E3,
-            Experiment::E6,
+            Experiment::E6b,
             Experiment::E7,
         ]
     }
@@ -755,9 +755,10 @@ fn usage() -> String {
         "  paper --exp e6b --e6b-quick --e6b-respawn-parent-prior-mix 0.35",
         "  paper --exp e2 --e2-quick --e2-dense-sweep",
         "  paper --exp e2 --e2-quick --e2-candidate-search",
-        "If no experiment is specified, paper defaults (E1,E2,E3,E6,E7) run.",
+        "If no experiment is specified, paper defaults (E1,E2,E3,E6b,E7; paper order Exp. 1,2,4,3) run.",
         "Use --exp e4 to run E4 explicitly.",
-        "Use --exp e6b to run the experimental hereditary polyphony assay.",
+        "Use --exp e6 to run the legacy hereditary assay explicitly.",
+        "Use --exp e6b to run the current paper Exp. 4 hereditary adaptation assay.",
         "--e6b-quick uses a small seed subset and skips the Exp1 benchmark for faster iteration.",
         "--e6b-seeds N limits E6b to the first N fixed seeds.",
         "--e6b-skip-benchmark omits the Exp1 reference rerun and writes a skipped note instead.",
@@ -7175,7 +7176,7 @@ fn e6b_process_run(
                 let semitone = 12.0 * (freq_hz / anchor_hz).log2();
                 let clamped = semitone.clamp(heat_min_st, heat_max_st - f32::EPSILON);
                 let bin = ((clamped - heat_min_st) / E6_INTERVAL_BIN_ST).floor() as i32;
-                heat_counts.push((death_count, bin, 1.0));
+                heat_counts.push((snapshot.step, bin, 1.0));
             }
         }
     }
@@ -7685,7 +7686,7 @@ fn plot_e6b_hereditary_polyphony(
         let c_series: Vec<(usize, f32)> = processed
             .series
             .iter()
-            .map(|point| (point.death_count, point.loo_c_score))
+            .map(|point| (point.snapshot_step, point.loo_c_score))
             .collect();
         series_by_label_seed
             .entry(processed.label)
@@ -7709,8 +7710,8 @@ fn plot_e6b_hereditary_polyphony(
                 point.unique_bins,
             ));
         }
-        for (death_count, bin, mass) in processed.heat_counts {
-            *heat_counts.entry((death_count, bin)).or_insert(0.0) += mass;
+        for (step, bin, mass) in processed.heat_counts {
+            *heat_counts.entry((step, bin)).or_insert(0.0) += mass;
         }
 
         if let Some(metrics) = processed.final_metrics {
@@ -7856,10 +7857,16 @@ fn plot_e6b_hereditary_polyphony(
     write_with_log(out_dir.join("paper_e6b_endpoint_metrics.csv"), endpoint_csv)?;
     write_with_log(out_dir.join("paper_e6b_timeseries.csv"), timeseries_csv)?;
 
-    let c_heredity_nosel = e6_series_stats(series_by_label_seed.get("heredity_nosel"), 1);
-    let c_random_nosel = e6_series_stats(series_by_label_seed.get("random_nosel"), 1);
-    let c_heredity = e6_series_stats(series_by_label_seed.get("heredity"), 1);
-    let c_random = e6_series_stats(series_by_label_seed.get("random"), 1);
+    let c_heredity_nosel = e6_series_stats(
+        series_by_label_seed.get("heredity_nosel"),
+        E6B_SNAPSHOT_INTERVAL,
+    );
+    let c_random_nosel = e6_series_stats(
+        series_by_label_seed.get("random_nosel"),
+        E6B_SNAPSHOT_INTERVAL,
+    );
+    let c_heredity = e6_series_stats(series_by_label_seed.get("heredity"), E6B_SNAPSHOT_INTERVAL);
+    let c_random = e6_series_stats(series_by_label_seed.get("random"), E6B_SNAPSHOT_INTERVAL);
 
     let final_loo_heredity_nosel = final_loo_by_label
         .remove("heredity_nosel")
@@ -7880,6 +7887,12 @@ fn plot_e6b_hereditary_polyphony(
         .remove("heredity")
         .unwrap_or_default();
     let final_entropy_random = final_entropy_by_label.remove("random").unwrap_or_default();
+    let final_ji_heredity_nosel = final_ji_by_label
+        .remove("heredity_nosel")
+        .unwrap_or_default();
+    let final_ji_random_nosel = final_ji_by_label.remove("random_nosel").unwrap_or_default();
+    let final_ji_heredity = final_ji_by_label.remove("heredity").unwrap_or_default();
+    let final_ji_random = final_ji_by_label.remove("random").unwrap_or_default();
     let final_lifetime_heredity_nosel = final_lifetime_by_label
         .remove("heredity_nosel")
         .unwrap_or_default();
@@ -7988,10 +8001,10 @@ fn plot_e6b_hereditary_polyphony(
         &final_loo_random_nosel,
         &final_loo_heredity,
         &final_loo_random,
-        &final_entropy_heredity_nosel,
-        &final_entropy_random_nosel,
-        &final_entropy_heredity,
-        &final_entropy_random,
+        &final_ji_heredity_nosel,
+        &final_ji_random_nosel,
+        &final_ji_heredity,
+        &final_ji_random,
     )?;
 
     let benchmark_text = if cli.skip_benchmark {
@@ -13046,10 +13059,10 @@ fn render_e6b_figure(
     final_loo_random_nosel: &[f32],
     final_loo_heredity: &[f32],
     final_loo_random: &[f32],
-    final_entropy_heredity_nosel: &[f32],
-    final_entropy_random_nosel: &[f32],
-    final_entropy_heredity: &[f32],
-    final_entropy_random: &[f32],
+    final_ji_heredity_nosel: &[f32],
+    final_ji_random_nosel: &[f32],
+    final_ji_heredity: &[f32],
+    final_ji_random: &[f32],
 ) -> Result<(), Box<dyn Error>> {
     let root = bitmap_root(out_path, (3720, 935)).into_drawing_area();
     root.fill(&WHITE)?;
@@ -13083,7 +13096,7 @@ fn render_e6b_figure(
         &left_panels[0],
         "A. Mean LOO C_score",
         "LOO C_score",
-        "deaths",
+        "step",
         &series_specs,
         0.0,
         1.0,
@@ -13091,7 +13104,7 @@ fn render_e6b_figure(
     draw_e6_heatmap_panel_with_caption(
         &left_panels[1],
         "B. H+S pitch heatmap",
-        "deaths",
+        "step",
         heat_counts,
     )?;
     draw_e6_factorial_metric_panel(
@@ -13111,14 +13124,14 @@ fn render_e6b_figure(
     )?;
     draw_e6_factorial_metric_panel(
         &right_panels[1],
-        "D. Final Interval Entropy",
-        "entropy (nats)",
-        final_entropy_heredity_nosel,
-        final_entropy_random_nosel,
-        final_entropy_heredity,
-        final_entropy_random,
+        "D. Final JI Score",
+        "JI score",
+        final_ji_heredity_nosel,
+        final_ji_random_nosel,
+        final_ji_heredity,
+        final_ji_random,
         0.0,
-        Some(5.6),
+        Some(0.8),
         62,
         46,
         50,
@@ -13232,7 +13245,7 @@ where
 
     chart
         .configure_series_labels()
-        .position(SeriesLabelPosition::LowerRight)
+        .position(SeriesLabelPosition::UpperRight)
         .background_style(WHITE.mix(0.85))
         .border_style(BLACK)
         .label_font(("sans-serif", 48).into_font())
@@ -13396,26 +13409,35 @@ where
         .axis_desc_style(("sans-serif", 56).into_font())
         .draw()?;
 
-    let max_count = heat_counts
-        .values()
-        .copied()
-        .fold(0.0f32, f32::max)
-        .max(1.0);
+    let mut sorted_counts: Vec<f32> = heat_counts.values().copied().collect();
+    sorted_counts.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let clip_count = if sorted_counts.is_empty() {
+        1.0
+    } else {
+        let idx = ((sorted_counts.len().saturating_sub(1)) as f32 * 0.90).round() as usize;
+        sorted_counts[idx].max(1.0)
+    };
     for ((step, bin), count) in heat_counts {
         let x0 = *step as f32;
         let x1 = x0 + E6_SNAPSHOT_INTERVAL as f32;
         let y0 = (min_range_st + *bin as f32 * E6_INTERVAL_BIN_ST) * 100.0;
         let y1 = y0 + E6_INTERVAL_BIN_ST * 100.0;
-        let t = (*count / max_count).clamp(0.0, 1.0).sqrt();
-        let color = HSLColor(
-            (220.0f64 - 220.0f64 * t as f64) / 360.0,
-            0.80,
-            0.88 - 0.58 * t as f64,
-        );
+        let t = (*count / clip_count).clamp(0.0, 1.0).powf(0.65);
+        let color = if t < 0.55 {
+            let u = t / 0.55;
+            let lerp =
+                |a: u8, b: u8| -> u8 { ((a as f32) + ((b as f32) - (a as f32)) * u).round() as u8 };
+            RGBColor(lerp(242, 116), lerp(249, 196), lerp(250, 167)).to_rgba()
+        } else {
+            let u = (t - 0.55) / 0.45;
+            let lerp =
+                |a: u8, b: u8| -> u8 { ((a as f32) + ((b as f32) - (a as f32)) * u).round() as u8 };
+            RGBColor(lerp(116, 27), lerp(196, 78), lerp(167, 119)).to_rgba()
+        };
         chart.draw_series(std::iter::once(Rectangle::new(
             [(x0, y0), (x1, y1)],
             ShapeStyle {
-                color: color.to_rgba(),
+                color,
                 filled: true,
                 stroke_width: 1,
             },
@@ -35684,7 +35706,9 @@ mod tests {
             ..base_cfg.clone()
         });
 
-        let capacity_free_voices = base_cfg.polyphonic_capacity_free_voices_override.unwrap_or(3);
+        let capacity_free_voices = base_cfg
+            .polyphonic_capacity_free_voices_override
+            .unwrap_or(3);
 
         let inherit_metrics = e6b_process_run(
             "heredity",

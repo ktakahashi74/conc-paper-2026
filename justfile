@@ -3,7 +3,7 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 default:
 	@just --list
 
-# Run experiments (release build, default: e1,e2,e3,e6,e7)
+# Run experiments (release build, default: e1,e2,e3,e6b,e7)
 paper *args:
 	cargo run --release --bin paper -- {{args}}
 

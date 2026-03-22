@@ -4,14 +4,16 @@ Experiment runner and plot generator for all figures and statistical analyses in
 
 ## Experiment mapping
 
+Paper results are discussed in the order Exp. 1, Exp. 2, Exp. 4, Exp. 3. Internal IDs keep the historical `E1`...`E7` naming.
+
 | Paper        | Internal ID | Topic                                          |
 |--------------|-------------|------------------------------------------------|
 | Experiment 1 | E1, E2      | Landscape Attractors & Self-Organised Polyphony |
 | Experiment 2 | E3          | Consonance as Selection Pressure               |
+| Experiment 4 | E6b         | Hereditary Adaptation                          |
 | Experiment 3 | E7          | Temporal Scaffold                              |
 | *(skipped)*  | E4          | *(excluded from paper)*                        |
-| Experiment 4 | E6          | Hereditary Adaptation                          |
-| Experimental | E6b         | Hereditary Polyphony Assay                     |
+| Legacy hereditary assay | E6 | Previous Exp. 4 implementation               |
 | Supplementary mechanism check | E5 | Configurable spectral--temporal bridge |
 
 ## Quick start
@@ -27,8 +29,9 @@ just paper --exp e2
 just paper-pdf --exp e2
 ```
 
-When `--exp` is omitted, the default set `e1,e2,e3,e6,e7` is run.
-`e6b` is opt-in and runs only when requested explicitly.
+When `--exp` is omitted, the default set `e1,e2,e3,e6b,e7` is run.
+This corresponds to paper order Exp. 1, Exp. 2, Exp. 4, Exp. 3.
+`e6` remains available as the legacy hereditary assay.
 
 ## Build and test
 
@@ -62,8 +65,8 @@ Key output files per experiment:
 | E2 | `paper_e2_figure_e2_1.svg`, `paper_e2_figure_e2_2.svg` | `paper_e2_shuffled_comparison.txt`, `paper_e2_terrain_controls.txt`, `paper_e2_coefficient_sweep.txt` |
 | E3 | `paper_e3_figure4.svg` | `paper_e3_lifetimes.csv` |
 | E5 | `paper_e5_figure.svg` | `paper_e5_summary.csv` (supplementary mechanism check) |
-| E6 | `paper_e6_figure.svg`, `paper_e6_integration_figure.svg` | `paper_e6_summary.csv` |
-| E6b | `paper_e6b_figure.svg` | `paper_e6b_endpoint_metrics.csv`, `paper_e6b_exp1_benchmark.txt` |
+| E6 | `paper_e6_figure.svg`, `paper_e6_integration_figure.svg` | `paper_e6_summary.csv` (legacy hereditary assay) |
+| E6b | `paper_e6b_figure.svg` | `paper_e6b_endpoint_metrics.csv`, `paper_e6b_exp1_benchmark.txt` (current paper Exp. 4) |
 | E7 | `paper_e7_figure.svg` | `paper_e7_summary.csv` |
 
 Use `--clean` when you need strict reproducibility from a fully fresh output tree.
