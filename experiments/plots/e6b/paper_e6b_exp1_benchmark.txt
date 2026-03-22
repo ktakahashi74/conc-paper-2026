@@ -1,4 +1,4 @@
 E6b benchmark against Experiment 1
 --------------------------------
-skipped: --e6b-quick
-seeds used in this run: 4
+skipped: --e6b-skip-benchmark
+seeds used in this run: 20

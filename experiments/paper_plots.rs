@@ -18,10 +18,10 @@ use crate::sim::{
     E4_ENV_PARTIAL_DECAY_DEFAULT, E4_ENV_PARTIALS_DEFAULT, E4RuntimeOverrides, E4TailSamples,
     E6AgentSnapshot, E6B_DEFAULT_POP_SIZE, E6Condition, E6DeathCause, E6FamilyNfdMode,
     E6ParentProposalKind, E6PitchSnapshot, E6RespawnMode, E6RespawnRecord, E6RunConfig,
-    E6RunResult, E6SelectionScoreMode, E6StopReason, E6bRandomBaselineMode, E6bRunConfig,
-    E6bRunResult, configure_shared_hillclimb_core, e3_policy_params, e3_reference_landscape,
-    e3_reference_landscape_with_partials, e3_tessitura_bounds_for_range, e4_paper_meta,
-    e6_mean_selection_score_for_freqs, e6_mean_selection_score_for_freqs_mode,
+    E6RunResult, E6SelectionScoreMode, E6StopReason, E6bAzimuthMode, E6bRandomBaselineMode,
+    E6bRunConfig, E6bRunResult, configure_shared_hillclimb_core, e3_policy_params,
+    e3_reference_landscape, e3_reference_landscape_with_partials, e3_tessitura_bounds_for_range,
+    e4_paper_meta, e6_mean_selection_score_for_freqs, e6_mean_selection_score_for_freqs_mode,
     e6_sampler_debug_scan, run_e3_collect_deaths, run_e4_condition_tail_samples,
     run_e4_condition_tail_samples_with_wr, run_e4_mirror_schedule_samples, run_e6, run_e6b,
     set_e4_runtime_overrides, shared_hill_move_cost_coeff,
@@ -448,6 +448,7 @@ struct E6bCliOptions {
     parent_proposal_kind: Option<E6ParentProposalKind>,
     parent_proposal_sigma_st: Option<f32>,
     parent_proposal_candidate_count: Option<usize>,
+    azimuth_mode: Option<E6bAzimuthMode>,
     respawn_parent_prior_mix: Option<f32>,
     respawn_same_band_discount: Option<f32>,
     respawn_octave_discount: Option<f32>,
@@ -746,6 +747,7 @@ fn usage() -> String {
         "  paper --exp e6b --e6b-quick",
         "  paper --exp e6b --e6b-juvenile off",
         "  paper --exp e6b --e6b-parent-proposal contextual_c --e6b-parent-proposal-sigma 4.9",
+        "  paper --exp e6b --e6b-azimuth search",
         "  paper --exp e6b --e6b-seeds 6 --e6b-skip-benchmark",
         "  paper --exp e6b --e6b-quick --e6b-crowding 0.005 --e6b-capacity-weight 0.04",
         "  paper --exp e6b --e6b-quick --e6b-parent-share-weight 0.75",
@@ -769,6 +771,7 @@ fn usage() -> String {
         "--e6b-parent-proposal contextual_c|h_only selects the E6b parent-owned proposal density.",
         "--e6b-parent-proposal-sigma X sets the E6b parent-relative Gaussian width in semitones.",
         "--e6b-parent-proposal-candidates N sets how many parent-proposed families are filtered by the scene.",
+        "--e6b-azimuth inherit|search chooses whether E6b inherits parent azimuth or searches within the chosen family.",
         "--e6b-survival-low X sets the score where E6b survival recharge starts ramping up.",
         "--e6b-survival-high X sets the score where E6b survival recharge saturates.",
         "--e6b-survival-recharge X overrides the maximum E6b survival recharge per second.",
@@ -960,6 +963,7 @@ fn parse_experiments(args: &[String]) -> Result<Vec<Experiment>, String> {
             || arg == "--e6b-parent-proposal"
             || arg == "--e6b-parent-proposal-sigma"
             || arg == "--e6b-parent-proposal-candidates"
+            || arg == "--e6b-azimuth"
             || arg == "--e6b-survival-low"
             || arg == "--e6b-survival-high"
             || arg == "--e6b-survival-recharge"
@@ -985,6 +989,7 @@ fn parse_experiments(args: &[String]) -> Result<Vec<Experiment>, String> {
             || arg.starts_with("--e6b-parent-proposal=")
             || arg.starts_with("--e6b-parent-proposal-sigma=")
             || arg.starts_with("--e6b-parent-proposal-candidates=")
+            || arg.starts_with("--e6b-azimuth=")
             || arg.starts_with("--e6b-survival-low=")
             || arg.starts_with("--e6b-survival-high=")
             || arg.starts_with("--e6b-survival-recharge=")
@@ -1508,6 +1513,41 @@ fn parse_e6b_parent_proposal_candidates(args: &[String]) -> Result<Option<usize>
     parse_usize_cli_opt(args, "--e6b-parent-proposal-candidates")
 }
 
+fn parse_e6b_azimuth_mode(args: &[String]) -> Result<Option<E6bAzimuthMode>, String> {
+    let mut value: Option<String> = None;
+    let key = "--e6b-azimuth";
+    let key_eq = format!("{key}=");
+    let mut i = 0;
+    while i < args.len() {
+        let arg = args[i].as_str();
+        if arg == key {
+            if i + 1 >= args.len() {
+                return Err(format!("Missing value after {arg}\n{}", usage()));
+            }
+            value = Some(args[i + 1].clone());
+            i += 2;
+            continue;
+        }
+        if let Some(rest) = arg.strip_prefix(&key_eq) {
+            value = Some(rest.to_string());
+            i += 1;
+            continue;
+        }
+        i += 1;
+    }
+    let Some(raw) = value else {
+        return Ok(None);
+    };
+    match raw.to_ascii_lowercase().as_str() {
+        "inherit" | "inherited" => Ok(Some(E6bAzimuthMode::Inherit)),
+        "search" | "local_search" | "local-search" => Ok(Some(E6bAzimuthMode::LocalSearch)),
+        _ => Err(format!(
+            "Invalid --e6b-azimuth value '{raw}'. Use inherit|search.\n{}",
+            usage()
+        )),
+    }
+}
+
 fn parse_e6b_survival_low(args: &[String]) -> Result<Option<f32>, String> {
     parse_f32_cli_opt(args, "--e6b-survival-low")
 }
@@ -1701,6 +1741,7 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
         parse_e6b_parent_proposal_sigma(&args).map_err(io::Error::other)?;
     let e6b_parent_proposal_candidates =
         parse_e6b_parent_proposal_candidates(&args).map_err(io::Error::other)?;
+    let e6b_azimuth_mode = parse_e6b_azimuth_mode(&args).map_err(io::Error::other)?;
     let e6b_survival_low = parse_e6b_survival_low(&args).map_err(io::Error::other)?;
     let e6b_survival_high = parse_e6b_survival_high(&args).map_err(io::Error::other)?;
     let e6b_survival_recharge = parse_e6b_survival_recharge(&args).map_err(io::Error::other)?;
@@ -1733,6 +1774,7 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
         parent_proposal_kind: e6b_parent_proposal_kind,
         parent_proposal_sigma_st: e6b_parent_proposal_sigma,
         parent_proposal_candidate_count: e6b_parent_proposal_candidates,
+        azimuth_mode: e6b_azimuth_mode,
         survival_score_low: e6b_survival_low,
         survival_score_high: e6b_survival_high,
         survival_recharge_per_sec: e6b_survival_recharge,
@@ -6918,6 +6960,8 @@ struct E6bEndpointMetrics {
     mean_proposal_rank: f32,
     mean_proposal_mass: f32,
     mean_proposal_filter_gain: f32,
+    mean_local_opt_delta_st: f32,
+    mean_local_opt_score_gap: f32,
     energy_exhaustion_deaths: usize,
     background_turnover_deaths: usize,
     juvenile_cull_deaths: usize,
@@ -7042,6 +7086,7 @@ fn e6b_run_jobs(
                         parent_proposal_unison_notch_sigma_st_override: None,
                         parent_proposal_candidate_count_override: cli
                             .parent_proposal_candidate_count,
+                        azimuth_mode_override: cli.azimuth_mode,
                         random_baseline_mode,
                     };
                     let result = run_e6b(&cfg);
@@ -7436,6 +7481,20 @@ fn e6b_respawn_proposal_stats(result: &E6bRunResult) -> (f32, f32, f32) {
     )
 }
 
+fn e6b_local_opt_stats(result: &E6bRunResult) -> (f32, f32) {
+    let deltas: Vec<f32> = result
+        .respawns
+        .iter()
+        .filter_map(|respawn| respawn.local_opt_delta_st)
+        .collect();
+    let score_gaps: Vec<f32> = result
+        .respawns
+        .iter()
+        .filter_map(|respawn| respawn.local_opt_score_gap)
+        .collect();
+    (mean_std_scalar(&deltas).0, mean_std_scalar(&score_gaps).0)
+}
+
 fn e6b_final_metrics(
     result: &E6bRunResult,
     series: &[E6bSeriesPoint],
@@ -7457,6 +7516,7 @@ fn e6b_final_metrics(
         e6b_underfilled_respawn_stats(result, free_voices);
     let (mean_proposal_rank, mean_proposal_mass, mean_proposal_filter_gain) =
         e6b_respawn_proposal_stats(result);
+    let (mean_local_opt_delta_st, mean_local_opt_score_gap) = e6b_local_opt_stats(result);
     let (energy_exhaustion_deaths, background_turnover_deaths, juvenile_cull_deaths) =
         e6b_death_cause_counts(result);
     let convergence = e6b_convergence_metrics(series);
@@ -7475,6 +7535,8 @@ fn e6b_final_metrics(
         mean_proposal_rank,
         mean_proposal_mass,
         mean_proposal_filter_gain,
+        mean_local_opt_delta_st,
+        mean_local_opt_score_gap,
         energy_exhaustion_deaths,
         background_turnover_deaths,
         juvenile_cull_deaths,
@@ -7586,6 +7648,8 @@ fn plot_e6b_hereditary_polyphony(
     let mut final_proposal_rank_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut final_proposal_mass_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut final_proposal_filter_gain_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
+    let mut final_local_opt_delta_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
+    let mut final_local_opt_gap_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut final_energy_deaths_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut final_background_deaths_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut final_juvenile_cull_deaths_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
@@ -7598,7 +7662,7 @@ fn plot_e6b_hereditary_polyphony(
         HashMap::new();
     let mut stop_reason_counts_by_label: HashMap<&'static str, (usize, usize)> = HashMap::new();
     let mut endpoint_csv = String::from(
-        "condition,baseline_type,seed,selection_enabled,juvenile_enabled,stop_reason,loo_c_score,g_scene,pairwise_entropy,ji_score,unique_bins,mean_lifetime_steps,same_pitch_replacement_rate,same_family_respawn_rate,same_octave_respawn_rate,underfilled_respawn_rate,mean_respawn_band_occupancy,mean_proposal_rank,mean_proposal_mass,mean_proposal_filter_gain,energy_exhaustion_deaths,background_turnover_deaths,juvenile_cull_deaths,auc_c,step_to_c80,stable_step_to_c80,step_to_ji50,step_to_entropy_1p25\n",
+        "condition,baseline_type,seed,selection_enabled,juvenile_enabled,stop_reason,loo_c_score,g_scene,pairwise_entropy,ji_score,unique_bins,mean_lifetime_steps,same_pitch_replacement_rate,same_family_respawn_rate,same_octave_respawn_rate,underfilled_respawn_rate,mean_respawn_band_occupancy,mean_proposal_rank,mean_proposal_mass,mean_proposal_filter_gain,mean_local_opt_delta_st,mean_local_opt_score_gap,energy_exhaustion_deaths,background_turnover_deaths,juvenile_cull_deaths,auc_c,step_to_c80,stable_step_to_c80,step_to_ji50,step_to_entropy_1p25\n",
     );
     let mut timeseries_csv = String::from(
         "condition,baseline_type,seed,selection_enabled,juvenile_enabled,snapshot_step,death_count,normalized_step,loo_c_score,g_scene,pairwise_entropy,ji_score,unique_bins\n",
@@ -7706,6 +7770,14 @@ fn plot_e6b_hereditary_polyphony(
                 .entry(processed.label)
                 .or_default()
                 .push(metrics.mean_proposal_filter_gain);
+            final_local_opt_delta_by_label
+                .entry(processed.label)
+                .or_default()
+                .push(metrics.mean_local_opt_delta_st);
+            final_local_opt_gap_by_label
+                .entry(processed.label)
+                .or_default()
+                .push(metrics.mean_local_opt_score_gap);
             final_energy_deaths_by_label
                 .entry(processed.label)
                 .or_default()
@@ -7746,7 +7818,7 @@ fn plot_e6b_hereditary_polyphony(
                 E6StopReason::StepsCap => counter.1 += 1,
             }
             endpoint_csv.push_str(&format!(
-                "{},{},{},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.3},{:.3},{:.6},{:.6},{:.6},{:.6},{:.3},{:.3},{:.6},{:.6},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
+                "{},{},{},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.3},{:.3},{:.6},{:.6},{:.6},{:.6},{:.3},{:.3},{:.6},{:.6},{:.6},{:.6},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
                 processed.label,
                 processed.baseline_type,
                 processed.seed,
@@ -7767,6 +7839,8 @@ fn plot_e6b_hereditary_polyphony(
                 metrics.mean_proposal_rank,
                 metrics.mean_proposal_mass,
                 metrics.mean_proposal_filter_gain,
+                metrics.mean_local_opt_delta_st,
+                metrics.mean_local_opt_score_gap,
                 metrics.energy_exhaustion_deaths,
                 metrics.background_turnover_deaths,
                 metrics.juvenile_cull_deaths,
@@ -8051,6 +8125,10 @@ fn plot_e6b_hereditary_polyphony(
         .parent_proposal_kind
         .unwrap_or(E6ParentProposalKind::ContextualC)
         .label();
+    let azimuth_mode = cli
+        .azimuth_mode
+        .unwrap_or(E6bAzimuthMode::LocalSearch)
+        .label();
     let auc_c_heredity = mean_std_scalar(&final_auc_c_heredity).0;
     let auc_c_random = mean_std_scalar(&final_auc_c_random).0;
     let (step_to_c80_heredity_n, step_to_c80_heredity_mean, _) =
@@ -8072,7 +8150,7 @@ fn plot_e6b_hereditary_polyphony(
     let mut summary_text = format!(
         "E6b summary\n\
          ----------\n\
-         Tuning: crowding={:.4}, capacity_weight={:.4}, capacity_radius_cents={:.1}, free_voices={}, parent_share_weight={:.2}, parent_energy_weight={:.2}, proposal_kind={}, proposal_sigma_st={:.2}, proposal_candidates={}, juvenile_mode={}, juvenile_ticks={}, survival_low={:.2}, survival_high={:.2}, survival_recharge={:.3}, background_death={:.4}, respawn_parent_prior_mix={:.2}, same_band_discount={:.2}, octave_discount={:.2}\n\
+         Tuning: crowding={:.4}, capacity_weight={:.4}, capacity_radius_cents={:.1}, free_voices={}, parent_share_weight={:.2}, parent_energy_weight={:.2}, proposal_kind={}, proposal_sigma_st={:.2}, proposal_candidates={}, azimuth_mode={}, juvenile_mode={}, juvenile_ticks={}, survival_low={:.2}, survival_high={:.2}, survival_recharge={:.3}, background_death={:.4}, respawn_parent_prior_mix={:.2}, same_band_discount={:.2}, octave_discount={:.2}\n\
          \n\
          Final LOO C_score:\n\
          heredity, no selection: {:.4} +/- {:.4}\n\
@@ -8113,6 +8191,8 @@ fn plot_e6b_hereditary_polyphony(
          mean proposal rank : hered_nosel={:.2}  rand_nosel={:.2}  hered_sel={:.2}  rand_sel={:.2}\n\
          mean proposal mass : hered_nosel={:.4}  rand_nosel={:.4}  hered_sel={:.4}  rand_sel={:.4}\n\
          mean filter gain   : hered_nosel={:.4}  rand_nosel={:.4}  hered_sel={:.4}  rand_sel={:.4}\n\
+         mean local-opt dSt : hered_nosel={:.4}  rand_nosel={:.4}  hered_sel={:.4}  rand_sel={:.4}\n\
+         mean local-opt gap : hered_nosel={:.4}  rand_nosel={:.4}  hered_sel={:.4}  rand_sel={:.4}\n\
          \n\
          Stop reasons (min_deaths / steps_cap):\n\
          heredity, no selection: {}/{}\n\
@@ -8141,6 +8221,7 @@ fn plot_e6b_hereditary_polyphony(
         proposal_kind,
         cli.parent_proposal_sigma_st.unwrap_or(9.0),
         cli.parent_proposal_candidate_count.unwrap_or(16),
+        azimuth_mode,
         juvenile_mode,
         cli.juvenile_ticks.unwrap_or(2),
         cli.survival_score_low.unwrap_or(0.30),
@@ -8306,6 +8387,54 @@ fn plot_e6b_hereditary_polyphony(
         .0,
         mean_std_scalar(
             final_proposal_filter_gain_by_label
+                .get("random")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_local_opt_delta_by_label
+                .get("heredity_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_local_opt_delta_by_label
+                .get("random_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_local_opt_delta_by_label
+                .get("heredity")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_local_opt_delta_by_label
+                .get("random")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_local_opt_gap_by_label
+                .get("heredity_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_local_opt_gap_by_label
+                .get("random_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_local_opt_gap_by_label
+                .get("heredity")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_local_opt_gap_by_label
                 .get("random")
                 .map_or(&[][..], Vec::as_slice)
         )
@@ -8676,6 +8805,7 @@ fn plot_e6_hereditary_adaptation(
                             parent_proposal_unison_notch_gain_override: None,
                             parent_proposal_unison_notch_sigma_st_override: None,
                             parent_proposal_candidate_count_override: None,
+                            azimuth_mode_override: None,
                             family_occupancy_strength_override: Some(
                                 E6_MAIN_FAMILY_OCCUPANCY_STRENGTH,
                             ),
@@ -8888,6 +9018,7 @@ fn plot_e6_hereditary_adaptation(
                         parent_proposal_unison_notch_gain_override: None,
                         parent_proposal_unison_notch_sigma_st_override: None,
                         parent_proposal_candidate_count_override: None,
+                        azimuth_mode_override: None,
                         family_occupancy_strength_override: Some(occupancy_strength),
                         family_nfd_mode: nfd_mode.unwrap_or(E6FamilyNfdMode::Off),
                         respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
@@ -9098,6 +9229,7 @@ fn plot_e6_hereditary_adaptation(
                             parent_proposal_unison_notch_gain_override: None,
                             parent_proposal_unison_notch_sigma_st_override: None,
                             parent_proposal_candidate_count_override: None,
+                            azimuth_mode_override: None,
                             family_occupancy_strength_override: None,
                             family_nfd_mode: E6FamilyNfdMode::Off,
                             respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
@@ -9191,6 +9323,7 @@ fn plot_e6_hereditary_adaptation(
                             parent_proposal_unison_notch_gain_override: None,
                             parent_proposal_unison_notch_sigma_st_override: None,
                             parent_proposal_candidate_count_override: None,
+                            azimuth_mode_override: None,
                             family_occupancy_strength_override: None,
                             family_nfd_mode: E6FamilyNfdMode::Off,
                             respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
@@ -10931,6 +11064,7 @@ fn plot_e6_hereditary_adaptation(
                             parent_proposal_unison_notch_gain_override: None,
                             parent_proposal_unison_notch_sigma_st_override: None,
                             parent_proposal_candidate_count_override: None,
+                            azimuth_mode_override: None,
                             family_occupancy_strength_override: None,
                             family_nfd_mode: E6FamilyNfdMode::Off,
                             respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
@@ -11117,6 +11251,7 @@ fn plot_e6_hereditary_adaptation(
                             parent_proposal_unison_notch_gain_override: None,
                             parent_proposal_unison_notch_sigma_st_override: None,
                             parent_proposal_candidate_count_override: None,
+                            azimuth_mode_override: None,
                             family_occupancy_strength_override: None,
                             family_nfd_mode: E6FamilyNfdMode::Off,
                             respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
@@ -11310,6 +11445,7 @@ fn plot_e6_hereditary_adaptation(
                             parent_proposal_unison_notch_gain_override: None,
                             parent_proposal_unison_notch_sigma_st_override: None,
                             parent_proposal_candidate_count_override: None,
+                            azimuth_mode_override: None,
                             family_occupancy_strength_override: None,
                             family_nfd_mode: E6FamilyNfdMode::Off,
                             respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
@@ -13544,6 +13680,7 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
                                 parent_proposal_unison_notch_gain_override: None,
                                 parent_proposal_unison_notch_sigma_st_override: None,
                                 parent_proposal_candidate_count_override: None,
+                                azimuth_mode_override: None,
                                 family_occupancy_strength_override: None,
                                 family_nfd_mode: E6FamilyNfdMode::Off,
                                 respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
@@ -13895,6 +14032,7 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
                                         parent_proposal_unison_notch_gain_override: None,
                                         parent_proposal_unison_notch_sigma_st_override: None,
                                         parent_proposal_candidate_count_override: None,
+                                        azimuth_mode_override: None,
                                         family_occupancy_strength_override: None,
                                         family_nfd_mode: E6FamilyNfdMode::Off,
                                         respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
@@ -14131,6 +14269,7 @@ fn generate_e6_sampler_debug_plots() -> Result<(), Box<dyn Error>> {
         parent_proposal_unison_notch_gain_override: None,
         parent_proposal_unison_notch_sigma_st_override: None,
         parent_proposal_candidate_count_override: None,
+        azimuth_mode_override: None,
         family_occupancy_strength_override: None,
         family_nfd_mode: E6FamilyNfdMode::Off,
         respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
@@ -35401,6 +35540,8 @@ mod tests {
             "--e6b-parent-proposal-sigma=5.5".to_string(),
             "--e6b-parent-proposal-candidates".to_string(),
             "9".to_string(),
+            "--e6b-azimuth".to_string(),
+            "search".to_string(),
             "--e6b-survival-low".to_string(),
             "0.15".to_string(),
             "--e6b-survival-high=0.55".to_string(),
@@ -35458,6 +35599,10 @@ mod tests {
             Some(9)
         );
         assert_eq!(
+            parse_e6b_azimuth_mode(&args).expect("parse_e6b_azimuth_mode failed"),
+            Some(E6bAzimuthMode::LocalSearch)
+        );
+        assert_eq!(
             parse_e6b_survival_low(&args).expect("parse_e6b_survival_low failed"),
             Some(0.15)
         );
@@ -35487,6 +35632,118 @@ mod tests {
             parse_e6b_respawn_octave_discount(&args)
                 .expect("parse_e6b_respawn_octave_discount failed"),
             Some(0.10)
+        );
+    }
+
+    #[test]
+    fn e6b_smoke_compare_azimuth_modes() {
+        let anchor_hz = E4_ANCHOR_HZ;
+        let reference_landscape = e3_reference_landscape(anchor_hz);
+        let contextual_space = reference_landscape.space.clone();
+        let (_contextual_erb_scan, contextual_du_scan) = erb_grid(&contextual_space);
+        let contextual_workspace = build_consonance_workspace(&contextual_space);
+        let (heat_min_st, heat_max_st) = e6_effective_range_bounds_st();
+
+        let base_cfg = E6bRunConfig {
+            seed: 0xE6B0_6677,
+            steps_cap: 900,
+            min_deaths: 8,
+            pop_size: 8,
+            first_k: 10,
+            condition: E6Condition::Heredity,
+            snapshot_interval: 20,
+            selection_enabled: true,
+            shuffle_landscape: false,
+            polyphonic_crowding_weight_override: None,
+            polyphonic_overcapacity_weight_override: None,
+            polyphonic_capacity_radius_cents_override: None,
+            polyphonic_capacity_free_voices_override: None,
+            polyphonic_parent_share_weight_override: None,
+            polyphonic_parent_energy_weight_override: None,
+            juvenile_contextual_tuning_ticks_override: None,
+            juvenile_contextual_settlement_enabled_override: None,
+            survival_score_low_override: None,
+            survival_score_high_override: None,
+            survival_recharge_per_sec_override: None,
+            background_death_rate_per_sec_override: None,
+            respawn_parent_prior_mix_override: None,
+            respawn_same_band_discount_override: None,
+            respawn_octave_discount_override: None,
+            parent_proposal_kind_override: None,
+            parent_proposal_sigma_st_override: None,
+            parent_proposal_unison_notch_gain_override: None,
+            parent_proposal_unison_notch_sigma_st_override: None,
+            parent_proposal_candidate_count_override: None,
+            azimuth_mode_override: Some(E6bAzimuthMode::Inherit),
+            random_baseline_mode: E6bRandomBaselineMode::LogRandomFiltered,
+        };
+
+        let inherit_result = run_e6b(&base_cfg);
+        let search_result = run_e6b(&E6bRunConfig {
+            azimuth_mode_override: Some(E6bAzimuthMode::LocalSearch),
+            ..base_cfg.clone()
+        });
+
+        let capacity_free_voices = base_cfg.polyphonic_capacity_free_voices_override.unwrap_or(3);
+
+        let inherit_metrics = e6b_process_run(
+            "heredity",
+            E6bRandomBaselineMode::LogRandomFiltered.label(),
+            true,
+            true,
+            base_cfg.seed,
+            &inherit_result,
+            anchor_hz,
+            &contextual_space,
+            &contextual_workspace,
+            &contextual_du_scan,
+            heat_min_st,
+            heat_max_st,
+            capacity_free_voices,
+        )
+        .final_metrics
+        .expect("inherit metrics");
+        let search_metrics = e6b_process_run(
+            "heredity",
+            E6bRandomBaselineMode::LogRandomFiltered.label(),
+            true,
+            true,
+            base_cfg.seed,
+            &search_result,
+            anchor_hz,
+            &contextual_space,
+            &contextual_workspace,
+            &contextual_du_scan,
+            heat_min_st,
+            heat_max_st,
+            capacity_free_voices,
+        )
+        .final_metrics
+        .expect("search metrics");
+
+        eprintln!(
+            "E6b azimuth smoke compare: inherit C={:.4} JI={:.4} H={:.4} bins={:.2} gap={:.4} dSt={:.4}; search C={:.4} JI={:.4} H={:.4} bins={:.2} gap={:.4} dSt={:.4}",
+            inherit_metrics.loo_c_score,
+            inherit_metrics.ji_score,
+            inherit_metrics.pairwise_entropy,
+            inherit_metrics.unique_bins,
+            inherit_metrics.mean_local_opt_score_gap,
+            inherit_metrics.mean_local_opt_delta_st,
+            search_metrics.loo_c_score,
+            search_metrics.ji_score,
+            search_metrics.pairwise_entropy,
+            search_metrics.unique_bins,
+            search_metrics.mean_local_opt_score_gap,
+            search_metrics.mean_local_opt_delta_st,
+        );
+
+        assert!(
+            search_metrics.mean_local_opt_score_gap
+                <= inherit_metrics.mean_local_opt_score_gap + 1e-6
+        );
+        assert!(
+            search_metrics.mean_local_opt_delta_st
+                <= inherit_metrics.mean_local_opt_delta_st + 1e-6
         );
     }
 
@@ -37192,6 +37449,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
                 parent_proposal_unison_notch_gain_override: None,
                 parent_proposal_unison_notch_sigma_st_override: None,
                 parent_proposal_candidate_count_override: None,
+                azimuth_mode_override: None,
                 family_occupancy_strength_override: None,
                 family_nfd_mode: E6FamilyNfdMode::Off,
                 respawn_mode: E6RespawnMode::VacantNicheByParentPrior,
@@ -37330,6 +37588,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
                 parent_proposal_unison_notch_gain_override: None,
                 parent_proposal_unison_notch_sigma_st_override: None,
                 parent_proposal_candidate_count_override: None,
+                azimuth_mode_override: None,
                 random_baseline_mode: E6bRandomBaselineMode::LogRandomFiltered,
             };
             e6b_jobs.push((label, cfg));
