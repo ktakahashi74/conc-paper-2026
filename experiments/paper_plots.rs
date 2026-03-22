@@ -17,9 +17,9 @@ use crate::sim::{
     E3_BINS_PER_OCT, E3_FMAX, E3_FMIN, E3Condition, E3DeathRecord, E3RunConfig, E4_ANCHOR_HZ,
     E4_ENV_PARTIAL_DECAY_DEFAULT, E4_ENV_PARTIALS_DEFAULT, E4RuntimeOverrides, E4TailSamples,
     E6AgentSnapshot, E6B_DEFAULT_POP_SIZE, E6Condition, E6DeathCause, E6FamilyNfdMode,
-    E6PitchSnapshot, E6RespawnMode, E6RespawnRecord, E6RunConfig, E6RunResult,
-    E6SelectionScoreMode, E6StopReason, E6bRunConfig, E6bRunResult,
-    configure_shared_hillclimb_core, e3_policy_params, e3_reference_landscape,
+    E6ParentProposalKind, E6PitchSnapshot, E6RespawnMode, E6RespawnRecord, E6RunConfig,
+    E6RunResult, E6SelectionScoreMode, E6StopReason, E6bRandomBaselineMode, E6bRunConfig,
+    E6bRunResult, configure_shared_hillclimb_core, e3_policy_params, e3_reference_landscape,
     e3_reference_landscape_with_partials, e3_tessitura_bounds_for_range, e4_paper_meta,
     e6_mean_selection_score_for_freqs, e6_mean_selection_score_for_freqs_mode,
     e6_sampler_debug_scan, run_e3_collect_deaths, run_e4_condition_tail_samples,
@@ -439,14 +439,52 @@ struct E6bCliOptions {
     capacity_free_voices: Option<usize>,
     parent_share_weight: Option<f32>,
     parent_energy_weight: Option<f32>,
+    juvenile_enabled: Option<bool>,
     juvenile_ticks: Option<u32>,
     survival_score_low: Option<f32>,
     survival_score_high: Option<f32>,
     survival_recharge_per_sec: Option<f32>,
     background_death_rate_per_sec: Option<f32>,
+    parent_proposal_kind: Option<E6ParentProposalKind>,
+    parent_proposal_sigma_st: Option<f32>,
+    parent_proposal_candidate_count: Option<usize>,
     respawn_parent_prior_mix: Option<f32>,
     respawn_same_band_discount: Option<f32>,
     respawn_octave_discount: Option<f32>,
+}
+
+fn parse_on_off_cli_opt(args: &[String], key: &str) -> Result<Option<bool>, String> {
+    let mut value: Option<String> = None;
+    let key_eq = format!("{key}=");
+    let mut i = 0;
+    while i < args.len() {
+        let arg = args[i].as_str();
+        if arg == key {
+            if i + 1 >= args.len() {
+                return Err(format!("Missing value after {arg}\n{}", usage()));
+            }
+            value = Some(args[i + 1].clone());
+            i += 2;
+            continue;
+        }
+        if let Some(rest) = arg.strip_prefix(&key_eq) {
+            value = Some(rest.to_string());
+            i += 1;
+            continue;
+        }
+        i += 1;
+    }
+    let Some(raw) = value else {
+        return Ok(None);
+    };
+    match raw.to_ascii_lowercase().as_str() {
+        "on" | "true" | "1" | "yes" => Ok(Some(true)),
+        "off" | "false" | "0" | "no" => Ok(Some(false)),
+        _ => Err(format!(
+            "Invalid {key} value '{raw}'. Use on/off.\n{}",
+            usage()
+        )),
+    }
 }
 
 impl E6bCliOptions {
@@ -706,6 +744,8 @@ fn usage() -> String {
         "  paper --e6-debug-sampler",
         "  paper --exp e6b",
         "  paper --exp e6b --e6b-quick",
+        "  paper --exp e6b --e6b-juvenile off",
+        "  paper --exp e6b --e6b-parent-proposal contextual_c --e6b-parent-proposal-sigma 4.9",
         "  paper --exp e6b --e6b-seeds 6 --e6b-skip-benchmark",
         "  paper --exp e6b --e6b-quick --e6b-crowding 0.005 --e6b-capacity-weight 0.04",
         "  paper --exp e6b --e6b-quick --e6b-parent-share-weight 0.75",
@@ -724,7 +764,11 @@ fn usage() -> String {
         "--e6b-capacity-radius X overrides the E6b local-capacity radius in cents.",
         "--e6b-capacity-free-voices N overrides the free voices allowed per local band.",
         "--e6b-parent-share-weight X scales how strongly crowded bands lose parent-choice weight.",
+        "--e6b-juvenile on|off toggles newborn local settlement in E6b.",
         "--e6b-juvenile-ticks N overrides the E6b juvenile settlement window.",
+        "--e6b-parent-proposal contextual_c|h_only selects the E6b parent-owned proposal density.",
+        "--e6b-parent-proposal-sigma X sets the E6b parent-relative Gaussian width in semitones.",
+        "--e6b-parent-proposal-candidates N sets how many parent-proposed families are filtered by the scene.",
         "--e6b-survival-low X sets the score where E6b survival recharge starts ramping up.",
         "--e6b-survival-high X sets the score where E6b survival recharge saturates.",
         "--e6b-survival-recharge X overrides the maximum E6b survival recharge per second.",
@@ -911,7 +955,11 @@ fn parse_experiments(args: &[String]) -> Result<Vec<Experiment>, String> {
         if arg == "--e6b-seeds"
             || arg == "--e6b-capacity-free-voices"
             || arg == "--e6b-parent-share-weight"
+            || arg == "--e6b-juvenile"
             || arg == "--e6b-juvenile-ticks"
+            || arg == "--e6b-parent-proposal"
+            || arg == "--e6b-parent-proposal-sigma"
+            || arg == "--e6b-parent-proposal-candidates"
             || arg == "--e6b-survival-low"
             || arg == "--e6b-survival-high"
             || arg == "--e6b-survival-recharge"
@@ -932,7 +980,11 @@ fn parse_experiments(args: &[String]) -> Result<Vec<Experiment>, String> {
             || arg.starts_with("--e6b-capacity-radius=")
             || arg.starts_with("--e6b-capacity-free-voices=")
             || arg.starts_with("--e6b-parent-share-weight=")
+            || arg.starts_with("--e6b-juvenile=")
             || arg.starts_with("--e6b-juvenile-ticks=")
+            || arg.starts_with("--e6b-parent-proposal=")
+            || arg.starts_with("--e6b-parent-proposal-sigma=")
+            || arg.starts_with("--e6b-parent-proposal-candidates=")
             || arg.starts_with("--e6b-survival-low=")
             || arg.starts_with("--e6b-survival-high=")
             || arg.starts_with("--e6b-survival-recharge=")
@@ -1405,8 +1457,55 @@ fn parse_e6b_parent_energy_weight(args: &[String]) -> Result<Option<f32>, String
     parse_f32_cli_opt(args, "--e6b-parent-energy-weight")
 }
 
+fn parse_e6b_juvenile_enabled(args: &[String]) -> Result<Option<bool>, String> {
+    parse_on_off_cli_opt(args, "--e6b-juvenile")
+}
+
 fn parse_e6b_juvenile_ticks(args: &[String]) -> Result<Option<u32>, String> {
     parse_u32_cli_opt(args, "--e6b-juvenile-ticks")
+}
+
+fn parse_e6b_parent_proposal_kind(args: &[String]) -> Result<Option<E6ParentProposalKind>, String> {
+    let mut value: Option<String> = None;
+    let key = "--e6b-parent-proposal";
+    let key_eq = format!("{key}=");
+    let mut i = 0;
+    while i < args.len() {
+        let arg = args[i].as_str();
+        if arg == key {
+            if i + 1 >= args.len() {
+                return Err(format!("Missing value after {arg}\n{}", usage()));
+            }
+            value = Some(args[i + 1].clone());
+            i += 2;
+            continue;
+        }
+        if let Some(rest) = arg.strip_prefix(&key_eq) {
+            value = Some(rest.to_string());
+            i += 1;
+            continue;
+        }
+        i += 1;
+    }
+    let Some(raw) = value else {
+        return Ok(None);
+    };
+    match raw.to_ascii_lowercase().as_str() {
+        "contextual_c" | "contextualc" | "c" => Ok(Some(E6ParentProposalKind::ContextualC)),
+        "h_only" | "honly" | "h" => Ok(Some(E6ParentProposalKind::HOnly)),
+        _ => Err(format!(
+            "Invalid --e6b-parent-proposal value '{raw}'. Use contextual_c|h_only.\n{}",
+            usage()
+        )),
+    }
+}
+
+fn parse_e6b_parent_proposal_sigma(args: &[String]) -> Result<Option<f32>, String> {
+    parse_f32_cli_opt(args, "--e6b-parent-proposal-sigma")
+}
+
+fn parse_e6b_parent_proposal_candidates(args: &[String]) -> Result<Option<usize>, String> {
+    parse_usize_cli_opt(args, "--e6b-parent-proposal-candidates")
 }
 
 fn parse_e6b_survival_low(args: &[String]) -> Result<Option<f32>, String> {
@@ -1594,7 +1693,14 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
     let e6b_parent_share_weight = parse_e6b_parent_share_weight(&args).map_err(io::Error::other)?;
     let e6b_parent_energy_weight =
         parse_e6b_parent_energy_weight(&args).map_err(io::Error::other)?;
+    let e6b_juvenile_enabled = parse_e6b_juvenile_enabled(&args).map_err(io::Error::other)?;
     let e6b_juvenile_ticks = parse_e6b_juvenile_ticks(&args).map_err(io::Error::other)?;
+    let e6b_parent_proposal_kind =
+        parse_e6b_parent_proposal_kind(&args).map_err(io::Error::other)?;
+    let e6b_parent_proposal_sigma =
+        parse_e6b_parent_proposal_sigma(&args).map_err(io::Error::other)?;
+    let e6b_parent_proposal_candidates =
+        parse_e6b_parent_proposal_candidates(&args).map_err(io::Error::other)?;
     let e6b_survival_low = parse_e6b_survival_low(&args).map_err(io::Error::other)?;
     let e6b_survival_high = parse_e6b_survival_high(&args).map_err(io::Error::other)?;
     let e6b_survival_recharge = parse_e6b_survival_recharge(&args).map_err(io::Error::other)?;
@@ -1622,7 +1728,11 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
         capacity_free_voices: e6b_capacity_free_voices,
         parent_share_weight: e6b_parent_share_weight,
         parent_energy_weight: e6b_parent_energy_weight,
+        juvenile_enabled: e6b_juvenile_enabled,
         juvenile_ticks: e6b_juvenile_ticks,
+        parent_proposal_kind: e6b_parent_proposal_kind,
+        parent_proposal_sigma_st: e6b_parent_proposal_sigma,
+        parent_proposal_candidate_count: e6b_parent_proposal_candidates,
         survival_score_low: e6b_survival_low,
         survival_score_high: e6b_survival_high,
         survival_recharge_per_sec: e6b_survival_recharge,
@@ -6772,6 +6882,27 @@ struct E6SnapshotPoint {
 }
 
 #[derive(Clone, Copy, Debug)]
+struct E6bSeriesPoint {
+    snapshot_step: usize,
+    death_count: usize,
+    normalized_step: f32,
+    loo_c_score: f32,
+    g_scene: f32,
+    pairwise_entropy: f32,
+    ji_score: f32,
+    unique_bins: f32,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct E6bConvergenceMetrics {
+    auc_c: f32,
+    step_to_c80: Option<f32>,
+    stable_step_to_c80: Option<f32>,
+    step_to_ji50: Option<f32>,
+    step_to_entropy_1p25: Option<f32>,
+}
+
+#[derive(Clone, Copy, Debug)]
 struct E6bEndpointMetrics {
     loo_c_score: f32,
     g_scene: f32,
@@ -6784,32 +6915,65 @@ struct E6bEndpointMetrics {
     same_octave_respawn_rate: f32,
     underfilled_respawn_rate: f32,
     mean_respawn_band_occupancy: f32,
+    mean_proposal_rank: f32,
+    mean_proposal_mass: f32,
+    mean_proposal_filter_gain: f32,
     energy_exhaustion_deaths: usize,
     background_turnover_deaths: usize,
     juvenile_cull_deaths: usize,
+    auc_c: f32,
+    step_to_c80: Option<f32>,
+    stable_step_to_c80: Option<f32>,
+    step_to_ji50: Option<f32>,
+    step_to_entropy_1p25: Option<f32>,
     stop_reason: E6StopReason,
 }
 
 #[derive(Clone, Debug)]
 struct E6bProcessedRun {
     label: &'static str,
+    baseline_type: &'static str,
     selection_enabled: bool,
+    juvenile_enabled: bool,
     seed: u64,
-    series: Vec<(usize, f32)>,
+    series: Vec<E6bSeriesPoint>,
     final_metrics: Option<E6bEndpointMetrics>,
     heat_counts: Vec<(usize, i32, f32)>,
 }
 
 #[allow(clippy::type_complexity)]
 fn e6b_run_jobs(
-    specs: &[(&'static str, E6Condition, bool)],
+    specs: &[(&'static str, E6Condition, bool, E6bRandomBaselineMode)],
     seeds: &[u64],
     cli: E6bCliOptions,
-) -> Vec<(&'static str, E6Condition, bool, u64, E6bRunResult)> {
-    let mut jobs: Vec<(&'static str, E6Condition, bool, u64)> = Vec::new();
-    for &(label, condition, selection_enabled) in specs {
+) -> Vec<(
+    &'static str,
+    E6Condition,
+    bool,
+    E6bRandomBaselineMode,
+    bool,
+    u64,
+    E6bRunResult,
+)> {
+    let juvenile_enabled = cli.juvenile_enabled.unwrap_or(true);
+    let mut jobs: Vec<(
+        &'static str,
+        E6Condition,
+        bool,
+        E6bRandomBaselineMode,
+        bool,
+        u64,
+    )> = Vec::new();
+    for &(label, condition, selection_enabled, random_baseline_mode) in specs {
         for &seed in seeds {
-            jobs.push((label, condition, selection_enabled, seed));
+            jobs.push((
+                label,
+                condition,
+                selection_enabled,
+                random_baseline_mode,
+                juvenile_enabled,
+                seed,
+            ));
         }
     }
     let worker_count = std::thread::available_parallelism()
@@ -6818,8 +6982,19 @@ fn e6b_run_jobs(
         .min(jobs.len())
         .max(1);
     let next = AtomicUsize::new(0);
-    let slots: Mutex<Vec<Option<(&'static str, E6Condition, bool, u64, E6bRunResult)>>> =
-        Mutex::new((0..jobs.len()).map(|_| None).collect());
+    let slots: Mutex<
+        Vec<
+            Option<(
+                &'static str,
+                E6Condition,
+                bool,
+                E6bRandomBaselineMode,
+                bool,
+                u64,
+                E6bRunResult,
+            )>,
+        >,
+    > = Mutex::new((0..jobs.len()).map(|_| None).collect());
     std::thread::scope(|scope| {
         for _ in 0..worker_count {
             scope.spawn(|| {
@@ -6828,7 +7003,14 @@ fn e6b_run_jobs(
                     if idx >= jobs.len() {
                         break;
                     }
-                    let (label, condition, selection_enabled, seed) = jobs[idx];
+                    let (
+                        label,
+                        condition,
+                        selection_enabled,
+                        random_baseline_mode,
+                        juvenile_enabled,
+                        seed,
+                    ) = jobs[idx];
                     let cfg = E6bRunConfig {
                         seed,
                         steps_cap: E6B_STEPS_CAP,
@@ -6845,6 +7027,7 @@ fn e6b_run_jobs(
                         polyphonic_capacity_free_voices_override: cli.capacity_free_voices,
                         polyphonic_parent_share_weight_override: cli.parent_share_weight,
                         polyphonic_parent_energy_weight_override: cli.parent_energy_weight,
+                        juvenile_contextual_settlement_enabled_override: Some(juvenile_enabled),
                         juvenile_contextual_tuning_ticks_override: cli.juvenile_ticks,
                         survival_score_low_override: cli.survival_score_low,
                         survival_score_high_override: cli.survival_score_high,
@@ -6853,10 +7036,24 @@ fn e6b_run_jobs(
                         respawn_parent_prior_mix_override: cli.respawn_parent_prior_mix,
                         respawn_same_band_discount_override: cli.respawn_same_band_discount,
                         respawn_octave_discount_override: cli.respawn_octave_discount,
+                        parent_proposal_kind_override: cli.parent_proposal_kind,
+                        parent_proposal_sigma_st_override: cli.parent_proposal_sigma_st,
+                        parent_proposal_unison_notch_gain_override: None,
+                        parent_proposal_unison_notch_sigma_st_override: None,
+                        parent_proposal_candidate_count_override: cli
+                            .parent_proposal_candidate_count,
+                        random_baseline_mode,
                     };
                     let result = run_e6b(&cfg);
-                    slots.lock().unwrap()[idx] =
-                        Some((label, condition, selection_enabled, seed, result));
+                    slots.lock().unwrap()[idx] = Some((
+                        label,
+                        condition,
+                        selection_enabled,
+                        random_baseline_mode,
+                        juvenile_enabled,
+                        seed,
+                        result,
+                    ));
                 }
             });
         }
@@ -6871,7 +7068,9 @@ fn e6b_run_jobs(
 
 fn e6b_process_run(
     label: &'static str,
+    baseline_type: &'static str,
     selection_enabled: bool,
+    juvenile_enabled: bool,
     seed: u64,
     result: &E6bRunResult,
     anchor_hz: f32,
@@ -6883,9 +7082,9 @@ fn e6b_process_run(
     free_voices: usize,
 ) -> E6bProcessedRun {
     let mut death_count = 0usize;
-    let mut series: Vec<(usize, f32)> = Vec::with_capacity(result.snapshots.len());
+    let steps_cap = E6B_STEPS_CAP.max(1);
+    let mut series: Vec<E6bSeriesPoint> = Vec::with_capacity(result.snapshots.len());
     let mut heat_counts: Vec<(usize, i32, f32)> = Vec::new();
-    let mut last_loo_g: Option<(f32, f32)> = None;
 
     for snapshot in &result.snapshots {
         while death_count < result.deaths.len()
@@ -6900,8 +7099,28 @@ fn e6b_process_run(
             workspace,
             du_scan,
         );
-        series.push((death_count, loo_c_score));
-        last_loo_g = Some((loo_c_score, g_scene));
+        let semitones: Vec<f32> = snapshot
+            .freqs_hz
+            .iter()
+            .copied()
+            .filter(|f| f.is_finite() && *f > 0.0)
+            .map(|freq_hz| 12.0 * (freq_hz / anchor_hz).log2())
+            .collect();
+        let pairwise = pairwise_interval_samples(&semitones);
+        let pairwise_probs =
+            histogram_probabilities_fixed(&pairwise, 0.0, 12.0, E2_PAIRWISE_BIN_ST);
+        let pairwise_entropy = hist_structure_metrics_from_probs(&pairwise_probs).entropy;
+        let diversity = diversity_metrics_for_semitones(&semitones);
+        series.push(E6bSeriesPoint {
+            snapshot_step: snapshot.step,
+            death_count,
+            normalized_step: snapshot.step as f32 / steps_cap as f32,
+            loo_c_score,
+            g_scene,
+            pairwise_entropy,
+            ji_score: ji_population_score(&snapshot.freqs_hz, anchor_hz),
+            unique_bins: diversity.unique_bins as f32,
+        });
 
         if label == "heredity" {
             for &freq_hz in &snapshot.freqs_hz {
@@ -6916,10 +7135,12 @@ fn e6b_process_run(
         }
     }
 
-    let final_metrics = e6b_final_metrics(result, anchor_hz, last_loo_g, free_voices);
+    let final_metrics = e6b_final_metrics(result, &series, free_voices);
     E6bProcessedRun {
         label,
+        baseline_type,
         selection_enabled,
+        juvenile_enabled,
         seed,
         series,
         final_metrics,
@@ -6929,7 +7150,15 @@ fn e6b_process_run(
 
 #[allow(clippy::type_complexity)]
 fn e6b_process_results(
-    main_results: &[(&'static str, E6Condition, bool, u64, E6bRunResult)],
+    main_results: &[(
+        &'static str,
+        E6Condition,
+        bool,
+        E6bRandomBaselineMode,
+        bool,
+        u64,
+        E6bRunResult,
+    )],
     anchor_hz: f32,
     space: &Log2Space,
     workspace: &ConsonanceWorkspace,
@@ -6954,10 +7183,20 @@ fn e6b_process_results(
                     if idx >= main_results.len() {
                         break;
                     }
-                    let (label, _condition, selection_enabled, seed, result) = &main_results[idx];
+                    let (
+                        label,
+                        _condition,
+                        selection_enabled,
+                        random_baseline_mode,
+                        juvenile_enabled,
+                        seed,
+                        result,
+                    ) = &main_results[idx];
                     let processed = e6b_process_run(
                         *label,
+                        random_baseline_mode.label(),
                         *selection_enabled,
+                        *juvenile_enabled,
                         *seed,
                         result,
                         anchor_hz,
@@ -6979,6 +7218,85 @@ fn e6b_process_results(
         .into_iter()
         .map(|slot| slot.expect("missing E6b processed output"))
         .collect()
+}
+
+fn e6b_auc_c(series: &[E6bSeriesPoint]) -> f32 {
+    if series.len() < 2 {
+        return series.first().map(|p| p.loo_c_score).unwrap_or(0.0);
+    }
+    let mut area = 0.0f32;
+    for window in series.windows(2) {
+        let a = window[0];
+        let b = window[1];
+        let width = (b.normalized_step - a.normalized_step).max(0.0);
+        area += width * 0.5 * (a.loo_c_score + b.loo_c_score);
+    }
+    area
+}
+
+fn e6b_first_threshold_step<F>(
+    series: &[E6bSeriesPoint],
+    value_of: F,
+    predicate: impl Fn(f32) -> bool,
+) -> Option<f32>
+where
+    F: Fn(&E6bSeriesPoint) -> f32,
+{
+    series
+        .iter()
+        .find(|point| predicate(value_of(point)))
+        .map(|point| point.normalized_step)
+}
+
+fn e6b_stable_threshold_step<F>(
+    series: &[E6bSeriesPoint],
+    value_of: F,
+    predicate: impl Fn(f32) -> bool,
+) -> Option<f32>
+where
+    F: Fn(&E6bSeriesPoint) -> f32,
+{
+    for (idx, point) in series.iter().enumerate() {
+        if !predicate(value_of(point)) {
+            continue;
+        }
+        if series[idx..].iter().all(|later| predicate(value_of(later))) {
+            return Some(point.normalized_step);
+        }
+    }
+    None
+}
+
+fn e6b_convergence_metrics(series: &[E6bSeriesPoint]) -> E6bConvergenceMetrics {
+    E6bConvergenceMetrics {
+        auc_c: e6b_auc_c(series),
+        step_to_c80: e6b_first_threshold_step(series, |point| point.loo_c_score, |v| v >= 0.80),
+        stable_step_to_c80: e6b_stable_threshold_step(
+            series,
+            |point| point.loo_c_score,
+            |v| v >= 0.80,
+        ),
+        step_to_ji50: e6b_first_threshold_step(series, |point| point.ji_score, |v| v >= 0.50),
+        step_to_entropy_1p25: e6b_first_threshold_step(
+            series,
+            |point| point.pairwise_entropy,
+            |v| v <= 1.25,
+        ),
+    }
+}
+
+fn e6b_optional_metric_summary(values: &[Option<f32>]) -> (usize, f32, f32) {
+    let finite: Vec<f32> = values
+        .iter()
+        .flatten()
+        .copied()
+        .filter(|value| value.is_finite())
+        .collect();
+    if finite.is_empty() {
+        return (0, 0.0, 0.0);
+    }
+    let (mean, std) = mean_std_scalar(&finite);
+    (finite.len(), mean, std)
 }
 
 fn e6b_same_pitch_replacement_rate(result: &E6bRunResult, cents_window: f32) -> f32 {
@@ -7095,25 +7413,35 @@ fn e6b_death_cause_counts(result: &E6bRunResult) -> (usize, usize, usize) {
     (energy_exhaustion, background_turnover, juvenile_cull)
 }
 
+fn e6b_respawn_proposal_stats(result: &E6bRunResult) -> (f32, f32, f32) {
+    let ranks: Vec<f32> = result
+        .respawns
+        .iter()
+        .filter_map(|respawn| respawn.proposal_rank.map(|rank| rank as f32))
+        .collect();
+    let masses: Vec<f32> = result
+        .respawns
+        .iter()
+        .filter_map(|respawn| respawn.proposal_mass)
+        .collect();
+    let gains: Vec<f32> = result
+        .respawns
+        .iter()
+        .filter_map(|respawn| respawn.proposal_filter_gain)
+        .collect();
+    (
+        mean_std_scalar(&ranks).0,
+        mean_std_scalar(&masses).0,
+        mean_std_scalar(&gains).0,
+    )
+}
+
 fn e6b_final_metrics(
     result: &E6bRunResult,
-    anchor_hz: f32,
-    last_loo_g: Option<(f32, f32)>,
+    series: &[E6bSeriesPoint],
     free_voices: usize,
 ) -> Option<E6bEndpointMetrics> {
-    let final_snapshot = result.snapshots.last()?;
-    let semitones: Vec<f32> = final_snapshot
-        .freqs_hz
-        .iter()
-        .copied()
-        .filter(|f| f.is_finite() && *f > 0.0)
-        .map(|freq_hz| 12.0 * (freq_hz / anchor_hz).log2())
-        .collect();
-    let pairwise = pairwise_interval_samples(&semitones);
-    let pairwise_probs = histogram_probabilities_fixed(&pairwise, 0.0, 12.0, E2_PAIRWISE_BIN_ST);
-    let pairwise_entropy = hist_structure_metrics_from_probs(&pairwise_probs).entropy;
-    let diversity = diversity_metrics_for_semitones(&semitones);
-    let (loo_c_score, g_scene) = last_loo_g.unwrap_or((0.0, 0.0));
+    let final_point = *series.last()?;
     let mean_lifetime_steps = mean_std_scalar(
         &result
             .deaths
@@ -7127,23 +7455,34 @@ fn e6b_final_metrics(
     let same_octave_respawn_rate = e6b_same_octave_respawn_rate(result, 35.0);
     let (underfilled_respawn_rate, mean_respawn_band_occupancy) =
         e6b_underfilled_respawn_stats(result, free_voices);
+    let (mean_proposal_rank, mean_proposal_mass, mean_proposal_filter_gain) =
+        e6b_respawn_proposal_stats(result);
     let (energy_exhaustion_deaths, background_turnover_deaths, juvenile_cull_deaths) =
         e6b_death_cause_counts(result);
+    let convergence = e6b_convergence_metrics(series);
     Some(E6bEndpointMetrics {
-        loo_c_score,
-        g_scene,
-        pairwise_entropy,
-        ji_score: ji_population_score(&final_snapshot.freqs_hz, anchor_hz),
-        unique_bins: diversity.unique_bins as f32,
+        loo_c_score: final_point.loo_c_score,
+        g_scene: final_point.g_scene,
+        pairwise_entropy: final_point.pairwise_entropy,
+        ji_score: final_point.ji_score,
+        unique_bins: final_point.unique_bins,
         mean_lifetime_steps,
         same_pitch_replacement_rate,
         same_family_respawn_rate,
         same_octave_respawn_rate,
         underfilled_respawn_rate,
         mean_respawn_band_occupancy,
+        mean_proposal_rank,
+        mean_proposal_mass,
+        mean_proposal_filter_gain,
         energy_exhaustion_deaths,
         background_turnover_deaths,
         juvenile_cull_deaths,
+        auc_c: convergence.auc_c,
+        step_to_c80: convergence.step_to_c80,
+        stable_step_to_c80: convergence.stable_step_to_c80,
+        step_to_ji50: convergence.step_to_ji50,
+        step_to_entropy_1p25: convergence.step_to_entropy_1p25,
         stop_reason: result.stop_reason,
     })
 }
@@ -7173,10 +7512,54 @@ fn plot_e6b_hereditary_polyphony(
     let seeds = cli.seed_slice();
     let main_results = e6b_run_jobs(
         &[
-            ("heredity_nosel", E6Condition::Heredity, false),
-            ("random_nosel", E6Condition::Random, false),
-            ("heredity", E6Condition::Heredity, true),
-            ("random", E6Condition::Random, true),
+            (
+                "heredity_nosel",
+                E6Condition::Heredity,
+                false,
+                E6bRandomBaselineMode::LogRandomFiltered,
+            ),
+            (
+                "random_nosel",
+                E6Condition::Random,
+                false,
+                E6bRandomBaselineMode::LogRandomFiltered,
+            ),
+            (
+                "heredity",
+                E6Condition::Heredity,
+                true,
+                E6bRandomBaselineMode::LogRandomFiltered,
+            ),
+            (
+                "random",
+                E6Condition::Random,
+                true,
+                E6bRandomBaselineMode::LogRandomFiltered,
+            ),
+            (
+                "scene_random_nosel",
+                E6Condition::Random,
+                false,
+                E6bRandomBaselineMode::MatchedScenePeaks,
+            ),
+            (
+                "scene_random",
+                E6Condition::Random,
+                true,
+                E6bRandomBaselineMode::MatchedScenePeaks,
+            ),
+            (
+                "hard_random_nosel",
+                E6Condition::Random,
+                false,
+                E6bRandomBaselineMode::HardRandomLog,
+            ),
+            (
+                "hard_random",
+                E6Condition::Random,
+                true,
+                E6bRandomBaselineMode::HardRandomLog,
+            ),
         ],
         seeds,
         cli,
@@ -7200,12 +7583,25 @@ fn plot_e6b_hereditary_polyphony(
     let mut final_same_octave_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut final_underfilled_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut final_band_occupancy_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
+    let mut final_proposal_rank_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
+    let mut final_proposal_mass_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
+    let mut final_proposal_filter_gain_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut final_energy_deaths_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut final_background_deaths_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
     let mut final_juvenile_cull_deaths_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
+    let mut final_auc_c_by_label: HashMap<&'static str, Vec<f32>> = HashMap::new();
+    let mut final_step_to_c80_by_label: HashMap<&'static str, Vec<Option<f32>>> = HashMap::new();
+    let mut final_stable_step_to_c80_by_label: HashMap<&'static str, Vec<Option<f32>>> =
+        HashMap::new();
+    let mut final_step_to_ji50_by_label: HashMap<&'static str, Vec<Option<f32>>> = HashMap::new();
+    let mut final_step_to_entropy_by_label: HashMap<&'static str, Vec<Option<f32>>> =
+        HashMap::new();
     let mut stop_reason_counts_by_label: HashMap<&'static str, (usize, usize)> = HashMap::new();
     let mut endpoint_csv = String::from(
-        "condition,seed,selection_enabled,stop_reason,loo_c_score,g_scene,pairwise_entropy,ji_score,unique_bins,mean_lifetime_steps,same_pitch_replacement_rate,same_family_respawn_rate,same_octave_respawn_rate,underfilled_respawn_rate,mean_respawn_band_occupancy,energy_exhaustion_deaths,background_turnover_deaths,juvenile_cull_deaths\n",
+        "condition,baseline_type,seed,selection_enabled,juvenile_enabled,stop_reason,loo_c_score,g_scene,pairwise_entropy,ji_score,unique_bins,mean_lifetime_steps,same_pitch_replacement_rate,same_family_respawn_rate,same_octave_respawn_rate,underfilled_respawn_rate,mean_respawn_band_occupancy,mean_proposal_rank,mean_proposal_mass,mean_proposal_filter_gain,energy_exhaustion_deaths,background_turnover_deaths,juvenile_cull_deaths,auc_c,step_to_c80,stable_step_to_c80,step_to_ji50,step_to_entropy_1p25\n",
+    );
+    let mut timeseries_csv = String::from(
+        "condition,baseline_type,seed,selection_enabled,juvenile_enabled,snapshot_step,death_count,normalized_step,loo_c_score,g_scene,pairwise_entropy,ji_score,unique_bins\n",
     );
     let mut heat_counts: HashMap<(usize, i32), f32> = HashMap::new();
     let (heat_min_st, heat_max_st) = e6_effective_range_bounds_st();
@@ -7222,10 +7618,33 @@ fn plot_e6b_hereditary_polyphony(
     );
 
     for processed in processed_runs {
+        let c_series: Vec<(usize, f32)> = processed
+            .series
+            .iter()
+            .map(|point| (point.death_count, point.loo_c_score))
+            .collect();
         series_by_label_seed
             .entry(processed.label)
             .or_default()
-            .insert(processed.seed, processed.series);
+            .insert(processed.seed, c_series);
+        for point in &processed.series {
+            timeseries_csv.push_str(&format!(
+                "{},{},{},{},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.3}\n",
+                processed.label,
+                processed.baseline_type,
+                processed.seed,
+                u8::from(processed.selection_enabled),
+                u8::from(processed.juvenile_enabled),
+                point.snapshot_step,
+                point.death_count,
+                point.normalized_step,
+                point.loo_c_score,
+                point.g_scene,
+                point.pairwise_entropy,
+                point.ji_score,
+                point.unique_bins,
+            ));
+        }
         for (death_count, bin, mass) in processed.heat_counts {
             *heat_counts.entry((death_count, bin)).or_insert(0.0) += mass;
         }
@@ -7275,6 +7694,18 @@ fn plot_e6b_hereditary_polyphony(
                 .entry(processed.label)
                 .or_default()
                 .push(metrics.mean_respawn_band_occupancy);
+            final_proposal_rank_by_label
+                .entry(processed.label)
+                .or_default()
+                .push(metrics.mean_proposal_rank);
+            final_proposal_mass_by_label
+                .entry(processed.label)
+                .or_default()
+                .push(metrics.mean_proposal_mass);
+            final_proposal_filter_gain_by_label
+                .entry(processed.label)
+                .or_default()
+                .push(metrics.mean_proposal_filter_gain);
             final_energy_deaths_by_label
                 .entry(processed.label)
                 .or_default()
@@ -7287,6 +7718,26 @@ fn plot_e6b_hereditary_polyphony(
                 .entry(processed.label)
                 .or_default()
                 .push(metrics.juvenile_cull_deaths as f32);
+            final_auc_c_by_label
+                .entry(processed.label)
+                .or_default()
+                .push(metrics.auc_c);
+            final_step_to_c80_by_label
+                .entry(processed.label)
+                .or_default()
+                .push(metrics.step_to_c80);
+            final_stable_step_to_c80_by_label
+                .entry(processed.label)
+                .or_default()
+                .push(metrics.stable_step_to_c80);
+            final_step_to_ji50_by_label
+                .entry(processed.label)
+                .or_default()
+                .push(metrics.step_to_ji50);
+            final_step_to_entropy_by_label
+                .entry(processed.label)
+                .or_default()
+                .push(metrics.step_to_entropy_1p25);
             let counter = stop_reason_counts_by_label
                 .entry(processed.label)
                 .or_insert((0usize, 0usize));
@@ -7295,10 +7746,12 @@ fn plot_e6b_hereditary_polyphony(
                 E6StopReason::StepsCap => counter.1 += 1,
             }
             endpoint_csv.push_str(&format!(
-                "{},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.3},{:.3},{:.6},{:.6},{:.6},{:.6},{:.3},{},{},{}\n",
+                "{},{},{},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.3},{:.3},{:.6},{:.6},{:.6},{:.6},{:.3},{:.3},{:.6},{:.6},{},{},{},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
                 processed.label,
+                processed.baseline_type,
                 processed.seed,
                 u8::from(processed.selection_enabled),
+                u8::from(processed.juvenile_enabled),
                 metrics.stop_reason.label(),
                 metrics.loo_c_score,
                 metrics.g_scene,
@@ -7311,14 +7764,23 @@ fn plot_e6b_hereditary_polyphony(
                 metrics.same_octave_respawn_rate,
                 metrics.underfilled_respawn_rate,
                 metrics.mean_respawn_band_occupancy,
+                metrics.mean_proposal_rank,
+                metrics.mean_proposal_mass,
+                metrics.mean_proposal_filter_gain,
                 metrics.energy_exhaustion_deaths,
                 metrics.background_turnover_deaths,
                 metrics.juvenile_cull_deaths,
+                metrics.auc_c,
+                metrics.step_to_c80.unwrap_or(f32::NAN),
+                metrics.stable_step_to_c80.unwrap_or(f32::NAN),
+                metrics.step_to_ji50.unwrap_or(f32::NAN),
+                metrics.step_to_entropy_1p25.unwrap_or(f32::NAN),
             ));
         }
     }
 
     write_with_log(out_dir.join("paper_e6b_endpoint_metrics.csv"), endpoint_csv)?;
+    write_with_log(out_dir.join("paper_e6b_timeseries.csv"), timeseries_csv)?;
 
     let c_heredity_nosel = e6_series_stats(series_by_label_seed.get("heredity_nosel"), 1);
     let c_random_nosel = e6_series_stats(series_by_label_seed.get("random_nosel"), 1);
@@ -7400,6 +7862,32 @@ fn plot_e6b_hereditary_polyphony(
         .remove("heredity")
         .unwrap_or_default();
     let final_underfilled_random = final_underfilled_by_label
+        .remove("random")
+        .unwrap_or_default();
+    let final_auc_c_heredity = final_auc_c_by_label.remove("heredity").unwrap_or_default();
+    let final_auc_c_random = final_auc_c_by_label.remove("random").unwrap_or_default();
+    let final_step_to_c80_heredity = final_step_to_c80_by_label
+        .remove("heredity")
+        .unwrap_or_default();
+    let final_step_to_c80_random = final_step_to_c80_by_label
+        .remove("random")
+        .unwrap_or_default();
+    let final_stable_step_to_c80_heredity = final_stable_step_to_c80_by_label
+        .remove("heredity")
+        .unwrap_or_default();
+    let final_stable_step_to_c80_random = final_stable_step_to_c80_by_label
+        .remove("random")
+        .unwrap_or_default();
+    let final_step_to_ji50_heredity = final_step_to_ji50_by_label
+        .remove("heredity")
+        .unwrap_or_default();
+    let final_step_to_ji50_random = final_step_to_ji50_by_label
+        .remove("random")
+        .unwrap_or_default();
+    let final_step_to_entropy_heredity = final_step_to_entropy_by_label
+        .remove("heredity")
+        .unwrap_or_default();
+    let final_step_to_entropy_random = final_step_to_entropy_by_label
         .remove("random")
         .unwrap_or_default();
     let final_band_occupancy_heredity_nosel = final_band_occupancy_by_label
@@ -7554,10 +8042,37 @@ fn plot_e6b_hereditary_polyphony(
             .copied()
             .unwrap_or((0usize, 0usize))
     };
-    let summary_text = format!(
+    let juvenile_mode = if cli.juvenile_enabled.unwrap_or(true) {
+        "on"
+    } else {
+        "off"
+    };
+    let proposal_kind = cli
+        .parent_proposal_kind
+        .unwrap_or(E6ParentProposalKind::ContextualC)
+        .label();
+    let auc_c_heredity = mean_std_scalar(&final_auc_c_heredity).0;
+    let auc_c_random = mean_std_scalar(&final_auc_c_random).0;
+    let (step_to_c80_heredity_n, step_to_c80_heredity_mean, _) =
+        e6b_optional_metric_summary(&final_step_to_c80_heredity);
+    let (step_to_c80_random_n, step_to_c80_random_mean, _) =
+        e6b_optional_metric_summary(&final_step_to_c80_random);
+    let (stable_step_to_c80_heredity_n, stable_step_to_c80_heredity_mean, _) =
+        e6b_optional_metric_summary(&final_stable_step_to_c80_heredity);
+    let (stable_step_to_c80_random_n, stable_step_to_c80_random_mean, _) =
+        e6b_optional_metric_summary(&final_stable_step_to_c80_random);
+    let (step_to_ji50_heredity_n, step_to_ji50_heredity_mean, _) =
+        e6b_optional_metric_summary(&final_step_to_ji50_heredity);
+    let (step_to_ji50_random_n, step_to_ji50_random_mean, _) =
+        e6b_optional_metric_summary(&final_step_to_ji50_random);
+    let (step_to_entropy_heredity_n, step_to_entropy_heredity_mean, _) =
+        e6b_optional_metric_summary(&final_step_to_entropy_heredity);
+    let (step_to_entropy_random_n, step_to_entropy_random_mean, _) =
+        e6b_optional_metric_summary(&final_step_to_entropy_random);
+    let mut summary_text = format!(
         "E6b summary\n\
          ----------\n\
-         Tuning: crowding={:.4}, capacity_weight={:.4}, capacity_radius_cents={:.1}, free_voices={}, parent_share_weight={:.2}, parent_energy_weight={:.2}, juvenile_ticks={}, survival_low={:.2}, survival_high={:.2}, survival_recharge={:.3}, background_death={:.4}, respawn_parent_prior_mix={:.2}, same_band_discount={:.2}, octave_discount={:.2}\n\
+         Tuning: crowding={:.4}, capacity_weight={:.4}, capacity_radius_cents={:.1}, free_voices={}, parent_share_weight={:.2}, parent_energy_weight={:.2}, proposal_kind={}, proposal_sigma_st={:.2}, proposal_candidates={}, juvenile_mode={}, juvenile_ticks={}, survival_low={:.2}, survival_high={:.2}, survival_recharge={:.3}, background_death={:.4}, respawn_parent_prior_mix={:.2}, same_band_discount={:.2}, octave_discount={:.2}\n\
          \n\
          Final LOO C_score:\n\
          heredity, no selection: {:.4} +/- {:.4}\n\
@@ -7595,6 +8110,9 @@ fn plot_e6b_hereditary_polyphony(
          same-octave        : hered_nosel={:.4}  rand_nosel={:.4}  hered_sel={:.4}  rand_sel={:.4}\n\
          underfilled target : hered_nosel={:.4}  rand_nosel={:.4}  hered_sel={:.4}  rand_sel={:.4}\n\
          mean band occupancy: hered_nosel={:.2}  rand_nosel={:.2}  hered_sel={:.2}  rand_sel={:.2}\n\
+         mean proposal rank : hered_nosel={:.2}  rand_nosel={:.2}  hered_sel={:.2}  rand_sel={:.2}\n\
+         mean proposal mass : hered_nosel={:.4}  rand_nosel={:.4}  hered_sel={:.4}  rand_sel={:.4}\n\
+         mean filter gain   : hered_nosel={:.4}  rand_nosel={:.4}  hered_sel={:.4}  rand_sel={:.4}\n\
          \n\
          Stop reasons (min_deaths / steps_cap):\n\
          heredity, no selection: {}/{}\n\
@@ -7606,14 +8124,25 @@ fn plot_e6b_hereditary_polyphony(
          heredity, no selection: energy={:.1}, background={:.1}, juvenile={:.1}\n\
          random,   no selection: energy={:.1}, background={:.1}, juvenile={:.1}\n\
          heredity, selection:    energy={:.1}, background={:.1}, juvenile={:.1}\n\
-         random,   selection:    energy={:.1}, background={:.1}, juvenile={:.1}\n",
+         random,   selection:    energy={:.1}, background={:.1}, juvenile={:.1}\n\
+         \n\
+         Convergence diagnostics (selection conditions, normalized step):\n\
+         AUC_C                 : heredity={:.4}  random={:.4}\n\
+         step_to_C>=0.80       : heredity={}/{} mean={:.4}  random={}/{} mean={:.4}\n\
+         stable_step_to_C>=0.80: heredity={}/{} mean={:.4}  random={}/{} mean={:.4}\n\
+         step_to_JI>=0.50      : heredity={}/{} mean={:.4}  random={}/{} mean={:.4}\n\
+         step_to_entropy<=1.25 : heredity={}/{} mean={:.4}  random={}/{} mean={:.4}\n",
         cli.crowding_weight.unwrap_or(0.005),
         cli.capacity_weight.unwrap_or(0.07),
         cli.capacity_radius_cents.unwrap_or(35.0),
         cli.capacity_free_voices.unwrap_or(3),
         cli.parent_share_weight.unwrap_or(1.0),
         cli.parent_energy_weight.unwrap_or(0.25),
-        cli.juvenile_ticks.unwrap_or(4),
+        proposal_kind,
+        cli.parent_proposal_sigma_st.unwrap_or(9.0),
+        cli.parent_proposal_candidate_count.unwrap_or(16),
+        juvenile_mode,
+        cli.juvenile_ticks.unwrap_or(2),
         cli.survival_score_low.unwrap_or(0.30),
         cli.survival_score_high.unwrap_or(0.80),
         cli.survival_recharge_per_sec.unwrap_or(0.20),
@@ -7709,6 +8238,78 @@ fn plot_e6b_hereditary_polyphony(
         mean_std_scalar(&final_band_occupancy_random_nosel).0,
         mean_std_scalar(&final_band_occupancy_heredity).0,
         mean_std_scalar(&final_band_occupancy_random).0,
+        mean_std_scalar(
+            final_proposal_rank_by_label
+                .get("heredity_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_proposal_rank_by_label
+                .get("random_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_proposal_rank_by_label
+                .get("heredity")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_proposal_rank_by_label
+                .get("random")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_proposal_mass_by_label
+                .get("heredity_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_proposal_mass_by_label
+                .get("random_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_proposal_mass_by_label
+                .get("heredity")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_proposal_mass_by_label
+                .get("random")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_proposal_filter_gain_by_label
+                .get("heredity_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_proposal_filter_gain_by_label
+                .get("random_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_proposal_filter_gain_by_label
+                .get("heredity")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_proposal_filter_gain_by_label
+                .get("random")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
         stop_counts("heredity_nosel").0,
         stop_counts("heredity_nosel").1,
         stop_counts("random_nosel").0,
@@ -7789,7 +8390,164 @@ fn plot_e6b_hereditary_polyphony(
                 .map_or(&[][..], Vec::as_slice)
         )
         .0,
+        auc_c_heredity,
+        auc_c_random,
+        step_to_c80_heredity_n,
+        final_step_to_c80_heredity.len(),
+        step_to_c80_heredity_mean,
+        step_to_c80_random_n,
+        final_step_to_c80_random.len(),
+        step_to_c80_random_mean,
+        stable_step_to_c80_heredity_n,
+        final_stable_step_to_c80_heredity.len(),
+        stable_step_to_c80_heredity_mean,
+        stable_step_to_c80_random_n,
+        final_stable_step_to_c80_random.len(),
+        stable_step_to_c80_random_mean,
+        step_to_ji50_heredity_n,
+        final_step_to_ji50_heredity.len(),
+        step_to_ji50_heredity_mean,
+        step_to_ji50_random_n,
+        final_step_to_ji50_random.len(),
+        step_to_ji50_random_mean,
+        step_to_entropy_heredity_n,
+        final_step_to_entropy_heredity.len(),
+        step_to_entropy_heredity_mean,
+        step_to_entropy_random_n,
+        final_step_to_entropy_random.len(),
+        step_to_entropy_random_mean,
     );
+    summary_text.push_str(&format!(
+        "\n\
+         Main random baseline: log_random_filtered\n\
+         Scene-peak matched random baseline (supplementary):\n\
+         random,   no selection: C={:.4}  entropy={:.4}  JI={:.4}  bins={:.3}  AUC_C={:.4}\n\
+         random,   selection:    C={:.4}  entropy={:.4}  JI={:.4}  bins={:.3}  AUC_C={:.4}\n\
+         \n\
+         Hard random baseline (supplementary):\n\
+         random,   no selection: C={:.4}  entropy={:.4}  JI={:.4}  bins={:.3}  AUC_C={:.4}\n\
+         random,   selection:    C={:.4}  entropy={:.4}  JI={:.4}  bins={:.3}  AUC_C={:.4}\n",
+        mean_std_scalar(
+            final_loo_by_label
+                .get("scene_random_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_entropy_by_label
+                .get("scene_random_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_ji_by_label
+                .get("scene_random_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_unique_bins_by_label
+                .get("scene_random_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_auc_c_by_label
+                .get("scene_random_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_loo_by_label
+                .get("scene_random")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_entropy_by_label
+                .get("scene_random")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_ji_by_label
+                .get("scene_random")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_unique_bins_by_label
+                .get("scene_random")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_auc_c_by_label
+                .get("scene_random")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_loo_by_label
+                .get("hard_random_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_entropy_by_label
+                .get("hard_random_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_ji_by_label
+                .get("hard_random_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_unique_bins_by_label
+                .get("hard_random_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_auc_c_by_label
+                .get("hard_random_nosel")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_loo_by_label
+                .get("hard_random")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_entropy_by_label
+                .get("hard_random")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_ji_by_label
+                .get("hard_random")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_unique_bins_by_label
+                .get("hard_random")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+        mean_std_scalar(
+            final_auc_c_by_label
+                .get("hard_random")
+                .map_or(&[][..], Vec::as_slice)
+        )
+        .0,
+    ));
     write_with_log(out_dir.join("paper_e6b_summary.txt"), summary_text)?;
 
     Ok(())
@@ -7913,6 +8671,11 @@ fn plot_e6_hereditary_adaptation(
                             respawn_parent_prior_mix_override: None,
                             respawn_same_band_discount_override: None,
                             respawn_octave_discount_override: None,
+                            parent_proposal_kind_override: None,
+                            parent_proposal_sigma_st_override: None,
+                            parent_proposal_unison_notch_gain_override: None,
+                            parent_proposal_unison_notch_sigma_st_override: None,
+                            parent_proposal_candidate_count_override: None,
                             family_occupancy_strength_override: Some(
                                 E6_MAIN_FAMILY_OCCUPANCY_STRENGTH,
                             ),
@@ -8120,6 +8883,11 @@ fn plot_e6_hereditary_adaptation(
                         respawn_parent_prior_mix_override: None,
                         respawn_same_band_discount_override: None,
                         respawn_octave_discount_override: None,
+                        parent_proposal_kind_override: None,
+                        parent_proposal_sigma_st_override: None,
+                        parent_proposal_unison_notch_gain_override: None,
+                        parent_proposal_unison_notch_sigma_st_override: None,
+                        parent_proposal_candidate_count_override: None,
                         family_occupancy_strength_override: Some(occupancy_strength),
                         family_nfd_mode: nfd_mode.unwrap_or(E6FamilyNfdMode::Off),
                         respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
@@ -8325,6 +9093,11 @@ fn plot_e6_hereditary_adaptation(
                             respawn_parent_prior_mix_override: None,
                             respawn_same_band_discount_override: None,
                             respawn_octave_discount_override: None,
+                            parent_proposal_kind_override: None,
+                            parent_proposal_sigma_st_override: None,
+                            parent_proposal_unison_notch_gain_override: None,
+                            parent_proposal_unison_notch_sigma_st_override: None,
+                            parent_proposal_candidate_count_override: None,
                             family_occupancy_strength_override: None,
                             family_nfd_mode: E6FamilyNfdMode::Off,
                             respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
@@ -8413,6 +9186,11 @@ fn plot_e6_hereditary_adaptation(
                             respawn_parent_prior_mix_override: None,
                             respawn_same_band_discount_override: None,
                             respawn_octave_discount_override: None,
+                            parent_proposal_kind_override: None,
+                            parent_proposal_sigma_st_override: None,
+                            parent_proposal_unison_notch_gain_override: None,
+                            parent_proposal_unison_notch_sigma_st_override: None,
+                            parent_proposal_candidate_count_override: None,
                             family_occupancy_strength_override: None,
                             family_nfd_mode: E6FamilyNfdMode::Off,
                             respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
@@ -10148,6 +10926,11 @@ fn plot_e6_hereditary_adaptation(
                             respawn_parent_prior_mix_override: None,
                             respawn_same_band_discount_override: None,
                             respawn_octave_discount_override: None,
+                            parent_proposal_kind_override: None,
+                            parent_proposal_sigma_st_override: None,
+                            parent_proposal_unison_notch_gain_override: None,
+                            parent_proposal_unison_notch_sigma_st_override: None,
+                            parent_proposal_candidate_count_override: None,
                             family_occupancy_strength_override: None,
                             family_nfd_mode: E6FamilyNfdMode::Off,
                             respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
@@ -10329,6 +11112,11 @@ fn plot_e6_hereditary_adaptation(
                             respawn_parent_prior_mix_override: None,
                             respawn_same_band_discount_override: None,
                             respawn_octave_discount_override: None,
+                            parent_proposal_kind_override: None,
+                            parent_proposal_sigma_st_override: None,
+                            parent_proposal_unison_notch_gain_override: None,
+                            parent_proposal_unison_notch_sigma_st_override: None,
+                            parent_proposal_candidate_count_override: None,
                             family_occupancy_strength_override: None,
                             family_nfd_mode: E6FamilyNfdMode::Off,
                             respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
@@ -10517,6 +11305,11 @@ fn plot_e6_hereditary_adaptation(
                             respawn_parent_prior_mix_override: None,
                             respawn_same_band_discount_override: None,
                             respawn_octave_discount_override: None,
+                            parent_proposal_kind_override: None,
+                            parent_proposal_sigma_st_override: None,
+                            parent_proposal_unison_notch_gain_override: None,
+                            parent_proposal_unison_notch_sigma_st_override: None,
+                            parent_proposal_candidate_count_override: None,
                             family_occupancy_strength_override: None,
                             family_nfd_mode: E6FamilyNfdMode::Off,
                             respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
@@ -12746,6 +13539,11 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
                                 respawn_parent_prior_mix_override: None,
                                 respawn_same_band_discount_override: None,
                                 respawn_octave_discount_override: None,
+                                parent_proposal_kind_override: None,
+                                parent_proposal_sigma_st_override: None,
+                                parent_proposal_unison_notch_gain_override: None,
+                                parent_proposal_unison_notch_sigma_st_override: None,
+                                parent_proposal_candidate_count_override: None,
                                 family_occupancy_strength_override: None,
                                 family_nfd_mode: E6FamilyNfdMode::Off,
                                 respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
@@ -13092,6 +13890,11 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
                                         respawn_parent_prior_mix_override: None,
                                         respawn_same_band_discount_override: None,
                                         respawn_octave_discount_override: None,
+                                        parent_proposal_kind_override: None,
+                                        parent_proposal_sigma_st_override: None,
+                                        parent_proposal_unison_notch_gain_override: None,
+                                        parent_proposal_unison_notch_sigma_st_override: None,
+                                        parent_proposal_candidate_count_override: None,
                                         family_occupancy_strength_override: None,
                                         family_nfd_mode: E6FamilyNfdMode::Off,
                                         respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
@@ -13323,6 +14126,11 @@ fn generate_e6_sampler_debug_plots() -> Result<(), Box<dyn Error>> {
         respawn_parent_prior_mix_override: None,
         respawn_same_band_discount_override: None,
         respawn_octave_discount_override: None,
+        parent_proposal_kind_override: None,
+        parent_proposal_sigma_st_override: None,
+        parent_proposal_unison_notch_gain_override: None,
+        parent_proposal_unison_notch_sigma_st_override: None,
+        parent_proposal_candidate_count_override: None,
         family_occupancy_strength_override: None,
         family_nfd_mode: E6FamilyNfdMode::Off,
         respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
@@ -34585,7 +35393,14 @@ mod tests {
             "4".to_string(),
             "--e6b-parent-share-weight".to_string(),
             "0.75".to_string(),
+            "--e6b-juvenile".to_string(),
+            "off".to_string(),
             "--e6b-juvenile-ticks=6".to_string(),
+            "--e6b-parent-proposal".to_string(),
+            "h_only".to_string(),
+            "--e6b-parent-proposal-sigma=5.5".to_string(),
+            "--e6b-parent-proposal-candidates".to_string(),
+            "9".to_string(),
             "--e6b-survival-low".to_string(),
             "0.15".to_string(),
             "--e6b-survival-high=0.55".to_string(),
@@ -34622,8 +35437,25 @@ mod tests {
             Some(0.75)
         );
         assert_eq!(
+            parse_e6b_juvenile_enabled(&args).expect("parse_e6b_juvenile_enabled failed"),
+            Some(false)
+        );
+        assert_eq!(
             parse_e6b_juvenile_ticks(&args).expect("parse_e6b_juvenile_ticks failed"),
             Some(6)
+        );
+        assert_eq!(
+            parse_e6b_parent_proposal_kind(&args).expect("parse_e6b_parent_proposal_kind failed"),
+            Some(E6ParentProposalKind::HOnly)
+        );
+        assert_eq!(
+            parse_e6b_parent_proposal_sigma(&args).expect("parse_e6b_parent_proposal_sigma failed"),
+            Some(5.5)
+        );
+        assert_eq!(
+            parse_e6b_parent_proposal_candidates(&args)
+                .expect("parse_e6b_parent_proposal_candidates failed"),
+            Some(9)
         );
         assert_eq!(
             parse_e6b_survival_low(&args).expect("parse_e6b_survival_low failed"),
@@ -36355,6 +37187,11 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
                 respawn_parent_prior_mix_override: None,
                 respawn_same_band_discount_override: None,
                 respawn_octave_discount_override: None,
+                parent_proposal_kind_override: None,
+                parent_proposal_sigma_st_override: None,
+                parent_proposal_unison_notch_gain_override: None,
+                parent_proposal_unison_notch_sigma_st_override: None,
+                parent_proposal_candidate_count_override: None,
                 family_occupancy_strength_override: None,
                 family_nfd_mode: E6FamilyNfdMode::Off,
                 respawn_mode: E6RespawnMode::VacantNicheByParentPrior,
@@ -36480,6 +37317,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
                 polyphonic_parent_share_weight_override: None,
                 polyphonic_parent_energy_weight_override: None,
                 juvenile_contextual_tuning_ticks_override: None,
+                juvenile_contextual_settlement_enabled_override: None,
                 survival_score_low_override: None,
                 survival_score_high_override: None,
                 survival_recharge_per_sec_override: None,
@@ -36487,6 +37325,12 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
                 respawn_parent_prior_mix_override: None,
                 respawn_same_band_discount_override: None,
                 respawn_octave_discount_override: None,
+                parent_proposal_kind_override: None,
+                parent_proposal_sigma_st_override: None,
+                parent_proposal_unison_notch_gain_override: None,
+                parent_proposal_unison_notch_sigma_st_override: None,
+                parent_proposal_candidate_count_override: None,
+                random_baseline_mode: E6bRandomBaselineMode::LogRandomFiltered,
             };
             e6b_jobs.push((label, cfg));
         }

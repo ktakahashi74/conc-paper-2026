@@ -100,9 +100,15 @@ const E6B_RESPAWN_PARENT_PRIOR_MIX: f32 = 0.15;
 const E6B_RESPAWN_SAME_BAND_DISCOUNT: f32 = 0.08;
 const E6B_RESPAWN_OCTAVE_DISCOUNT: f32 = 0.20;
 const E6B_RESPAWN_OCTAVE_WINDOW_CENTS: f32 = 35.0;
-const E6B_JUVENILE_TUNING_RADIUS_ST: f32 = 0.125;
-const E6B_JUVENILE_TUNING_GRID_ST: f32 = 0.125;
-const E6B_JUVENILE_TUNING_TICKS: u32 = 4;
+const E6B_PARENT_PROPOSAL_KIND: E6ParentProposalKind = E6ParentProposalKind::ContextualC;
+const E6B_PARENT_PROPOSAL_SIGMA_ST: f32 = 9.0;
+const E6B_PARENT_PROPOSAL_UNISON_NOTCH_GAIN: f32 = 0.95;
+const E6B_PARENT_PROPOSAL_UNISON_NOTCH_SIGMA_ST: f32 = 0.35;
+const E6B_PARENT_PROPOSAL_CANDIDATE_COUNT: usize = 16;
+const E6B_PARENT_PEAK_SCENE_SCORE_EXP: f32 = 0.35;
+const E6B_JUVENILE_TUNING_RADIUS_ST: f32 = 0.20;
+const E6B_JUVENILE_TUNING_GRID_ST: f32 = 0.10;
+const E6B_JUVENILE_TUNING_TICKS: u32 = 2;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct E4RuntimeOverrides {
@@ -201,6 +207,42 @@ pub enum E6RespawnMode {
     VacantNicheByParentPrior,
     UnderfilledGlobalFamily,
     ParentProfileComplementaryFamily,
+    ParentDensityProposal,
+    ParentPeakProposal,
+    ScenePeakMatchedRandom,
+    LogRandomFilteredCandidates,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum E6ParentProposalKind {
+    ContextualC,
+    HOnly,
+}
+
+impl E6ParentProposalKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            E6ParentProposalKind::ContextualC => "contextual_c",
+            E6ParentProposalKind::HOnly => "h_only",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum E6bRandomBaselineMode {
+    LogRandomFiltered,
+    MatchedScenePeaks,
+    HardRandomLog,
+}
+
+impl E6bRandomBaselineMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            E6bRandomBaselineMode::LogRandomFiltered => "log_random_filtered",
+            E6bRandomBaselineMode::MatchedScenePeaks => "matched_scene_peaks",
+            E6bRandomBaselineMode::HardRandomLog => "hard_random_log",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -275,6 +317,11 @@ pub struct E6RunConfig {
     pub respawn_parent_prior_mix_override: Option<f32>,
     pub respawn_same_band_discount_override: Option<f32>,
     pub respawn_octave_discount_override: Option<f32>,
+    pub parent_proposal_kind_override: Option<E6ParentProposalKind>,
+    pub parent_proposal_sigma_st_override: Option<f32>,
+    pub parent_proposal_unison_notch_gain_override: Option<f32>,
+    pub parent_proposal_unison_notch_sigma_st_override: Option<f32>,
+    pub parent_proposal_candidate_count_override: Option<usize>,
     pub family_occupancy_strength_override: Option<f32>,
     pub family_nfd_mode: E6FamilyNfdMode,
     pub respawn_mode: E6RespawnMode,
@@ -325,6 +372,7 @@ pub struct E6bRunConfig {
     pub polyphonic_parent_share_weight_override: Option<f32>,
     pub polyphonic_parent_energy_weight_override: Option<f32>,
     pub juvenile_contextual_tuning_ticks_override: Option<u32>,
+    pub juvenile_contextual_settlement_enabled_override: Option<bool>,
     pub survival_score_low_override: Option<f32>,
     pub survival_score_high_override: Option<f32>,
     pub survival_recharge_per_sec_override: Option<f32>,
@@ -332,6 +380,12 @@ pub struct E6bRunConfig {
     pub respawn_parent_prior_mix_override: Option<f32>,
     pub respawn_same_band_discount_override: Option<f32>,
     pub respawn_octave_discount_override: Option<f32>,
+    pub parent_proposal_kind_override: Option<E6ParentProposalKind>,
+    pub parent_proposal_sigma_st_override: Option<f32>,
+    pub parent_proposal_unison_notch_gain_override: Option<f32>,
+    pub parent_proposal_unison_notch_sigma_st_override: Option<f32>,
+    pub parent_proposal_candidate_count_override: Option<usize>,
+    pub random_baseline_mode: E6bRandomBaselineMode,
 }
 
 #[derive(Clone, Debug)]
@@ -395,6 +449,9 @@ pub struct E6RespawnRecord {
     pub child_azimuth_st: Option<f32>,
     pub family_inherited: Option<bool>,
     pub family_mutated: Option<bool>,
+    pub proposal_rank: Option<usize>,
+    pub proposal_mass: Option<f32>,
+    pub proposal_filter_gain: Option<f32>,
     pub oracle_applied: bool,
     pub oracle_freq_hz: Option<f32>,
     pub oracle_c_score: Option<f32>,
@@ -1059,9 +1116,32 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
         .juvenile_contextual_tuning_ticks_override
         .unwrap_or(E6_JUVENILE_CONTEXTUAL_TUNING_TICKS)
         .max(1);
+    let parent_proposal_kind = cfg
+        .parent_proposal_kind_override
+        .unwrap_or(E6B_PARENT_PROPOSAL_KIND);
+    let parent_proposal_sigma_st = cfg
+        .parent_proposal_sigma_st_override
+        .unwrap_or(E6B_PARENT_PROPOSAL_SIGMA_ST)
+        .max(0.25);
+    let parent_proposal_unison_notch_gain = cfg
+        .parent_proposal_unison_notch_gain_override
+        .unwrap_or(E6B_PARENT_PROPOSAL_UNISON_NOTCH_GAIN)
+        .clamp(0.0, 1.0);
+    let parent_proposal_unison_notch_sigma_st = cfg
+        .parent_proposal_unison_notch_sigma_st_override
+        .unwrap_or(E6B_PARENT_PROPOSAL_UNISON_NOTCH_SIGMA_ST)
+        .max(0.05);
+    let parent_proposal_candidate_count = cfg
+        .parent_proposal_candidate_count_override
+        .unwrap_or(E6B_PARENT_PROPOSAL_CANDIDATE_COUNT)
+        .max(1);
     let (juvenile_polyphonic_tuning_radius_st, juvenile_polyphonic_tuning_grid_st) = if matches!(
         respawn_mode,
-        E6RespawnMode::UnderfilledGlobalFamily | E6RespawnMode::ParentProfileComplementaryFamily
+        E6RespawnMode::UnderfilledGlobalFamily
+            | E6RespawnMode::ParentProfileComplementaryFamily
+            | E6RespawnMode::ParentDensityProposal
+            | E6RespawnMode::ParentPeakProposal
+            | E6RespawnMode::ScenePeakMatchedRandom
     ) {
         (E6B_JUVENILE_TUNING_RADIUS_ST, E6B_JUVENILE_TUNING_GRID_ST)
     } else {
@@ -1605,8 +1685,16 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
             let post_respawn_azimuth_tuning_radius_st = if oracle_global_anchor_c
                 || oracle_radius_st.is_some()
                 || cfg.e2_aligned_exact_local_search_radius_st.is_some()
-                || matches!(respawn_mode, E6RespawnMode::VacantNicheByParentPrior)
-            {
+                || matches!(
+                    respawn_mode,
+                    E6RespawnMode::VacantNicheByParentPrior
+                        | E6RespawnMode::UnderfilledGlobalFamily
+                        | E6RespawnMode::ParentProfileComplementaryFamily
+                        | E6RespawnMode::ParentDensityProposal
+                        | E6RespawnMode::ParentPeakProposal
+                        | E6RespawnMode::ScenePeakMatchedRandom
+                        | E6RespawnMode::LogRandomFilteredCandidates
+                ) {
                 None
             } else {
                 Some(E6_POST_RESPAWN_AZIMUTH_TUNING_RADIUS_ST)
@@ -1614,9 +1702,14 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
 
             let offspring_strategy = match cfg.condition {
                 E6Condition::Random => {
-                    let vacant_niche_sample =
+                    let random_structured_sample = if matches!(
+                        respawn_mode,
+                        E6RespawnMode::VacantNicheByParentPrior
+                            | E6RespawnMode::ScenePeakMatchedRandom
+                            | E6RespawnMode::LogRandomFilteredCandidates
+                    ) {
+                        let alive_freqs_hz = collect_alive_freqs(&pop);
                         if matches!(respawn_mode, E6RespawnMode::VacantNicheByParentPrior) {
-                            let alive_freqs_hz = collect_alive_freqs(&pop);
                             let scene_landscape = build_e6_scene_landscape_with_anchor(
                                 &space,
                                 &params,
@@ -1647,10 +1740,55 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                                 false,
                                 &mut rng,
                             ))
+                        } else if matches!(respawn_mode, E6RespawnMode::ScenePeakMatchedRandom) {
+                            let current_landscape = build_e6_scene_landscape_with_anchor(
+                                &space,
+                                &params,
+                                &selection_reference_landscape,
+                                &alive_freqs_hz,
+                                partials,
+                                E4_ENV_PARTIAL_DECAY_DEFAULT,
+                            );
+                            Some(sample_from_scene_peak_matched_random(
+                                &current_landscape,
+                                &alive_freqs_hz,
+                                tessitura_min_hz,
+                                tessitura_max_hz,
+                                &mut rng,
+                                polyphonic_crowding_weight,
+                                polyphonic_overcapacity_weight,
+                                polyphonic_overcapacity_radius_cents,
+                                polyphonic_overcapacity_free_voices,
+                                parent_proposal_candidate_count,
+                                cfg.legacy_family_min_spacing_cents,
+                            ))
                         } else {
-                            None
-                        };
-                    let offspring_freq = vacant_niche_sample
+                            let current_landscape = build_e6_scene_landscape_with_anchor(
+                                &space,
+                                &params,
+                                &selection_reference_landscape,
+                                &alive_freqs_hz,
+                                partials,
+                                E4_ENV_PARTIAL_DECAY_DEFAULT,
+                            );
+                            Some(sample_from_log_random_filtered_candidates(
+                                &current_landscape,
+                                &alive_freqs_hz,
+                                tessitura_min_hz,
+                                tessitura_max_hz,
+                                &mut rng,
+                                polyphonic_crowding_weight,
+                                polyphonic_overcapacity_weight,
+                                polyphonic_overcapacity_radius_cents,
+                                polyphonic_overcapacity_free_voices,
+                                parent_proposal_candidate_count,
+                                cfg.legacy_family_min_spacing_cents,
+                            ))
+                        }
+                    } else {
+                        None
+                    };
+                    let offspring_freq = random_structured_sample
                         .map(|sample| sample.offspring_freq_hz)
                         .unwrap_or_else(|| {
                             sample_random_log_freq(&mut rng, tessitura_min_hz, tessitura_max_hz)
@@ -1683,16 +1821,22 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                             offspring_freq_hz: offspring_freq,
                             spawn_freq_hz: spawn_freq,
                             spawn_c_level: oracle_c_level,
-                            parent_family_center_hz: vacant_niche_sample
+                            parent_family_center_hz: random_structured_sample
                                 .map(|sample| sample.parent_family_center_hz),
-                            parent_azimuth_st: vacant_niche_sample
+                            parent_azimuth_st: random_structured_sample
                                 .map(|sample| sample.parent_azimuth_st),
-                            child_family_center_hz: vacant_niche_sample
+                            child_family_center_hz: random_structured_sample
                                 .map(|sample| sample.child_family_center_hz),
-                            child_azimuth_st: vacant_niche_sample
+                            child_azimuth_st: random_structured_sample
                                 .map(|sample| sample.child_azimuth_st),
                             family_inherited: None,
                             family_mutated: None,
+                            proposal_rank: random_structured_sample
+                                .and_then(|sample| sample.proposal_rank),
+                            proposal_mass: random_structured_sample
+                                .and_then(|sample| sample.proposal_mass),
+                            proposal_filter_gain: random_structured_sample
+                                .and_then(|sample| sample.proposal_filter_gain),
                             oracle_applied: true,
                             oracle_freq_hz: Some(spawn_freq),
                             oracle_c_score: Some(oracle_c_score),
@@ -1750,16 +1894,22 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                             offspring_freq_hz: offspring_freq,
                             spawn_freq_hz: spawn_freq,
                             spawn_c_level: oracle_c_level,
-                            parent_family_center_hz: vacant_niche_sample
+                            parent_family_center_hz: random_structured_sample
                                 .map(|sample| sample.parent_family_center_hz),
-                            parent_azimuth_st: vacant_niche_sample
+                            parent_azimuth_st: random_structured_sample
                                 .map(|sample| sample.parent_azimuth_st),
-                            child_family_center_hz: vacant_niche_sample
+                            child_family_center_hz: random_structured_sample
                                 .map(|sample| sample.child_family_center_hz),
-                            child_azimuth_st: vacant_niche_sample
+                            child_azimuth_st: random_structured_sample
                                 .map(|sample| sample.child_azimuth_st),
                             family_inherited: None,
                             family_mutated: None,
+                            proposal_rank: random_structured_sample
+                                .and_then(|sample| sample.proposal_rank),
+                            proposal_mass: random_structured_sample
+                                .and_then(|sample| sample.proposal_mass),
+                            proposal_filter_gain: random_structured_sample
+                                .and_then(|sample| sample.proposal_filter_gain),
                             oracle_applied: true,
                             oracle_freq_hz: Some(spawn_freq),
                             oracle_c_score: Some(oracle_c_score),
@@ -1819,16 +1969,22 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                             offspring_freq_hz: offspring_freq,
                             spawn_freq_hz: spawn_freq,
                             spawn_c_level,
-                            parent_family_center_hz: vacant_niche_sample
+                            parent_family_center_hz: random_structured_sample
                                 .map(|sample| sample.parent_family_center_hz),
-                            parent_azimuth_st: vacant_niche_sample
+                            parent_azimuth_st: random_structured_sample
                                 .map(|sample| sample.parent_azimuth_st),
-                            child_family_center_hz: vacant_niche_sample
+                            child_family_center_hz: random_structured_sample
                                 .map(|sample| sample.child_family_center_hz),
-                            child_azimuth_st: vacant_niche_sample
+                            child_azimuth_st: random_structured_sample
                                 .map(|sample| sample.child_azimuth_st),
                             family_inherited: None,
                             family_mutated: None,
+                            proposal_rank: random_structured_sample
+                                .and_then(|sample| sample.proposal_rank),
+                            proposal_mass: random_structured_sample
+                                .and_then(|sample| sample.proposal_mass),
+                            proposal_filter_gain: random_structured_sample
+                                .and_then(|sample| sample.proposal_filter_gain),
                             oracle_applied: false,
                             oracle_freq_hz: None,
                             oracle_c_score: None,
@@ -1857,7 +2013,7 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                         );
                         continue;
                     }
-                    if matches!(respawn_mode, E6RespawnMode::VacantNicheByParentPrior) {
+                    if let Some(sample) = random_structured_sample {
                         pop.apply_action(
                             Action::Spawn {
                                 group_id: E3_GROUP_AGENTS,
@@ -1894,22 +2050,21 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                             candidate_energy_std: 0.0,
                             candidate_c_level_mean: 0.0,
                             chosen_selection_prob: None,
-                            chosen_band_occupancy: None,
+                            chosen_band_occupancy: Some(sample.chosen_band_occupancy),
                             offspring_freq_hz: offspring_freq,
                             spawn_freq_hz: offspring_freq,
                             spawn_c_level: selection_reference_landscape
                                 .evaluate_pitch_level(offspring_freq)
                                 .clamp(0.0, 1.0),
-                            parent_family_center_hz: vacant_niche_sample
-                                .map(|sample| sample.parent_family_center_hz),
-                            parent_azimuth_st: vacant_niche_sample
-                                .map(|sample| sample.parent_azimuth_st),
-                            child_family_center_hz: vacant_niche_sample
-                                .map(|sample| sample.child_family_center_hz),
-                            child_azimuth_st: vacant_niche_sample
-                                .map(|sample| sample.child_azimuth_st),
+                            parent_family_center_hz: Some(sample.parent_family_center_hz),
+                            parent_azimuth_st: Some(sample.parent_azimuth_st),
+                            child_family_center_hz: Some(sample.child_family_center_hz),
+                            child_azimuth_st: Some(sample.child_azimuth_st),
                             family_inherited: None,
                             family_mutated: None,
+                            proposal_rank: sample.proposal_rank,
+                            proposal_mass: sample.proposal_mass,
+                            proposal_filter_gain: sample.proposal_filter_gain,
                             oracle_applied: false,
                             oracle_freq_hz: None,
                             oracle_c_score: None,
@@ -2169,6 +2324,82 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                                     cfg.legacy_family_min_spacing_cents,
                                 )
                             }
+                            E6RespawnMode::ParentDensityProposal => {
+                                sample_from_parent_density_proposal(
+                                    &parent_landscape,
+                                    &landscape,
+                                    &alive_freqs_hz,
+                                    parent_freq,
+                                    tessitura_min_hz,
+                                    tessitura_max_hz,
+                                    &mut rng,
+                                    polyphonic_crowding_weight,
+                                    polyphonic_overcapacity_weight,
+                                    polyphonic_overcapacity_radius_cents,
+                                    polyphonic_overcapacity_free_voices,
+                                    parent_proposal_kind,
+                                    parent_proposal_sigma_st,
+                                    parent_proposal_unison_notch_gain,
+                                    parent_proposal_unison_notch_sigma_st,
+                                    parent_proposal_candidate_count,
+                                    respawn_same_band_discount,
+                                    respawn_octave_discount,
+                                    cfg.legacy_family_min_spacing_cents,
+                                )
+                            }
+                            E6RespawnMode::ParentPeakProposal => {
+                                sample_from_scene_peak_parent_bias(
+                                    &parent_landscape,
+                                    &landscape,
+                                    &alive_freqs_hz,
+                                    parent_freq,
+                                    tessitura_min_hz,
+                                    tessitura_max_hz,
+                                    &mut rng,
+                                    polyphonic_crowding_weight,
+                                    polyphonic_overcapacity_weight,
+                                    polyphonic_overcapacity_radius_cents,
+                                    polyphonic_overcapacity_free_voices,
+                                    parent_proposal_kind,
+                                    parent_proposal_sigma_st,
+                                    parent_proposal_unison_notch_gain,
+                                    parent_proposal_unison_notch_sigma_st,
+                                    parent_proposal_candidate_count,
+                                    respawn_same_band_discount,
+                                    respawn_octave_discount,
+                                    cfg.legacy_family_min_spacing_cents,
+                                )
+                            }
+                            E6RespawnMode::ScenePeakMatchedRandom => {
+                                sample_from_scene_peak_matched_random(
+                                    &landscape,
+                                    &alive_freqs_hz,
+                                    tessitura_min_hz,
+                                    tessitura_max_hz,
+                                    &mut rng,
+                                    polyphonic_crowding_weight,
+                                    polyphonic_overcapacity_weight,
+                                    polyphonic_overcapacity_radius_cents,
+                                    polyphonic_overcapacity_free_voices,
+                                    parent_proposal_candidate_count,
+                                    cfg.legacy_family_min_spacing_cents,
+                                )
+                            }
+                            E6RespawnMode::LogRandomFilteredCandidates => {
+                                sample_from_log_random_filtered_candidates(
+                                    &landscape,
+                                    &alive_freqs_hz,
+                                    tessitura_min_hz,
+                                    tessitura_max_hz,
+                                    &mut rng,
+                                    polyphonic_crowding_weight,
+                                    polyphonic_overcapacity_weight,
+                                    polyphonic_overcapacity_radius_cents,
+                                    polyphonic_overcapacity_free_voices,
+                                    parent_proposal_candidate_count,
+                                    cfg.legacy_family_min_spacing_cents,
+                                )
+                            }
                         };
                         let offspring_freq = heredity_sample.offspring_freq_hz;
                         let (spawn_freq, oracle_applied, oracle_c_score, oracle_c_level) =
@@ -2233,6 +2464,9 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                             child_azimuth_st: Some(heredity_sample.child_azimuth_st),
                             family_inherited: Some(heredity_sample.family_inherited),
                             family_mutated: Some(heredity_sample.family_mutated),
+                            proposal_rank: heredity_sample.proposal_rank,
+                            proposal_mass: heredity_sample.proposal_mass,
+                            proposal_filter_gain: heredity_sample.proposal_filter_gain,
                             oracle_applied,
                             oracle_freq_hz: oracle_applied.then_some(spawn_freq),
                             oracle_c_score,
@@ -2316,6 +2550,9 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
                 child_azimuth_st: None,
                 family_inherited: None,
                 family_mutated: None,
+                proposal_rank: None,
+                proposal_mass: None,
+                proposal_filter_gain: None,
                 oracle_applied: false,
                 oracle_freq_hz: None,
                 oracle_c_score: None,
@@ -2390,6 +2627,14 @@ pub fn run_e6(cfg: &E6RunConfig) -> E6RunResult {
 }
 
 pub fn run_e6b(cfg: &E6bRunConfig) -> E6bRunResult {
+    let respawn_mode = match cfg.condition {
+        E6Condition::Heredity => E6RespawnMode::ParentPeakProposal,
+        E6Condition::Random => match cfg.random_baseline_mode {
+            E6bRandomBaselineMode::LogRandomFiltered => E6RespawnMode::LogRandomFilteredCandidates,
+            E6bRandomBaselineMode::MatchedScenePeaks => E6RespawnMode::ScenePeakMatchedRandom,
+            E6bRandomBaselineMode::HardRandomLog => E6RespawnMode::LegacyFamilyAzimuth,
+        },
+    };
     let shared_cfg = E6RunConfig {
         seed: cfg.seed,
         steps_cap: cfg.steps_cap,
@@ -2433,7 +2678,9 @@ pub fn run_e6b(cfg: &E6bRunConfig) -> E6bRunResult {
         juvenile_contextual_tuning_ticks_override: cfg
             .juvenile_contextual_tuning_ticks_override
             .or(Some(E6B_JUVENILE_TUNING_TICKS)),
-        juvenile_contextual_settlement_enabled: true,
+        juvenile_contextual_settlement_enabled: cfg
+            .juvenile_contextual_settlement_enabled_override
+            .unwrap_or(true),
         juvenile_cull_enabled: false,
         record_life_diagnostics: false,
         survival_score_low_override: cfg
@@ -2461,9 +2708,24 @@ pub fn run_e6b(cfg: &E6bRunConfig) -> E6bRunResult {
         respawn_octave_discount_override: cfg
             .respawn_octave_discount_override
             .or(Some(E6B_RESPAWN_OCTAVE_DISCOUNT)),
+        parent_proposal_kind_override: cfg
+            .parent_proposal_kind_override
+            .or(Some(E6B_PARENT_PROPOSAL_KIND)),
+        parent_proposal_sigma_st_override: cfg
+            .parent_proposal_sigma_st_override
+            .or(Some(E6B_PARENT_PROPOSAL_SIGMA_ST)),
+        parent_proposal_unison_notch_gain_override: cfg
+            .parent_proposal_unison_notch_gain_override
+            .or(Some(E6B_PARENT_PROPOSAL_UNISON_NOTCH_GAIN)),
+        parent_proposal_unison_notch_sigma_st_override: cfg
+            .parent_proposal_unison_notch_sigma_st_override
+            .or(Some(E6B_PARENT_PROPOSAL_UNISON_NOTCH_SIGMA_ST)),
+        parent_proposal_candidate_count_override: cfg
+            .parent_proposal_candidate_count_override
+            .or(Some(E6B_PARENT_PROPOSAL_CANDIDATE_COUNT)),
         family_occupancy_strength_override: None,
         family_nfd_mode: E6FamilyNfdMode::Off,
-        respawn_mode: E6RespawnMode::ParentProfileComplementaryFamily,
+        respawn_mode,
         legacy_family_min_spacing_cents: Some(E6B_FUSION_MIN_SEPARATION_CENTS),
     };
     run_e6(&shared_cfg).into()
@@ -3631,6 +3893,9 @@ struct E6HereditySample {
     family_inherited: bool,
     family_mutated: bool,
     chosen_band_occupancy: usize,
+    proposal_rank: Option<usize>,
+    proposal_mass: Option<f32>,
+    proposal_filter_gain: Option<f32>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -3943,6 +4208,9 @@ fn sample_from_vacant_niches(
             family_inherited: false,
             family_mutated: false,
             chosen_band_occupancy: 1,
+            proposal_rank: None,
+            proposal_mass: None,
+            proposal_filter_gain: None,
         };
     }
 
@@ -3991,6 +4259,9 @@ fn sample_from_vacant_niches(
         family_inherited,
         family_mutated: heredity_enabled && !family_inherited,
         chosen_band_occupancy: 1,
+        proposal_rank: None,
+        proposal_mass: None,
+        proposal_filter_gain: None,
     }
 }
 
@@ -4142,6 +4413,936 @@ fn e6_find_spaced_family_frequency(
         }
     }
     None
+}
+
+fn e6_parent_proposal_source_score(
+    proposal_kind: E6ParentProposalKind,
+    parent_landscape: &Landscape,
+    idx: usize,
+    freq_hz: f32,
+) -> f32 {
+    match proposal_kind {
+        E6ParentProposalKind::ContextualC => {
+            parent_landscape.evaluate_pitch_score(freq_hz).max(0.0)
+        }
+        E6ParentProposalKind::HOnly => parent_landscape
+            .harmonicity01
+            .get(idx)
+            .copied()
+            .unwrap_or(0.0)
+            .max(0.0),
+    }
+}
+
+fn e6_parent_distance_gaussian(delta_st: f32, sigma_st: f32) -> f32 {
+    let sigma_st = sigma_st.max(1e-3);
+    (-0.5 * (delta_st / sigma_st).powi(2)).exp()
+}
+
+fn e6_parent_unison_notch(delta_st: f32, notch_gain: f32, notch_sigma_st: f32) -> f32 {
+    let notch_gain = notch_gain.clamp(0.0, 1.0);
+    let notch_sigma_st = notch_sigma_st.max(1e-3);
+    (1.0 - notch_gain * (-0.5 * (delta_st / notch_sigma_st).powi(2)).exp()).clamp(0.0, 1.0)
+}
+
+fn e6_sample_unique_weighted_indices(
+    weights: &[f32],
+    count: usize,
+    rng: &mut impl Rng,
+) -> Vec<usize> {
+    let mut working = weights.to_vec();
+    let mut chosen = Vec::new();
+    for _ in 0..count.min(weights.len()) {
+        if let Ok(dist) = WeightedIndex::new(working.iter().copied()) {
+            let idx = dist.sample(rng);
+            chosen.push(idx);
+            working[idx] = 0.0;
+        } else {
+            break;
+        }
+    }
+    chosen
+}
+
+fn e6_collect_scene_peak_candidates(
+    current_landscape: &Landscape,
+    alive_freqs_hz: &[f32],
+    tessitura_min_hz: f32,
+    tessitura_max_hz: f32,
+    crowding_weight: f32,
+    overcapacity_weight: f32,
+    overcapacity_radius_cents: f32,
+    overcapacity_free_voices: usize,
+    candidate_count: usize,
+) -> Vec<(usize, f32)> {
+    let space = &current_landscape.space;
+    let min_hz = tessitura_min_hz.min(tessitura_max_hz).max(1e-6);
+    let max_hz = tessitura_max_hz.max(tessitura_min_hz).max(min_hz);
+    let mut base_weights = vec![0.0f32; space.n_bins()];
+    for (idx, &freq_hz) in space.centers_hz.iter().enumerate() {
+        if !freq_hz.is_finite() || freq_hz < min_hz || freq_hz > max_hz {
+            continue;
+        }
+        let local_occupancy =
+            e6_local_band_occupancy(freq_hz, alive_freqs_hz, overcapacity_radius_cents);
+        if local_occupancy > overcapacity_free_voices.saturating_add(1) {
+            continue;
+        }
+        let score = e6_polyphonic_selection_score(
+            current_landscape,
+            freq_hz,
+            alive_freqs_hz,
+            crowding_weight,
+            overcapacity_weight,
+            overcapacity_radius_cents,
+            overcapacity_free_voices,
+        );
+        if score > 0.0 && score.is_finite() {
+            base_weights[idx] = score.powf(E6B_PARENT_PEAK_SCENE_SCORE_EXP);
+        }
+    }
+    let peaks = extract_peak_families(space, &base_weights);
+    let mut ranked = peaks
+        .iter()
+        .filter_map(|peak| {
+            let center_hz = space.centers_hz[peak.center_idx];
+            let local_occupancy =
+                e6_local_band_occupancy(center_hz, alive_freqs_hz, overcapacity_radius_cents);
+            if local_occupancy > overcapacity_free_voices.saturating_add(1) {
+                return None;
+            }
+            let score = e6_polyphonic_selection_score(
+                current_landscape,
+                center_hz,
+                alive_freqs_hz,
+                crowding_weight,
+                overcapacity_weight,
+                overcapacity_radius_cents,
+                overcapacity_free_voices,
+            );
+            (score > 0.0 && score.is_finite())
+                .then_some((peak.center_idx, score.powf(E6B_PARENT_PEAK_SCENE_SCORE_EXP)))
+        })
+        .collect::<Vec<_>>();
+    ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    ranked.truncate(candidate_count.max(1));
+    ranked
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sample_from_scene_peak_parent_bias(
+    parent_landscape: &Landscape,
+    current_landscape: &Landscape,
+    alive_freqs_hz: &[f32],
+    parent_freq_hz: f32,
+    tessitura_min_hz: f32,
+    tessitura_max_hz: f32,
+    rng: &mut impl Rng,
+    crowding_weight: f32,
+    overcapacity_weight: f32,
+    overcapacity_radius_cents: f32,
+    overcapacity_free_voices: usize,
+    proposal_kind: E6ParentProposalKind,
+    proposal_sigma_st: f32,
+    proposal_unison_notch_gain: f32,
+    proposal_unison_notch_sigma_st: f32,
+    proposal_candidate_count: usize,
+    same_band_discount: f32,
+    octave_discount: f32,
+    min_spacing_cents: Option<f32>,
+) -> E6HereditySample {
+    let space = &current_landscape.space;
+    let candidates = e6_collect_scene_peak_candidates(
+        current_landscape,
+        alive_freqs_hz,
+        tessitura_min_hz,
+        tessitura_max_hz,
+        crowding_weight,
+        overcapacity_weight,
+        overcapacity_radius_cents,
+        overcapacity_free_voices,
+        proposal_candidate_count,
+    );
+    if candidates.is_empty() {
+        return sample_from_parent_harmonicity(
+            parent_landscape,
+            current_landscape,
+            alive_freqs_hz,
+            parent_freq_hz,
+            overcapacity_radius_cents,
+            tessitura_min_hz,
+            tessitura_max_hz,
+            rng,
+            E6_HEREDITY_FAMILY_OCCUPANCY_STRENGTH,
+            E6FamilyNfdMode::Off,
+            min_spacing_cents,
+        );
+    }
+
+    let min_hz = tessitura_min_hz.min(tessitura_max_hz).max(1e-6);
+    let max_hz = tessitura_max_hz.max(tessitura_min_hz).max(min_hz);
+    let parent_peak_idx = candidates
+        .iter()
+        .min_by(|(idx_a, _), (idx_b, _)| {
+            let da = semitone_distance(space, *idx_a, space.nearest_index(parent_freq_hz));
+            let db = semitone_distance(space, *idx_b, space.nearest_index(parent_freq_hz));
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(idx, _)| *idx)
+        .unwrap_or(space.nearest_index(parent_freq_hz));
+    let parent_family_center_hz = space.centers_hz[parent_peak_idx];
+    let parent_azimuth_st = (12.0 * (parent_freq_hz / parent_family_center_hz.max(1e-6)).log2())
+        .clamp(-E6_HEREDITY_AZIMUTH_CLIP_ST, E6_HEREDITY_AZIMUTH_CLIP_ST);
+
+    let mut parent_weights = Vec::with_capacity(candidates.len());
+    let mut final_weights = Vec::with_capacity(candidates.len());
+    let mut scene_weights = Vec::with_capacity(candidates.len());
+    for &(center_idx, scene_weight) in &candidates {
+        let center_hz = space.centers_hz[center_idx];
+        let delta_st = 12.0 * (center_hz / parent_freq_hz.max(1e-6)).log2();
+        let mut parent_weight =
+            e6_parent_proposal_source_score(proposal_kind, parent_landscape, center_idx, center_hz)
+                * e6_parent_distance_gaussian(delta_st, proposal_sigma_st)
+                * e6_parent_unison_notch(
+                    delta_st,
+                    proposal_unison_notch_gain,
+                    proposal_unison_notch_sigma_st,
+                );
+        if e6_is_same_band_respawn(parent_freq_hz, center_hz, overcapacity_radius_cents) {
+            parent_weight *= same_band_discount;
+        }
+        if e6_is_parent_octave_respawn(parent_freq_hz, center_hz, E6B_RESPAWN_OCTAVE_WINDOW_CENTS) {
+            parent_weight *= octave_discount;
+        }
+        parent_weight = parent_weight.max(0.0);
+        parent_weights.push(parent_weight);
+        scene_weights.push(scene_weight);
+        final_weights.push((scene_weight * parent_weight).max(0.0));
+    }
+    if final_weights
+        .iter()
+        .all(|weight| *weight <= 0.0 || !weight.is_finite())
+    {
+        final_weights.clone_from(&scene_weights);
+    }
+
+    let chosen_local_idx = if let Ok(dist) = WeightedIndex::new(&final_weights) {
+        dist.sample(rng)
+    } else {
+        0
+    };
+    let (child_center_idx, _) = candidates[chosen_local_idx];
+    let child_family_center_hz = space.centers_hz[child_center_idx];
+    let child_azimuth_st = (parent_azimuth_st
+        + sample_standard_normal(rng) * E6_HEREDITY_AZIMUTH_SIGMA_ST)
+        .clamp(-0.35, 0.35);
+    let offspring_freq_hz = if let Some(min_spacing) = min_spacing_cents {
+        e6_find_spaced_family_frequency(
+            child_family_center_hz,
+            child_azimuth_st,
+            min_hz,
+            max_hz,
+            alive_freqs_hz,
+            min_spacing,
+        )
+        .unwrap_or_else(|| freq_from_family_and_azimuth(child_family_center_hz, child_azimuth_st))
+    } else {
+        freq_from_family_and_azimuth(child_family_center_hz, child_azimuth_st)
+    };
+    let chosen_band_occupancy =
+        e6_local_band_occupancy(offspring_freq_hz, alive_freqs_hz, overcapacity_radius_cents);
+    let chosen_parent_weight = parent_weights[chosen_local_idx];
+    let total_parent_weight: f32 = parent_weights.iter().copied().sum();
+    let top_parent_idx = parent_weights
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(idx, _)| idx)
+        .unwrap_or(chosen_local_idx);
+    E6HereditySample {
+        offspring_freq_hz,
+        parent_family_center_hz,
+        parent_azimuth_st,
+        child_family_center_hz,
+        child_azimuth_st,
+        family_inherited: child_center_idx == parent_peak_idx,
+        family_mutated: child_center_idx != parent_peak_idx,
+        chosen_band_occupancy,
+        proposal_rank: Some(
+            1 + parent_weights
+                .iter()
+                .filter(|&&weight| weight > chosen_parent_weight + 1e-6)
+                .count(),
+        ),
+        proposal_mass: Some((chosen_parent_weight / total_parent_weight.max(1e-6)).clamp(0.0, 1.0)),
+        proposal_filter_gain: Some(scene_weights[chosen_local_idx] - scene_weights[top_parent_idx]),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sample_from_scene_peak_matched_random(
+    current_landscape: &Landscape,
+    alive_freqs_hz: &[f32],
+    tessitura_min_hz: f32,
+    tessitura_max_hz: f32,
+    rng: &mut impl Rng,
+    crowding_weight: f32,
+    overcapacity_weight: f32,
+    overcapacity_radius_cents: f32,
+    overcapacity_free_voices: usize,
+    proposal_candidate_count: usize,
+    min_spacing_cents: Option<f32>,
+) -> E6HereditySample {
+    let space = &current_landscape.space;
+    let candidates = e6_collect_scene_peak_candidates(
+        current_landscape,
+        alive_freqs_hz,
+        tessitura_min_hz,
+        tessitura_max_hz,
+        crowding_weight,
+        overcapacity_weight,
+        overcapacity_radius_cents,
+        overcapacity_free_voices,
+        proposal_candidate_count,
+    );
+    if candidates.is_empty() {
+        let freq_hz = sample_random_log_freq(rng, tessitura_min_hz, tessitura_max_hz);
+        return E6HereditySample {
+            offspring_freq_hz: freq_hz,
+            parent_family_center_hz: freq_hz,
+            parent_azimuth_st: 0.0,
+            child_family_center_hz: freq_hz,
+            child_azimuth_st: 0.0,
+            family_inherited: false,
+            family_mutated: false,
+            chosen_band_occupancy: e6_local_band_occupancy(
+                freq_hz,
+                alive_freqs_hz,
+                overcapacity_radius_cents,
+            ),
+            proposal_rank: None,
+            proposal_mass: None,
+            proposal_filter_gain: None,
+        };
+    }
+
+    let min_hz = tessitura_min_hz.min(tessitura_max_hz).max(1e-6);
+    let max_hz = tessitura_max_hz.max(tessitura_min_hz).max(min_hz);
+    let scene_weights = candidates
+        .iter()
+        .map(|(_, weight)| *weight)
+        .collect::<Vec<_>>();
+    let chosen_local_idx = if let Ok(dist) = WeightedIndex::new(&scene_weights) {
+        dist.sample(rng)
+    } else {
+        0
+    };
+    let (child_center_idx, chosen_scene_weight) = candidates[chosen_local_idx];
+    let child_family_center_hz = space.centers_hz[child_center_idx];
+    let child_azimuth_st =
+        (sample_standard_normal(rng) * E6_HEREDITY_AZIMUTH_SIGMA_ST).clamp(-0.35, 0.35);
+    let offspring_freq_hz = if let Some(min_spacing) = min_spacing_cents {
+        e6_find_spaced_family_frequency(
+            child_family_center_hz,
+            child_azimuth_st,
+            min_hz,
+            max_hz,
+            alive_freqs_hz,
+            min_spacing,
+        )
+        .unwrap_or_else(|| freq_from_family_and_azimuth(child_family_center_hz, child_azimuth_st))
+    } else {
+        freq_from_family_and_azimuth(child_family_center_hz, child_azimuth_st)
+    };
+    let chosen_band_occupancy =
+        e6_local_band_occupancy(offspring_freq_hz, alive_freqs_hz, overcapacity_radius_cents);
+    let total_scene_weight: f32 = scene_weights.iter().copied().sum();
+    let top_scene_idx = scene_weights
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(idx, _)| idx)
+        .unwrap_or(chosen_local_idx);
+    E6HereditySample {
+        offspring_freq_hz,
+        parent_family_center_hz: child_family_center_hz,
+        parent_azimuth_st: 0.0,
+        child_family_center_hz,
+        child_azimuth_st,
+        family_inherited: false,
+        family_mutated: false,
+        chosen_band_occupancy,
+        proposal_rank: Some(
+            1 + scene_weights
+                .iter()
+                .filter(|&&weight| weight > chosen_scene_weight + 1e-6)
+                .count(),
+        ),
+        proposal_mass: Some((chosen_scene_weight / total_scene_weight.max(1e-6)).clamp(0.0, 1.0)),
+        proposal_filter_gain: Some(scene_weights[chosen_local_idx] - scene_weights[top_scene_idx]),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sample_from_log_random_filtered_candidates(
+    current_landscape: &Landscape,
+    alive_freqs_hz: &[f32],
+    tessitura_min_hz: f32,
+    tessitura_max_hz: f32,
+    rng: &mut impl Rng,
+    crowding_weight: f32,
+    overcapacity_weight: f32,
+    overcapacity_radius_cents: f32,
+    overcapacity_free_voices: usize,
+    proposal_candidate_count: usize,
+    min_spacing_cents: Option<f32>,
+) -> E6HereditySample {
+    let min_hz = tessitura_min_hz.min(tessitura_max_hz).max(1e-6);
+    let max_hz = tessitura_max_hz.max(tessitura_min_hz).max(min_hz);
+    let candidate_count = proposal_candidate_count.max(1);
+    let candidate_separation_cents = overcapacity_radius_cents.max(0.0);
+    let mut candidates: Vec<f32> = Vec::with_capacity(candidate_count);
+    let max_attempts = candidate_count.saturating_mul(32).max(32);
+    for _ in 0..max_attempts {
+        if candidates.len() >= candidate_count {
+            break;
+        }
+        let candidate_hz = sample_random_log_freq(rng, min_hz, max_hz);
+        if candidate_separation_cents > 0.0
+            && !e6_respects_min_spacing_cents(candidate_hz, &candidates, candidate_separation_cents)
+        {
+            continue;
+        }
+        candidates.push(candidate_hz);
+    }
+    if candidates.is_empty() {
+        candidates.push(sample_random_log_freq(rng, min_hz, max_hz));
+    }
+
+    let mut scene_scores: Vec<f32> = Vec::with_capacity(candidates.len());
+    let mut selection_weights: Vec<f32> = Vec::with_capacity(candidates.len());
+    for &candidate_hz in &candidates {
+        let scene_score = e6_polyphonic_selection_score(
+            current_landscape,
+            candidate_hz,
+            alive_freqs_hz,
+            crowding_weight,
+            overcapacity_weight,
+            overcapacity_radius_cents,
+            overcapacity_free_voices,
+        );
+        scene_scores.push(scene_score);
+        selection_weights.push(if scene_score.is_finite() {
+            scene_score.max(0.0)
+        } else {
+            0.0
+        });
+    }
+
+    let chosen_idx = if selection_weights
+        .iter()
+        .any(|weight| *weight > 0.0 && weight.is_finite())
+    {
+        if let Ok(dist) = WeightedIndex::new(&selection_weights) {
+            dist.sample(rng)
+        } else {
+            selection_weights
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(idx, _)| idx)
+                .unwrap_or(0)
+        }
+    } else {
+        scene_scores
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(idx, _)| idx)
+            .unwrap_or(0)
+    };
+
+    let chosen_freq_hz = candidates[chosen_idx];
+    let offspring_freq_hz = if let Some(min_spacing) = min_spacing_cents {
+        e6_find_spaced_family_frequency(
+            chosen_freq_hz,
+            0.0,
+            min_hz,
+            max_hz,
+            alive_freqs_hz,
+            min_spacing,
+        )
+        .unwrap_or(chosen_freq_hz)
+    } else {
+        chosen_freq_hz
+    };
+    let chosen_band_occupancy =
+        e6_local_band_occupancy(offspring_freq_hz, alive_freqs_hz, overcapacity_radius_cents);
+    let chosen_weight = selection_weights[chosen_idx];
+    let total_weight: f32 = selection_weights.iter().copied().sum();
+    E6HereditySample {
+        offspring_freq_hz,
+        parent_family_center_hz: chosen_freq_hz,
+        parent_azimuth_st: 0.0,
+        child_family_center_hz: chosen_freq_hz,
+        child_azimuth_st: 0.0,
+        family_inherited: false,
+        family_mutated: false,
+        chosen_band_occupancy,
+        proposal_rank: Some(
+            1 + scene_scores
+                .iter()
+                .filter(|&&score| score > scene_scores[chosen_idx] + 1e-6)
+                .count(),
+        ),
+        proposal_mass: (total_weight > 0.0)
+            .then_some((chosen_weight / total_weight.max(1e-6)).clamp(0.0, 1.0)),
+        proposal_filter_gain: Some(0.0),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sample_from_parent_peak_proposal(
+    parent_landscape: &Landscape,
+    current_landscape: &Landscape,
+    alive_freqs_hz: &[f32],
+    parent_freq_hz: f32,
+    tessitura_min_hz: f32,
+    tessitura_max_hz: f32,
+    rng: &mut impl Rng,
+    crowding_weight: f32,
+    overcapacity_weight: f32,
+    overcapacity_radius_cents: f32,
+    overcapacity_free_voices: usize,
+    proposal_kind: E6ParentProposalKind,
+    proposal_sigma_st: f32,
+    proposal_unison_notch_gain: f32,
+    proposal_unison_notch_sigma_st: f32,
+    proposal_candidate_count: usize,
+    same_band_discount: f32,
+    octave_discount: f32,
+    min_spacing_cents: Option<f32>,
+) -> E6HereditySample {
+    let space = &parent_landscape.space;
+    let n = space.n_bins();
+    if n == 0 || !parent_freq_hz.is_finite() || parent_freq_hz <= 0.0 {
+        return E6HereditySample {
+            offspring_freq_hz: parent_freq_hz.max(1e-6),
+            parent_family_center_hz: parent_freq_hz.max(1e-6),
+            parent_azimuth_st: 0.0,
+            child_family_center_hz: parent_freq_hz.max(1e-6),
+            child_azimuth_st: 0.0,
+            family_inherited: true,
+            family_mutated: false,
+            chosen_band_occupancy: 1,
+            proposal_rank: None,
+            proposal_mass: None,
+            proposal_filter_gain: None,
+        };
+    }
+
+    let min_hz = tessitura_min_hz.min(tessitura_max_hz).max(1e-6);
+    let max_hz = tessitura_max_hz.max(tessitura_min_hz).max(min_hz);
+    let same_band_discount = same_band_discount.clamp(0.0, 1.0);
+    let octave_discount = octave_discount.clamp(0.0, 1.0);
+
+    let mut base_weights = vec![0.0f32; n];
+    for (idx, &freq_hz) in space.centers_hz.iter().enumerate() {
+        if !freq_hz.is_finite() || freq_hz < min_hz || freq_hz > max_hz {
+            continue;
+        }
+        base_weights[idx] =
+            e6_parent_proposal_source_score(proposal_kind, parent_landscape, idx, freq_hz);
+    }
+    let peaks = extract_peak_families(space, &base_weights);
+    let Some(parent_peak_idx) = nearest_peak_family_idx(space, &peaks, parent_freq_hz) else {
+        return sample_from_parent_harmonicity(
+            parent_landscape,
+            current_landscape,
+            alive_freqs_hz,
+            parent_freq_hz,
+            overcapacity_radius_cents,
+            tessitura_min_hz,
+            tessitura_max_hz,
+            rng,
+            E6_HEREDITY_FAMILY_OCCUPANCY_STRENGTH,
+            E6FamilyNfdMode::Off,
+            min_spacing_cents,
+        );
+    };
+
+    let parent_family_center_hz = space.centers_hz[peaks[parent_peak_idx].center_idx];
+    let parent_azimuth_st = (12.0 * (parent_freq_hz / parent_family_center_hz.max(1e-6)).log2())
+        .clamp(-E6_HEREDITY_AZIMUTH_CLIP_ST, E6_HEREDITY_AZIMUTH_CLIP_ST);
+
+    let mut ranked_peaks: Vec<(usize, f32)> = peaks
+        .iter()
+        .enumerate()
+        .filter_map(|(peak_idx, peak)| {
+            let center_hz = space.centers_hz[peak.center_idx];
+            let delta_st = 12.0 * (center_hz / parent_freq_hz.max(1e-6)).log2();
+            let parent_weight = peak.mass.max(0.0)
+                * e6_parent_distance_gaussian(delta_st, proposal_sigma_st)
+                * e6_parent_unison_notch(
+                    delta_st,
+                    proposal_unison_notch_gain,
+                    proposal_unison_notch_sigma_st,
+                );
+            (parent_weight > 0.0 && parent_weight.is_finite()).then_some((peak_idx, parent_weight))
+        })
+        .collect();
+    ranked_peaks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    ranked_peaks.truncate(proposal_candidate_count.max(1));
+    if ranked_peaks.is_empty() {
+        return sample_from_parent_harmonicity(
+            parent_landscape,
+            current_landscape,
+            alive_freqs_hz,
+            parent_freq_hz,
+            overcapacity_radius_cents,
+            tessitura_min_hz,
+            tessitura_max_hz,
+            rng,
+            E6_HEREDITY_FAMILY_OCCUPANCY_STRENGTH,
+            E6FamilyNfdMode::Off,
+            min_spacing_cents,
+        );
+    }
+
+    let total_parent_weight: f32 = ranked_peaks.iter().map(|(_, weight)| *weight).sum();
+    let mut surviving_peak_indices = Vec::with_capacity(ranked_peaks.len());
+    let mut candidate_filter_scores = Vec::with_capacity(ranked_peaks.len());
+    let mut candidate_final_weights = Vec::with_capacity(ranked_peaks.len());
+    for &(peak_idx, parent_weight) in &ranked_peaks {
+        let center_hz = space.centers_hz[peaks[peak_idx].center_idx];
+        let local_occupancy =
+            e6_local_band_occupancy(center_hz, alive_freqs_hz, overcapacity_radius_cents);
+        let raw_scene_score = e6_polyphonic_selection_score(
+            current_landscape,
+            center_hz,
+            alive_freqs_hz,
+            crowding_weight,
+            overcapacity_weight,
+            overcapacity_radius_cents,
+            overcapacity_free_voices,
+        );
+        if raw_scene_score <= 0.0 || local_occupancy > overcapacity_free_voices.saturating_add(1) {
+            continue;
+        }
+        let mut scene_weight = raw_scene_score
+            .max(0.0)
+            .powf(E6B_PARENT_PEAK_SCENE_SCORE_EXP);
+        if e6_is_same_band_respawn(parent_freq_hz, center_hz, overcapacity_radius_cents) {
+            scene_weight *= same_band_discount;
+        }
+        if e6_is_parent_octave_respawn(parent_freq_hz, center_hz, E6B_RESPAWN_OCTAVE_WINDOW_CENTS) {
+            scene_weight *= octave_discount;
+        }
+        if scene_weight <= 0.0 || !scene_weight.is_finite() {
+            continue;
+        }
+        surviving_peak_indices.push(peak_idx);
+        candidate_filter_scores.push(scene_weight);
+        candidate_final_weights.push((parent_weight * scene_weight).max(0.0));
+    }
+    if surviving_peak_indices.is_empty() {
+        return sample_from_parent_harmonicity(
+            parent_landscape,
+            current_landscape,
+            alive_freqs_hz,
+            parent_freq_hz,
+            overcapacity_radius_cents,
+            tessitura_min_hz,
+            tessitura_max_hz,
+            rng,
+            E6_HEREDITY_FAMILY_OCCUPANCY_STRENGTH,
+            E6FamilyNfdMode::Off,
+            min_spacing_cents,
+        );
+    }
+
+    let top_parent_peak_idx = ranked_peaks
+        .first()
+        .map(|(peak_idx, _)| *peak_idx)
+        .unwrap_or(surviving_peak_indices[0]);
+    let top_parent_filter_idx = surviving_peak_indices
+        .iter()
+        .position(|peak_idx| *peak_idx == top_parent_peak_idx)
+        .unwrap_or(0);
+    let chosen_local_idx = if let Ok(dist) = WeightedIndex::new(&candidate_final_weights) {
+        dist.sample(rng)
+    } else {
+        top_parent_filter_idx
+    };
+    let child_peak_idx = surviving_peak_indices[chosen_local_idx];
+    let child_family_center_hz = space.centers_hz[peaks[child_peak_idx].center_idx];
+    let child_azimuth_st = (parent_azimuth_st
+        + sample_standard_normal(rng) * E6_HEREDITY_AZIMUTH_SIGMA_ST)
+        .clamp(-0.35, 0.35);
+    let offspring_freq_hz = if let Some(min_spacing) = min_spacing_cents {
+        e6_find_spaced_family_frequency(
+            child_family_center_hz,
+            child_azimuth_st,
+            min_hz,
+            max_hz,
+            alive_freqs_hz,
+            min_spacing,
+        )
+        .unwrap_or_else(|| freq_from_family_and_azimuth(child_family_center_hz, child_azimuth_st))
+    } else {
+        freq_from_family_and_azimuth(child_family_center_hz, child_azimuth_st)
+    };
+    let chosen_band_occupancy =
+        e6_local_band_occupancy(offspring_freq_hz, alive_freqs_hz, overcapacity_radius_cents);
+    let chosen_parent_weight = ranked_peaks
+        .iter()
+        .find_map(|(peak_idx, weight)| (*peak_idx == child_peak_idx).then_some(*weight))
+        .unwrap_or(0.0)
+        .max(0.0);
+    let proposal_rank = Some(
+        1 + ranked_peaks
+            .iter()
+            .filter(|(_, weight)| *weight > chosen_parent_weight + 1e-6)
+            .count(),
+    );
+    let proposal_mass =
+        Some((chosen_parent_weight / total_parent_weight.max(1e-6)).clamp(0.0, 1.0));
+    let proposal_filter_gain = Some(
+        candidate_filter_scores[chosen_local_idx] - candidate_filter_scores[top_parent_filter_idx],
+    );
+    let family_inherited = child_peak_idx == parent_peak_idx;
+    E6HereditySample {
+        offspring_freq_hz,
+        parent_family_center_hz,
+        parent_azimuth_st,
+        child_family_center_hz,
+        child_azimuth_st,
+        family_inherited,
+        family_mutated: !family_inherited,
+        chosen_band_occupancy,
+        proposal_rank,
+        proposal_mass,
+        proposal_filter_gain,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sample_from_parent_density_proposal(
+    parent_landscape: &Landscape,
+    current_landscape: &Landscape,
+    alive_freqs_hz: &[f32],
+    parent_freq_hz: f32,
+    tessitura_min_hz: f32,
+    tessitura_max_hz: f32,
+    rng: &mut impl Rng,
+    crowding_weight: f32,
+    overcapacity_weight: f32,
+    overcapacity_radius_cents: f32,
+    overcapacity_free_voices: usize,
+    proposal_kind: E6ParentProposalKind,
+    proposal_sigma_st: f32,
+    proposal_unison_notch_gain: f32,
+    proposal_unison_notch_sigma_st: f32,
+    proposal_candidate_count: usize,
+    same_band_discount: f32,
+    octave_discount: f32,
+    min_spacing_cents: Option<f32>,
+) -> E6HereditySample {
+    let space = &parent_landscape.space;
+    let n = space.n_bins();
+    if n == 0 || !parent_freq_hz.is_finite() || parent_freq_hz <= 0.0 {
+        return E6HereditySample {
+            offspring_freq_hz: parent_freq_hz.max(1e-6),
+            parent_family_center_hz: parent_freq_hz.max(1e-6),
+            parent_azimuth_st: 0.0,
+            child_family_center_hz: parent_freq_hz.max(1e-6),
+            child_azimuth_st: 0.0,
+            family_inherited: true,
+            family_mutated: false,
+            chosen_band_occupancy: 1,
+            proposal_rank: None,
+            proposal_mass: None,
+            proposal_filter_gain: None,
+        };
+    }
+
+    let min_hz = tessitura_min_hz.min(tessitura_max_hz).max(1e-6);
+    let max_hz = tessitura_max_hz.max(tessitura_min_hz).max(min_hz);
+    let same_band_discount = same_band_discount.clamp(0.0, 1.0);
+    let octave_discount = octave_discount.clamp(0.0, 1.0);
+
+    let mut base_weights = vec![0.0f32; n];
+    for (idx, &freq_hz) in space.centers_hz.iter().enumerate() {
+        if !freq_hz.is_finite() || freq_hz < min_hz || freq_hz > max_hz {
+            continue;
+        }
+        base_weights[idx] =
+            e6_parent_proposal_source_score(proposal_kind, parent_landscape, idx, freq_hz);
+    }
+    let peaks = extract_peak_families(space, &base_weights);
+    let Some(parent_peak_idx) = nearest_peak_family_idx(space, &peaks, parent_freq_hz) else {
+        return sample_from_parent_harmonicity(
+            parent_landscape,
+            current_landscape,
+            alive_freqs_hz,
+            parent_freq_hz,
+            overcapacity_radius_cents,
+            tessitura_min_hz,
+            tessitura_max_hz,
+            rng,
+            E6_HEREDITY_FAMILY_OCCUPANCY_STRENGTH,
+            E6FamilyNfdMode::Off,
+            min_spacing_cents,
+        );
+    };
+
+    let parent_family_center_hz = space.centers_hz[peaks[parent_peak_idx].center_idx];
+    let parent_azimuth_st = (12.0 * (parent_freq_hz / parent_family_center_hz.max(1e-6)).log2())
+        .clamp(-E6_HEREDITY_AZIMUTH_CLIP_ST, E6_HEREDITY_AZIMUTH_CLIP_ST);
+
+    let peak_weights: Vec<f32> = peaks
+        .iter()
+        .map(|peak| {
+            let center_hz = space.centers_hz[peak.center_idx];
+            let delta_st = 12.0 * (center_hz / parent_freq_hz.max(1e-6)).log2();
+            let gaussian = e6_parent_distance_gaussian(delta_st, proposal_sigma_st);
+            let unison_notch = e6_parent_unison_notch(
+                delta_st,
+                proposal_unison_notch_gain,
+                proposal_unison_notch_sigma_st,
+            );
+            let octave_weight = if e6_is_parent_octave_respawn(
+                parent_freq_hz,
+                center_hz,
+                E6B_RESPAWN_OCTAVE_WINDOW_CENTS,
+            ) {
+                octave_discount
+            } else {
+                1.0
+            };
+            (peak.mass.max(0.0) * gaussian * unison_notch * octave_weight).max(0.0)
+        })
+        .collect();
+    let total_peak_weight: f32 = peak_weights.iter().copied().sum();
+    if total_peak_weight <= 0.0 || !total_peak_weight.is_finite() {
+        return sample_from_parent_harmonicity(
+            parent_landscape,
+            current_landscape,
+            alive_freqs_hz,
+            parent_freq_hz,
+            overcapacity_radius_cents,
+            tessitura_min_hz,
+            tessitura_max_hz,
+            rng,
+            E6_HEREDITY_FAMILY_OCCUPANCY_STRENGTH,
+            E6FamilyNfdMode::Off,
+            min_spacing_cents,
+        );
+    }
+
+    let candidate_indices =
+        e6_sample_unique_weighted_indices(&peak_weights, proposal_candidate_count.max(1), rng);
+    if candidate_indices.is_empty() {
+        return sample_from_parent_harmonicity(
+            parent_landscape,
+            current_landscape,
+            alive_freqs_hz,
+            parent_freq_hz,
+            overcapacity_radius_cents,
+            tessitura_min_hz,
+            tessitura_max_hz,
+            rng,
+            E6_HEREDITY_FAMILY_OCCUPANCY_STRENGTH,
+            E6FamilyNfdMode::Off,
+            min_spacing_cents,
+        );
+    }
+
+    let mut candidate_filter_scores = Vec::with_capacity(candidate_indices.len());
+    let mut candidate_final_weights = Vec::with_capacity(candidate_indices.len());
+    for &peak_idx in &candidate_indices {
+        let center_hz = space.centers_hz[peaks[peak_idx].center_idx];
+        let mut filter_score = e6_polyphonic_selection_score(
+            current_landscape,
+            center_hz,
+            alive_freqs_hz,
+            crowding_weight,
+            overcapacity_weight,
+            overcapacity_radius_cents,
+            overcapacity_free_voices,
+        )
+        .max(0.0);
+        if e6_is_same_band_respawn(parent_freq_hz, center_hz, overcapacity_radius_cents) {
+            filter_score *= same_band_discount;
+        }
+        if e6_is_parent_octave_respawn(parent_freq_hz, center_hz, E6B_RESPAWN_OCTAVE_WINDOW_CENTS) {
+            filter_score *= octave_discount;
+        }
+        let final_weight = (peak_weights[peak_idx] * filter_score).max(0.0);
+        candidate_filter_scores.push(filter_score);
+        candidate_final_weights.push(final_weight);
+    }
+
+    let top_proposal_local_idx = candidate_indices
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| {
+            peak_weights[**a]
+                .partial_cmp(&peak_weights[**b])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(idx, _)| idx)
+        .unwrap_or(0);
+    let chosen_local_idx = if let Ok(dist) = WeightedIndex::new(&candidate_final_weights) {
+        dist.sample(rng)
+    } else {
+        top_proposal_local_idx
+    };
+    let child_peak_idx = candidate_indices[chosen_local_idx];
+    let child_family_center_hz = space.centers_hz[peaks[child_peak_idx].center_idx];
+    let child_azimuth_st = (parent_azimuth_st
+        + sample_standard_normal(rng) * E6_HEREDITY_AZIMUTH_SIGMA_ST)
+        .clamp(-0.35, 0.35);
+    let offspring_freq_hz = if let Some(min_spacing) = min_spacing_cents {
+        e6_find_spaced_family_frequency(
+            child_family_center_hz,
+            child_azimuth_st,
+            min_hz,
+            max_hz,
+            alive_freqs_hz,
+            min_spacing,
+        )
+        .unwrap_or_else(|| freq_from_family_and_azimuth(child_family_center_hz, child_azimuth_st))
+    } else {
+        freq_from_family_and_azimuth(child_family_center_hz, child_azimuth_st)
+    };
+    let chosen_band_occupancy =
+        e6_local_band_occupancy(offspring_freq_hz, alive_freqs_hz, overcapacity_radius_cents);
+    let chosen_peak_weight = peak_weights[child_peak_idx].max(0.0);
+    let proposal_rank = Some(
+        1 + peak_weights
+            .iter()
+            .filter(|&&weight| weight > chosen_peak_weight + 1e-6)
+            .count(),
+    );
+    let proposal_mass = Some((chosen_peak_weight / total_peak_weight).clamp(0.0, 1.0));
+    let proposal_filter_gain = Some(
+        candidate_filter_scores[chosen_local_idx] - candidate_filter_scores[top_proposal_local_idx],
+    );
+    let family_inherited = child_peak_idx == parent_peak_idx;
+    E6HereditySample {
+        offspring_freq_hz,
+        parent_family_center_hz,
+        parent_azimuth_st,
+        child_family_center_hz,
+        child_azimuth_st,
+        family_inherited,
+        family_mutated: !family_inherited,
+        chosen_band_occupancy,
+        proposal_rank,
+        proposal_mass,
+        proposal_filter_gain,
+    }
 }
 
 fn oracle_azimuth_search(
@@ -4405,6 +5606,9 @@ fn sample_from_parent_harmonicity(
             family_inherited: false,
             family_mutated: false,
             chosen_band_occupancy: 1,
+            proposal_rank: None,
+            proposal_mass: None,
+            proposal_filter_gain: None,
         };
     }
 
@@ -4442,6 +5646,9 @@ fn sample_from_parent_harmonicity(
                 alive_freqs_hz,
                 crowding_sigma_cents,
             ),
+            proposal_rank: None,
+            proposal_mass: None,
+            proposal_filter_gain: None,
         };
     };
 
@@ -4530,6 +5737,9 @@ fn sample_from_parent_harmonicity(
                     alive_freqs_hz,
                     crowding_sigma_cents,
                 ),
+                proposal_rank: None,
+                proposal_mass: None,
+                proposal_filter_gain: None,
             };
         }
     }
@@ -4566,6 +5776,9 @@ fn sample_from_parent_harmonicity(
             alive_freqs_hz,
             crowding_sigma_cents,
         ),
+        proposal_rank: None,
+        proposal_mass: None,
+        proposal_filter_gain: None,
     }
 }
 
@@ -4597,6 +5810,9 @@ fn sample_from_parent_profile_complementary_families(
             family_inherited: true,
             family_mutated: false,
             chosen_band_occupancy: 1,
+            proposal_rank: None,
+            proposal_mass: None,
+            proposal_filter_gain: None,
         };
     }
 
@@ -4722,6 +5938,9 @@ fn sample_from_parent_profile_complementary_families(
                     alive_freqs_hz,
                     crowding_sigma_cents,
                 ),
+                proposal_rank: None,
+                proposal_mass: None,
+                proposal_filter_gain: None,
             };
         }
     }
@@ -4758,6 +5977,9 @@ fn sample_from_parent_profile_complementary_families(
             alive_freqs_hz,
             crowding_sigma_cents,
         ),
+        proposal_rank: None,
+        proposal_mass: None,
+        proposal_filter_gain: None,
     }
 }
 
@@ -4788,6 +6010,9 @@ fn sample_from_underfilled_scene_families(
             family_inherited: true,
             family_mutated: false,
             chosen_band_occupancy: 1,
+            proposal_rank: None,
+            proposal_mass: None,
+            proposal_filter_gain: None,
         };
     }
 
@@ -4848,6 +6073,9 @@ fn sample_from_underfilled_scene_families(
                 capacity_radius_cents,
             ),
             chosen_band_occupancy: fallback_occupancy,
+            proposal_rank: None,
+            proposal_mass: None,
+            proposal_filter_gain: None,
         };
     }
 
@@ -4899,6 +6127,9 @@ fn sample_from_underfilled_scene_families(
         family_inherited,
         family_mutated: !family_inherited,
         chosen_band_occupancy,
+        proposal_rank: None,
+        proposal_mass: None,
+        proposal_filter_gain: None,
     }
 }
 
@@ -6652,6 +7883,11 @@ mod tests {
             respawn_parent_prior_mix_override: None,
             respawn_same_band_discount_override: None,
             respawn_octave_discount_override: None,
+            parent_proposal_kind_override: None,
+            parent_proposal_sigma_st_override: None,
+            parent_proposal_unison_notch_gain_override: None,
+            parent_proposal_unison_notch_sigma_st_override: None,
+            parent_proposal_candidate_count_override: None,
             family_occupancy_strength_override: None,
             family_nfd_mode: E6FamilyNfdMode::Off,
             respawn_mode: E6RespawnMode::VacantNicheByParentPrior,
@@ -6814,6 +8050,39 @@ mod tests {
     }
 
     #[test]
+    fn e6_parent_distance_gaussian_keeps_substantial_mass_at_one_octave() {
+        let center = e6_parent_distance_gaussian(0.0, E6B_PARENT_PROPOSAL_SIGMA_ST);
+        let octave = e6_parent_distance_gaussian(12.0, E6B_PARENT_PROPOSAL_SIGMA_ST);
+        assert!((center - 1.0).abs() < 1e-6);
+        assert!(
+            (octave - 0.41).abs() < 0.03,
+            "expected octave decay near 41%, got {octave:.4}"
+        );
+    }
+
+    #[test]
+    fn e6_parent_unison_notch_strongly_suppresses_exact_parent_pitch() {
+        let at_unison = e6_parent_unison_notch(
+            0.0,
+            E6B_PARENT_PROPOSAL_UNISON_NOTCH_GAIN,
+            E6B_PARENT_PROPOSAL_UNISON_NOTCH_SIGMA_ST,
+        );
+        let away = e6_parent_unison_notch(
+            2.0,
+            E6B_PARENT_PROPOSAL_UNISON_NOTCH_GAIN,
+            E6B_PARENT_PROPOSAL_UNISON_NOTCH_SIGMA_ST,
+        );
+        assert!(
+            (at_unison - 0.05).abs() < 0.01,
+            "expected exact unison to retain about 5% mass, got {at_unison:.4}"
+        );
+        assert!(
+            away > 0.99,
+            "expected notch to mostly disappear away from unison, got {away:.4}"
+        );
+    }
+
+    #[test]
     fn e6b_run_reaches_turnover_without_near_unisons() {
         let cfg = E6bRunConfig {
             seed: 0xE6B0_1234,
@@ -6832,6 +8101,7 @@ mod tests {
             polyphonic_parent_share_weight_override: None,
             polyphonic_parent_energy_weight_override: None,
             juvenile_contextual_tuning_ticks_override: None,
+            juvenile_contextual_settlement_enabled_override: None,
             survival_score_low_override: None,
             survival_score_high_override: None,
             survival_recharge_per_sec_override: None,
@@ -6839,6 +8109,12 @@ mod tests {
             respawn_parent_prior_mix_override: None,
             respawn_same_band_discount_override: None,
             respawn_octave_discount_override: None,
+            parent_proposal_kind_override: None,
+            parent_proposal_sigma_st_override: None,
+            parent_proposal_unison_notch_gain_override: None,
+            parent_proposal_unison_notch_sigma_st_override: None,
+            parent_proposal_candidate_count_override: None,
+            random_baseline_mode: E6bRandomBaselineMode::MatchedScenePeaks,
         };
         let result = run_e6b(&cfg);
         assert!(
