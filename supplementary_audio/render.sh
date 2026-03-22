@@ -25,6 +25,8 @@ for rhai in scenarios/*.rhai; do
     (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-polyphony)
   elif [ "$name" = "20_integration" ]; then
     (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-integration)
+  elif [ "$name" = "40_e6b_polyphony" ]; then
+    (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-e6b)
   fi
   echo "  → audio/${name}.wav"
 done

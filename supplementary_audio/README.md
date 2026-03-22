@@ -12,6 +12,7 @@ Qualitative audio demonstrations accompanying the paper
 | `00_quicklisten.wav` | Orientation | ~77 s | Curated montage: best-case emergence vs. ablation controls |
 | `10_exp1_polyphony.wav` | Evidence (E2) | ~35 s | Current E2 replay montage: baseline vs. no-hill across seed 0 and seed 10 |
 | `20_integration.wav` | Evidence (E6) | ~107 s | Current E6 integration montage: full 32-agent paper regime, slowed for listening |
+| `40_e6b_polyphony.wav` | Evidence (E6b) | ~107 s | E6b hereditary polyphony replay: heredity/random × selection on/off across seed 0 and seed 10 |
 | `30_e3_shared.wav`, `30_e3_scrambled.wav`, `30_e3_off.wav` | Evidence (main E3) | ~8 s each | Agent-only render of shared temporal scaffold vs. scrambled/off controls |
 
 ### 00_quicklisten — Orientation montage
@@ -60,6 +61,26 @@ with slower updates and near-sine voices for audibility.
 **Expected:** "both" achieves the highest consonance score, with H-only above
 the random respawn controls.
 
+### 40_e6b_polyphony — Experiment 6b (E6b)
+
+Four conditions × two seeds (index 0, 10). Each segment ~12 s. Within each seed,
+segments are ordered from strongest hereditary fusion to null control:
+
+| Condition | respawn | selection |
+|-----------|---------|-----------|
+| H+S | hereditary family replay | on |
+| H-only | hereditary family replay | off |
+| S-only | random | on |
+| neither | random | off |
+
+The E6b replay uses the current hereditary-polyphony regime: 16-agent population,
+adult pitch locked, juvenile settlement enabled, and hereditary respawn centered
+on family/azimuth replay. Sonification again uses slowed per-life harmonic voices.
+
+**Expected:** H+S and H-only should concentrate into a few stable pitch bands,
+while the random controls remain broad and diffuse. H+S is the intended
+selection-assisted version of the hereditary fuse pattern.
+
 ### 30_exp3_temporal_scaffold — Experiment 3 (main paper)
 
 Three qualitative renders contrast the temporal scaffold conditions used
@@ -83,7 +104,7 @@ No external drone or metronome is mixed into track 30.
 ### Seed selection
 
 Seeds are taken by ordinal index (0 and 10) from the paper's shared seed
-lists (`E2_SEEDS`, `E6_SEEDS` in `experiments/paper_plots.rs`). No
+lists (`E2_SEEDS`, `E6_SEEDS`, `E6B_SEEDS` in `experiments/paper_plots.rs`). No
 cherry-picking.
 
 ### Rendering chain

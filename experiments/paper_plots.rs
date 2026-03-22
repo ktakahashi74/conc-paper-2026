@@ -423,8 +423,30 @@ const E6B_SEEDS: [u64; 20] = [
     0xE6B0_0013_u64,
     0xE6B0_0014_u64,
 ];
+const E6B_QUICK_SEED_COUNT: usize = 4;
 const PAPER_PLOTS_LOCK_FILE: &str = "experiments/.paper_plots.lock";
 const PAPER_PLOTS_BASE_DIR: &str = "experiments/plots";
+
+#[derive(Clone, Copy, Debug)]
+struct E6bCliOptions {
+    quick: bool,
+    seed_limit: Option<usize>,
+    skip_benchmark: bool,
+}
+
+impl E6bCliOptions {
+    fn seed_slice(self) -> &'static [u64] {
+        let limit = self
+            .seed_limit
+            .unwrap_or(if self.quick {
+                E6B_QUICK_SEED_COUNT
+            } else {
+                E6B_SEEDS.len()
+            })
+            .clamp(1, E6B_SEEDS.len());
+        &E6B_SEEDS[..limit]
+    }
+}
 
 fn e6_effective_range_bounds_st() -> (f32, f32) {
     let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
@@ -668,11 +690,16 @@ fn usage() -> String {
         "  paper --e2-render-proposal 5 4 2",
         "  paper --e6-debug-sampler",
         "  paper --exp e6b",
+        "  paper --exp e6b --e6b-quick",
+        "  paper --exp e6b --e6b-seeds 6 --e6b-skip-benchmark",
         "  paper --exp e2 --e2-quick --e2-dense-sweep",
         "  paper --exp e2 --e2-quick --e2-candidate-search",
         "If no experiment is specified, paper defaults (E1,E2,E3,E6,E7) run.",
         "Use --exp e4 to run E4 explicitly.",
         "Use --exp e6b to run the experimental hereditary polyphony assay.",
+        "--e6b-quick uses a small seed subset and skips the Exp1 benchmark for faster iteration.",
+        "--e6b-seeds N limits E6b to the first N fixed seeds.",
+        "--e6b-skip-benchmark omits the Exp1 reference rerun and writes a skipped note instead.",
         "E4 histogram dumps default to off (use --e4-hist on to enable).",
         "E4 kernel gate plot default to off (use --e4-kernel-gate on to enable).",
         "E4 wr probe default to off (use --e4-wr on to enable).",
@@ -843,7 +870,20 @@ fn parse_experiments(args: &[String]) -> Result<Vec<Experiment>, String> {
             || arg == "--e2-quick"
             || arg == "--e2-dense-sweep"
             || arg == "--e2-candidate-search"
+            || arg == "--e6b-quick"
+            || arg == "--e6b-skip-benchmark"
         {
+            i += 1;
+            continue;
+        }
+        if arg == "--e6b-seeds" {
+            if i + 1 >= args.len() {
+                return Err(format!("Missing value after {arg}\n{}", usage()));
+            }
+            i += 2;
+            continue;
+        }
+        if arg.starts_with("--e6b-seeds=") {
             i += 1;
             continue;
         }
@@ -1240,6 +1280,15 @@ fn parse_f32_cli_opt(args: &[String], key: &str) -> Result<Option<f32>, String> 
     Ok(Some(parsed))
 }
 
+fn parse_usize_cli_opt(args: &[String], key: &str) -> Result<Option<usize>, String> {
+    let value = parse_u32_cli_opt(args, key)?;
+    value
+        .map(|v| {
+            usize::try_from(v).map_err(|_| format!("Invalid value for {key}: {v}\n{}", usage()))
+        })
+        .transpose()
+}
+
 fn parse_e4_env_partials(args: &[String]) -> Result<Option<u32>, String> {
     parse_u32_cli_opt(args, "--e4-env-partials")
 }
@@ -1258,6 +1307,10 @@ fn parse_e4_dyn_persistence(args: &[String]) -> Result<Option<f32>, String> {
 
 fn parse_e4_dyn_step_cents(args: &[String]) -> Result<Option<f32>, String> {
     parse_f32_cli_opt(args, "--e4-dyn-step-cents")
+}
+
+fn parse_e6b_seed_limit(args: &[String]) -> Result<Option<usize>, String> {
+    parse_usize_cli_opt(args, "--e6b-seeds")
 }
 
 fn parse_clean(args: &[String]) -> Result<bool, String> {
@@ -1390,6 +1443,10 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
         postprocess_integration_wav_default()?;
         return Ok(());
     }
+    if args.iter().any(|arg| arg == "--postprocess-e6b") {
+        postprocess_e6b_wav_default()?;
+        return Ok(());
+    }
     if args.iter().any(|arg| arg == "--postprocess-polyphony") {
         postprocess_polyphony_wav_default()?;
         return Ok(());
@@ -1404,11 +1461,19 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
     let e4_dyn_exploration = parse_e4_dyn_exploration(&args).map_err(io::Error::other)?;
     let e4_dyn_persistence = parse_e4_dyn_persistence(&args).map_err(io::Error::other)?;
     let e4_dyn_step_cents = parse_e4_dyn_step_cents(&args).map_err(io::Error::other)?;
+    let e6b_seed_limit = parse_e6b_seed_limit(&args).map_err(io::Error::other)?;
     let e2_phase_mode = E2PhaseMode::DissonanceThenConsonance;
     let e2_quick = args.iter().any(|a| a == "--e2-quick");
     let e2_diagnostics = args.iter().any(|a| a == "--e2-diagnostics");
     let e2_dense_sweep = args.iter().any(|a| a == "--e2-dense-sweep");
     let e2_candidate_search = args.iter().any(|a| a == "--e2-candidate-search");
+    let e6b_quick = args.iter().any(|a| a == "--e6b-quick");
+    let e6b_skip_benchmark = args.iter().any(|a| a == "--e6b-skip-benchmark") || e6b_quick;
+    let e6b_cli = E6bCliOptions {
+        quick: e6b_quick,
+        seed_limit: e6b_seed_limit,
+        skip_benchmark: e6b_skip_benchmark,
+    };
     let clean_all = parse_clean(&args).map_err(io::Error::other)?;
     let experiments = parse_experiments(&args).map_err(io::Error::other)?;
     let experiments = if experiments.is_empty() {
@@ -1510,7 +1575,7 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
                 }
                 Experiment::E6b => {
                     let h = s.spawn(|| {
-                        plot_e6b_hereditary_polyphony(out_dir, space_ref, anchor_hz)
+                        plot_e6b_hereditary_polyphony(out_dir, space_ref, anchor_hz, e6b_cli)
                             .map_err(|err| io::Error::other(err.to_string()))
                     });
                     handles.push((exp.label(), h));
@@ -6571,10 +6636,11 @@ struct E6bProcessedRun {
 #[allow(clippy::type_complexity)]
 fn e6b_run_jobs(
     specs: &[(&'static str, E6Condition, bool)],
+    seeds: &[u64],
 ) -> Vec<(&'static str, E6Condition, bool, u64, E6bRunResult)> {
     let mut jobs: Vec<(&'static str, E6Condition, bool, u64)> = Vec::new();
     for &(label, condition, selection_enabled) in specs {
-        for &seed in &E6B_SEEDS {
+        for &seed in seeds {
             jobs.push((label, condition, selection_enabled, seed));
         }
     }
@@ -6777,13 +6843,18 @@ fn plot_e6b_hereditary_polyphony(
     out_dir: &Path,
     space: &Log2Space,
     anchor_hz: f32,
+    cli: E6bCliOptions,
 ) -> Result<(), Box<dyn Error>> {
-    let main_results = e6b_run_jobs(&[
-        ("heredity_nosel", E6Condition::Heredity, false),
-        ("random_nosel", E6Condition::Random, false),
-        ("heredity", E6Condition::Heredity, true),
-        ("random", E6Condition::Random, true),
-    ]);
+    let seeds = cli.seed_slice();
+    let main_results = e6b_run_jobs(
+        &[
+            ("heredity_nosel", E6Condition::Heredity, false),
+            ("random_nosel", E6Condition::Random, false),
+            ("heredity", E6Condition::Heredity, true),
+            ("random", E6Condition::Random, true),
+        ],
+        seeds,
+    );
 
     let reference_landscape = e3_reference_landscape(anchor_hz);
     let contextual_space = reference_landscape.space.clone();
@@ -6901,105 +6972,120 @@ fn plot_e6b_hereditary_polyphony(
         &final_entropy_random,
     )?;
 
-    let max_threads = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
-        .max(1);
-    let baseline_threads = (max_threads / 2).max(1);
-    let nohill_threads = max_threads.saturating_sub(baseline_threads).max(1);
-    let ((baseline_runs, _), (nohill_runs, _)) = std::thread::scope(|scope| {
-        let baseline = scope.spawn(|| {
-            e2_seed_sweep_with_threads(
-                space,
-                anchor_hz,
-                E2Condition::Baseline,
-                E2_STEP_SEMITONES,
-                E2PhaseMode::DissonanceThenConsonance,
-                None,
-                0,
-                E2_PAPER_N_AGENTS,
-                E2_PAPER_RANGE_OCT,
-                Some(baseline_threads),
-            )
-        });
-        let nohill = scope.spawn(|| {
-            e2_seed_sweep_with_threads(
-                space,
-                anchor_hz,
-                E2Condition::NoHillClimb,
-                E2_STEP_SEMITONES,
-                E2PhaseMode::DissonanceThenConsonance,
-                None,
-                0,
-                E2_PAPER_N_AGENTS,
-                E2_PAPER_RANGE_OCT,
-                Some(nohill_threads),
-            )
-        });
-        (
-            baseline.join().expect("baseline Exp1 benchmark failed"),
-            nohill.join().expect("nohill Exp1 benchmark failed"),
+    let benchmark_text = if cli.skip_benchmark {
+        format!(
+            "E6b benchmark against Experiment 1\n\
+             --------------------------------\n\
+             skipped: {}\n\
+             seeds used in this run: {}\n",
+            if cli.quick {
+                "--e6b-quick"
+            } else {
+                "--e6b-skip-benchmark"
+            },
+            seeds.len()
         )
-    });
-    let hs_loo_mean = mean_std_scalar(&final_loo_heredity).0;
-    let hs_entropy_mean = mean_std_scalar(&final_entropy_heredity).0;
-    let hs_ji_mean = mean_std_scalar(
-        final_ji_by_label
-            .get("heredity")
-            .map_or(&[][..], Vec::as_slice),
-    )
-    .0;
-    let hs_unique_bins_mean = mean_std_scalar(
-        final_unique_bins_by_label
-            .get("heredity")
-            .map_or(&[][..], Vec::as_slice),
-    )
-    .0;
+    } else {
+        let max_threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .max(1);
+        let baseline_threads = (max_threads / 2).max(1);
+        let nohill_threads = max_threads.saturating_sub(baseline_threads).max(1);
+        let ((baseline_runs, _), (nohill_runs, _)) = std::thread::scope(|scope| {
+            let baseline = scope.spawn(|| {
+                e2_seed_sweep_with_threads(
+                    space,
+                    anchor_hz,
+                    E2Condition::Baseline,
+                    E2_STEP_SEMITONES,
+                    E2PhaseMode::DissonanceThenConsonance,
+                    None,
+                    0,
+                    E2_PAPER_N_AGENTS,
+                    E2_PAPER_RANGE_OCT,
+                    Some(baseline_threads),
+                )
+            });
+            let nohill = scope.spawn(|| {
+                e2_seed_sweep_with_threads(
+                    space,
+                    anchor_hz,
+                    E2Condition::NoHillClimb,
+                    E2_STEP_SEMITONES,
+                    E2PhaseMode::DissonanceThenConsonance,
+                    None,
+                    0,
+                    E2_PAPER_N_AGENTS,
+                    E2_PAPER_RANGE_OCT,
+                    Some(nohill_threads),
+                )
+            });
+            (
+                baseline.join().expect("baseline Exp1 benchmark failed"),
+                nohill.join().expect("nohill Exp1 benchmark failed"),
+            )
+        });
+        let hs_loo_mean = mean_std_scalar(&final_loo_heredity).0;
+        let hs_entropy_mean = mean_std_scalar(&final_entropy_heredity).0;
+        let hs_ji_mean = mean_std_scalar(
+            final_ji_by_label
+                .get("heredity")
+                .map_or(&[][..], Vec::as_slice),
+        )
+        .0;
+        let hs_unique_bins_mean = mean_std_scalar(
+            final_unique_bins_by_label
+                .get("heredity")
+                .map_or(&[][..], Vec::as_slice),
+        )
+        .0;
 
-    let baseline_c = mean_last_c_score_loo(&baseline_runs);
-    let nohill_c = mean_last_c_score_loo(&nohill_runs);
-    let baseline_entropy = mean_entropy_end(&baseline_runs);
-    let nohill_entropy = mean_entropy_end(&nohill_runs);
-    let baseline_ji = mean_ji_scene_end(&baseline_runs, anchor_hz);
-    let nohill_ji = mean_ji_scene_end(&nohill_runs, anchor_hz);
-    let baseline_bins = mean_unique_bins_end(&baseline_runs);
-    let nohill_bins = mean_unique_bins_end(&nohill_runs);
+        let baseline_c = mean_last_c_score_loo(&baseline_runs);
+        let nohill_c = mean_last_c_score_loo(&nohill_runs);
+        let baseline_entropy = mean_entropy_end(&baseline_runs);
+        let nohill_entropy = mean_entropy_end(&nohill_runs);
+        let baseline_ji = mean_ji_scene_end(&baseline_runs, anchor_hz);
+        let nohill_ji = mean_ji_scene_end(&nohill_runs, anchor_hz);
+        let baseline_bins = mean_unique_bins_end(&baseline_runs);
+        let nohill_bins = mean_unique_bins_end(&nohill_runs);
 
-    let benchmark_text = format!(
-        "E6b benchmark against Experiment 1\n\
-         --------------------------------\n\
-         H+S endpoint means (E6b):\n\
-         LOO C_score      = {:.4}\n\
-         interval entropy = {:.4}\n\
-         JI score         = {:.4}\n\
-         unique bins      = {:.3}\n\
-         \n\
-         Exp1 reference means:\n\
-         local-search: C={:.4}  entropy={:.4}  JI={:.4}  bins={:.3}\n\
-         random-walk : C={:.4}  entropy={:.4}  JI={:.4}  bins={:.3}\n\
-         \n\
-         Gap closed toward Exp1 local-search (1.0 = match local-search, 0.0 = random-walk):\n\
-         C_score      = {:.4}\n\
-         entropy      = {:.4}\n\
-         JI score     = {:.4}\n\
-         unique bins  = {:.4}\n",
-        hs_loo_mean,
-        hs_entropy_mean,
-        hs_ji_mean,
-        hs_unique_bins_mean,
-        baseline_c,
-        baseline_entropy,
-        baseline_ji,
-        baseline_bins,
-        nohill_c,
-        nohill_entropy,
-        nohill_ji,
-        nohill_bins,
-        e6b_gap_closed(hs_loo_mean, baseline_c, nohill_c, true),
-        e6b_gap_closed(hs_entropy_mean, baseline_entropy, nohill_entropy, false),
-        e6b_gap_closed(hs_ji_mean, baseline_ji, nohill_ji, true),
-        e6b_gap_closed(hs_unique_bins_mean, baseline_bins, nohill_bins, false),
-    );
+        format!(
+            "E6b benchmark against Experiment 1\n\
+             --------------------------------\n\
+             H+S endpoint means (E6b):\n\
+             LOO C_score      = {:.4}\n\
+             interval entropy = {:.4}\n\
+             JI score         = {:.4}\n\
+             unique bins      = {:.3}\n\
+             \n\
+             Exp1 reference means:\n\
+             local-search: C={:.4}  entropy={:.4}  JI={:.4}  bins={:.3}\n\
+             random-walk : C={:.4}  entropy={:.4}  JI={:.4}  bins={:.3}\n\
+             \n\
+             Gap closed toward Exp1 local-search (1.0 = match local-search, 0.0 = random-walk):\n\
+             C_score      = {:.4}\n\
+             entropy      = {:.4}\n\
+             JI score     = {:.4}\n\
+             unique bins  = {:.4}\n",
+            hs_loo_mean,
+            hs_entropy_mean,
+            hs_ji_mean,
+            hs_unique_bins_mean,
+            baseline_c,
+            baseline_entropy,
+            baseline_ji,
+            baseline_bins,
+            nohill_c,
+            nohill_entropy,
+            nohill_ji,
+            nohill_bins,
+            e6b_gap_closed(hs_loo_mean, baseline_c, nohill_c, true),
+            e6b_gap_closed(hs_entropy_mean, baseline_entropy, nohill_entropy, false),
+            e6b_gap_closed(hs_ji_mean, baseline_ji, nohill_ji, true),
+            e6b_gap_closed(hs_unique_bins_mean, baseline_bins, nohill_bins, false),
+        )
+    };
     write_with_log(out_dir.join("paper_e6b_exp1_benchmark.txt"), benchmark_text)?;
 
     let summary_text = format!(
@@ -7199,6 +7285,7 @@ fn plot_e6_hereditary_adaptation(
                             selection_enabled,
                             selection_contextual_mix_weight,
                             selection_score_mode: E6SelectionScoreMode::PolyphonicLooCrowding,
+                            polyphonic_crowding_weight_override: None,
                             juvenile_contextual_settlement_enabled: false,
                             juvenile_cull_enabled: false,
                             record_life_diagnostics: true,
@@ -7207,6 +7294,7 @@ fn plot_e6_hereditary_adaptation(
                             ),
                             family_nfd_mode: E6_MAIN_FAMILY_NFD_MODE,
                             respawn_mode: E6RespawnMode::VacantNicheByParentPrior,
+                            legacy_family_min_spacing_cents: None,
                         };
                         let result = run_e6(&cfg);
                         results_slot.lock().unwrap()[idx] =
@@ -7391,12 +7479,14 @@ fn plot_e6_hereditary_adaptation(
                         selection_enabled,
                         selection_contextual_mix_weight: if selection_enabled { 0.25 } else { 0.0 },
                         selection_score_mode: E6SelectionScoreMode::LegacyAnchorContextMix,
+                        polyphonic_crowding_weight_override: None,
                         juvenile_contextual_settlement_enabled: false,
                         juvenile_cull_enabled: false,
                         record_life_diagnostics: true,
                         family_occupancy_strength_override: Some(occupancy_strength),
                         family_nfd_mode: nfd_mode.unwrap_or(E6FamilyNfdMode::Off),
                         respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
+                        legacy_family_min_spacing_cents: None,
                     };
                     let result = run_e6(&cfg);
                     family_nfd_slots.lock().unwrap()[idx] = Some((
@@ -7581,12 +7671,14 @@ fn plot_e6_hereditary_adaptation(
                             selection_enabled: true,
                             selection_contextual_mix_weight: 0.0,
                             selection_score_mode: E6SelectionScoreMode::LegacyAnchorContextMix,
+                            polyphonic_crowding_weight_override: None,
                             juvenile_contextual_settlement_enabled: true,
                             juvenile_cull_enabled: false,
                             record_life_diagnostics: true,
                             family_occupancy_strength_override: None,
                             family_nfd_mode: E6FamilyNfdMode::Off,
                             respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
+                            legacy_family_min_spacing_cents: None,
                         };
                         let result = run_e6(&cfg);
                         e2_aligned_slots.lock().unwrap()[idx] =
@@ -7654,12 +7746,14 @@ fn plot_e6_hereditary_adaptation(
                             selection_enabled: true,
                             selection_contextual_mix_weight: 0.0,
                             selection_score_mode: E6SelectionScoreMode::LegacyAnchorContextMix,
+                            polyphonic_crowding_weight_override: None,
                             juvenile_contextual_settlement_enabled: true,
                             juvenile_cull_enabled: false,
                             record_life_diagnostics: true,
                             family_occupancy_strength_override: None,
                             family_nfd_mode: E6FamilyNfdMode::Off,
                             respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
+                            legacy_family_min_spacing_cents: None,
                         };
                         let result = run_e6(&cfg);
                         e6_static_slots.lock().unwrap()[idx] =
@@ -9374,12 +9468,14 @@ fn plot_e6_hereditary_adaptation(
                             selection_enabled: true,
                             selection_contextual_mix_weight: 0.0,
                             selection_score_mode: E6SelectionScoreMode::LegacyAnchorContextMix,
+                            polyphonic_crowding_weight_override: None,
                             juvenile_contextual_settlement_enabled: true,
                             juvenile_cull_enabled: false,
                             record_life_diagnostics: true,
                             family_occupancy_strength_override: None,
                             family_nfd_mode: E6FamilyNfdMode::Off,
                             respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
+                            legacy_family_min_spacing_cents: None,
                         };
                         let result = run_e6(&cfg);
                         oracle_global_pop_sweep_slots.lock().unwrap()[idx] =
@@ -9540,12 +9636,14 @@ fn plot_e6_hereditary_adaptation(
                             selection_enabled: true,
                             selection_contextual_mix_weight: 0.0,
                             selection_score_mode: E6SelectionScoreMode::LegacyAnchorContextMix,
+                            polyphonic_crowding_weight_override: None,
                             juvenile_contextual_settlement_enabled: true,
                             juvenile_cull_enabled: false,
                             record_life_diagnostics: true,
                             family_occupancy_strength_override: None,
                             family_nfd_mode: E6FamilyNfdMode::Off,
                             respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
+                            legacy_family_min_spacing_cents: None,
                         };
                         let result = run_e6(&cfg);
                         oracle_global_crowding_sweep_slots.lock().unwrap()[idx] =
@@ -9713,12 +9811,14 @@ fn plot_e6_hereditary_adaptation(
                             selection_enabled: true,
                             selection_contextual_mix_weight: 0.0,
                             selection_score_mode: E6SelectionScoreMode::LegacyAnchorContextMix,
+                            polyphonic_crowding_weight_override: None,
                             juvenile_contextual_settlement_enabled: true,
                             juvenile_cull_enabled: false,
                             record_life_diagnostics: true,
                             family_occupancy_strength_override: None,
                             family_nfd_mode: E6FamilyNfdMode::Off,
                             respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
+                            legacy_family_min_spacing_cents: None,
                         };
                         let result = run_e6(&cfg);
                         oracle_global_adaptation_slots.lock().unwrap()[idx] =
@@ -11927,12 +12027,14 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
                                 selection_enabled: true,
                                 selection_contextual_mix_weight: 0.0,
                                 selection_score_mode: E6SelectionScoreMode::LegacyAnchorContextMix,
+                                polyphonic_crowding_weight_override: None,
                                 juvenile_contextual_settlement_enabled: true,
                                 juvenile_cull_enabled: true,
                                 record_life_diagnostics: true,
                                 family_occupancy_strength_override: None,
                                 family_nfd_mode: E6FamilyNfdMode::Off,
                                 respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
+                                legacy_family_min_spacing_cents: None,
                             };
                             let result = run_e6(&cfg);
                             int_slots.lock().unwrap()[idx] = Some((seed, result));
@@ -12258,12 +12360,14 @@ fn plot_e6_integration_figure(out_dir: &Path, anchor_hz: f32) -> Result<(), Box<
                                         selection_contextual_mix_weight: 0.0,
                                         selection_score_mode:
                                             E6SelectionScoreMode::LegacyAnchorContextMix,
+                                        polyphonic_crowding_weight_override: None,
                                         juvenile_contextual_settlement_enabled: true,
                                         juvenile_cull_enabled: true,
                                         record_life_diagnostics: true,
                                         family_occupancy_strength_override: None,
                                         family_nfd_mode: E6FamilyNfdMode::Off,
                                         respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
+                                        legacy_family_min_spacing_cents: None,
                                     };
                                     let result = run_e6(&cfg);
                                     result
@@ -12474,12 +12578,14 @@ fn generate_e6_sampler_debug_plots() -> Result<(), Box<dyn Error>> {
         selection_enabled: true,
         selection_contextual_mix_weight: 0.0,
         selection_score_mode: E6SelectionScoreMode::LegacyAnchorContextMix,
+        polyphonic_crowding_weight_override: None,
         juvenile_contextual_settlement_enabled: true,
         juvenile_cull_enabled: true,
         record_life_diagnostics: true,
         family_occupancy_strength_override: None,
         family_nfd_mode: E6FamilyNfdMode::Off,
         respawn_mode: E6RespawnMode::LegacyFamilyAzimuth,
+        legacy_family_min_spacing_cents: None,
     };
     let result = run_e6(&cfg);
     let final_snapshot = result
@@ -33724,6 +33830,24 @@ mod tests {
     }
 
     #[test]
+    fn parse_experiments_ignores_e6b_dev_flags() {
+        let args = vec![
+            "--exp".to_string(),
+            "e6b".to_string(),
+            "--e6b-quick".to_string(),
+            "--e6b-seeds".to_string(),
+            "6".to_string(),
+            "--e6b-skip-benchmark".to_string(),
+        ];
+        let experiments = parse_experiments(&args).expect("parse_experiments failed");
+        assert_eq!(experiments, vec![Experiment::E6b]);
+        assert_eq!(
+            parse_e6b_seed_limit(&args).expect("parse_e6b_seed_limit failed"),
+            Some(6)
+        );
+    }
+
+    #[test]
     fn e2_marker_steps_includes_phase_switch_when_dtc() {
         let steps = e2_marker_steps(E2PhaseMode::DissonanceThenConsonance);
         assert!(
@@ -35095,6 +35219,22 @@ fn postprocess_integration_wav_default() -> io::Result<()> {
     Ok(())
 }
 
+fn postprocess_e6b_wav_default() -> io::Result<()> {
+    let wav_stem = "40_e6b_polyphony";
+    let (wav_path, rhai_path, manifest_path) = resolve_audio_postprocess_paths(wav_stem);
+    let windows = parse_rhai_scene_windows(&rhai_path)?;
+    let wav_name = format!("{wav_stem}.wav");
+    rewrite_audio_manifest(&manifest_path, &wav_name, &windows)?;
+    apply_segment_fades_i16(&wav_path, &windows, AUDIO_INTEGRATION_FADE_SEC)?;
+    peak_normalize_i16(&wav_path, -6.0)?;
+    eprintln!(
+        "postprocessed {wav_name}: {} segments, {:.1}s fades, peak-normalized to -6 dBFS",
+        windows.len(),
+        AUDIO_INTEGRATION_FADE_SEC
+    );
+    Ok(())
+}
+
 fn postprocess_polyphony_wav_default() -> io::Result<()> {
     let (wav_path, rhai_path, manifest_path) = resolve_audio_postprocess_paths("10_exp1_polyphony");
     let windows = parse_rhai_scene_windows(&rhai_path)?;
@@ -35105,6 +35245,127 @@ fn postprocess_polyphony_wav_default() -> io::Result<()> {
     );
     let _ = wav_path;
     Ok(())
+}
+
+fn run_audio_e2_jobs_parallel(
+    jobs: &[(u64, E2Condition, &'static str)],
+    space: &Log2Space,
+    anchor_hz: f32,
+    phase_mode: E2PhaseMode,
+) -> Vec<E2Run> {
+    if jobs.is_empty() {
+        return Vec::new();
+    }
+    let worker_count = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(jobs.len())
+        .max(1);
+    let next = AtomicUsize::new(0);
+    let slots: Mutex<Vec<Option<E2Run>>> = Mutex::new((0..jobs.len()).map(|_| None).collect());
+    std::thread::scope(|scope| {
+        for _ in 0..worker_count {
+            scope.spawn(|| {
+                loop {
+                    let idx = next.fetch_add(1, Ordering::Relaxed);
+                    if idx >= jobs.len() {
+                        break;
+                    }
+                    let (seed, cond, label) = jobs[idx];
+                    eprintln!("    E2 {label}");
+                    let run = run_e2_once(
+                        space,
+                        anchor_hz,
+                        seed,
+                        cond,
+                        E2_STEP_SEMITONES,
+                        phase_mode,
+                        None,
+                        0,
+                    );
+                    slots.lock().unwrap()[idx] = Some(run);
+                }
+            });
+        }
+    });
+    slots
+        .into_inner()
+        .unwrap()
+        .into_iter()
+        .map(|slot| slot.expect("missing E2 audio output"))
+        .collect()
+}
+
+fn run_audio_e6_jobs_parallel(jobs: Vec<(String, E6RunConfig)>) -> Vec<(String, E6RunResult)> {
+    if jobs.is_empty() {
+        return Vec::new();
+    }
+    let worker_count = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(jobs.len())
+        .max(1);
+    let next = AtomicUsize::new(0);
+    let slots: Mutex<Vec<Option<(String, E6RunResult)>>> =
+        Mutex::new((0..jobs.len()).map(|_| None).collect());
+    std::thread::scope(|scope| {
+        for _ in 0..worker_count {
+            scope.spawn(|| {
+                loop {
+                    let idx = next.fetch_add(1, Ordering::Relaxed);
+                    if idx >= jobs.len() {
+                        break;
+                    }
+                    let (label, cfg) = &jobs[idx];
+                    eprintln!("    E6 {label}");
+                    let result = run_e6(cfg);
+                    slots.lock().unwrap()[idx] = Some((label.clone(), result));
+                }
+            });
+        }
+    });
+    slots
+        .into_inner()
+        .unwrap()
+        .into_iter()
+        .map(|slot| slot.expect("missing E6 audio output"))
+        .collect()
+}
+
+fn run_audio_e6b_jobs_parallel(jobs: Vec<(String, E6bRunConfig)>) -> Vec<(String, E6bRunResult)> {
+    if jobs.is_empty() {
+        return Vec::new();
+    }
+    let worker_count = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(jobs.len())
+        .max(1);
+    let next = AtomicUsize::new(0);
+    let slots: Mutex<Vec<Option<(String, E6bRunResult)>>> =
+        Mutex::new((0..jobs.len()).map(|_| None).collect());
+    std::thread::scope(|scope| {
+        for _ in 0..worker_count {
+            scope.spawn(|| {
+                loop {
+                    let idx = next.fetch_add(1, Ordering::Relaxed);
+                    if idx >= jobs.len() {
+                        break;
+                    }
+                    let (label, cfg) = &jobs[idx];
+                    eprintln!("    E6b {label}");
+                    let result = run_e6b(cfg);
+                    slots.lock().unwrap()[idx] = Some((label.clone(), result));
+                }
+            });
+        }
+    });
+    slots
+        .into_inner()
+        .unwrap()
+        .into_iter()
+        .map(|slot| slot.expect("missing E6b audio output"))
+        .collect()
 }
 
 /// Generate all audio supplement Rhai scripts from simulation data.
@@ -35133,22 +35394,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
     let e2_polyphony_segment_indices: &[usize] = &[0, 1, 3, 4];
 
     eprintln!("  [audio-rhai] Running E2 simulations...");
-    let e2_runs: Vec<E2Run> = e2_segments
-        .iter()
-        .map(|&(seed, cond, label)| {
-            eprintln!("    E2 {label}");
-            run_e2_once(
-                &space,
-                anchor_hz,
-                seed,
-                cond,
-                E2_STEP_SEMITONES,
-                phase_mode,
-                None,
-                0,
-            )
-        })
-        .collect();
+    let e2_runs = run_audio_e2_jobs_parallel(e2_segments, &space, anchor_hz, phase_mode);
 
     // ── 10_exp1_polyphony.rhai ──
     {
@@ -35237,7 +35483,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
     let e6_seeds: [u64; 2] = [e6_seed_a, e6_seed_b];
 
     eprintln!("  [audio-rhai] Running E6 simulations...");
-    let mut e6_results: Vec<(String, E6RunResult)> = Vec::new();
+    let mut e6_jobs: Vec<(String, E6RunConfig)> = Vec::new();
     for cond in &e6_conditions {
         for &seed in &e6_seeds {
             let label = format!(
@@ -35245,7 +35491,6 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
                 if seed == e6_seed_a { "0" } else { "1" },
                 cond.label
             );
-            eprintln!("    E6 {label}");
             let cfg = E6RunConfig {
                 seed,
                 steps_cap: E6_STEPS_CAP,
@@ -35268,17 +35513,19 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
                 selection_enabled: cond.selection_enabled,
                 selection_contextual_mix_weight: if cond.selection_enabled { 0.25 } else { 0.0 },
                 selection_score_mode: E6SelectionScoreMode::PolyphonicLooCrowding,
+                polyphonic_crowding_weight_override: None,
                 juvenile_contextual_settlement_enabled: false,
                 juvenile_cull_enabled: false,
                 record_life_diagnostics: true,
                 family_occupancy_strength_override: None,
                 family_nfd_mode: E6FamilyNfdMode::Off,
                 respawn_mode: E6RespawnMode::VacantNicheByParentPrior,
+                legacy_family_min_spacing_cents: None,
             };
-            let result = run_e6(&cfg);
-            e6_results.push((label, result));
+            e6_jobs.push((label, cfg));
         }
     }
+    let e6_results = run_audio_e6_jobs_parallel(e6_jobs);
 
     // ── 20_integration.rhai ──
     {
@@ -35335,6 +35582,116 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             }
         }
         write_with_log(out_dir.join("20_integration.rhai"), rhai)?;
+    }
+
+    // ── E6b runs ──
+    struct E6bAudioSeg {
+        label: &'static str,
+        condition: E6Condition,
+        selection_enabled: bool,
+    }
+    let e6b_conditions = [
+        E6bAudioSeg {
+            label: "heredity_sel",
+            condition: E6Condition::Heredity,
+            selection_enabled: true,
+        },
+        E6bAudioSeg {
+            label: "heredity_nosel",
+            condition: E6Condition::Heredity,
+            selection_enabled: false,
+        },
+        E6bAudioSeg {
+            label: "random_sel",
+            condition: E6Condition::Random,
+            selection_enabled: true,
+        },
+        E6bAudioSeg {
+            label: "random_nosel",
+            condition: E6Condition::Random,
+            selection_enabled: false,
+        },
+    ];
+    let e6b_seed_a = E6B_SEEDS[0];
+    let e6b_seed_b = E6B_SEEDS[10];
+    let e6b_seeds: [u64; 2] = [e6b_seed_a, e6b_seed_b];
+
+    eprintln!("  [audio-rhai] Running E6b simulations...");
+    let mut e6b_jobs: Vec<(String, E6bRunConfig)> = Vec::new();
+    for cond in &e6b_conditions {
+        for &seed in &e6b_seeds {
+            let label = format!(
+                "seed{}_{}",
+                if seed == e6b_seed_a { "0" } else { "10" },
+                cond.label
+            );
+            let cfg = E6bRunConfig {
+                seed,
+                steps_cap: E6B_STEPS_CAP,
+                min_deaths: E6B_MIN_DEATHS,
+                pop_size: E6B_DEFAULT_POP_SIZE,
+                first_k: E6B_FIRST_K,
+                condition: cond.condition,
+                snapshot_interval: E6B_SNAPSHOT_INTERVAL,
+                selection_enabled: cond.selection_enabled,
+                shuffle_landscape: false,
+            };
+            e6b_jobs.push((label, cfg));
+        }
+    }
+    let e6b_results = run_audio_e6b_jobs_parallel(e6b_jobs);
+
+    // ── 40_e6b_polyphony.rhai ──
+    {
+        let detail = format!(
+            "// per-life replay from the {}-agent E6b hereditary polyphony assay,\n\
+             // tail {} snapshots per segment, snapshot_interval={} steps, replay_step_sec={:.3}\n\
+             // each life uses harmonic ADSR atk={:.2}s dec={:.2}s sus={:.2} rel={:.2}s\n\
+             //\n\
+             // 8 segments: heredity/random x selection on/off, 2 seeds (index 0 and 10)\n\
+             // current E6b regime: adult pitch locked, juvenile settlement on, hereditary family replay\n\
+             //   E6B_SEEDS[0]  = {}\n\
+             //   E6B_SEEDS[10] = {}",
+            E6B_DEFAULT_POP_SIZE,
+            AUDIO_E6_TAIL_SNAPSHOTS,
+            E6B_SNAPSHOT_INTERVAL,
+            AUDIO_E6_STEP_SEC,
+            AUDIO_E6_AGENT_ATTACK_SEC,
+            AUDIO_E6_AGENT_DECAY_SEC,
+            AUDIO_E6_AGENT_SUSTAIN_LEVEL,
+            AUDIO_E6_AGENT_RELEASE_SEC,
+            e6b_seed_a,
+            e6b_seed_b,
+        );
+        let mut rhai = rhai_replay_header(
+            "40_e6b_polyphony.rhai -- E6b: Hereditary polyphony replay",
+            &detail,
+        );
+        let e6b_order = [
+            "seed0_heredity_sel",
+            "seed0_heredity_nosel",
+            "seed0_random_sel",
+            "seed0_random_nosel",
+            "seed10_heredity_sel",
+            "seed10_heredity_nosel",
+            "seed10_random_sel",
+            "seed10_random_nosel",
+        ];
+        for (i, label) in e6b_order.iter().enumerate() {
+            let (_, result) = e6b_results
+                .iter()
+                .find(|(candidate, _)| candidate == label)
+                .unwrap_or_else(|| panic!("missing E6b audio result for label {label}"));
+            let snaps = &result.snapshots;
+            let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
+            let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
+            let scene = format!("s{}_{label}", i + 1);
+            rhai.push_str(&rhai_e6_segment(&scene, &tail, AUDIO_E6_STEP_SEC, None));
+            if i + 1 < e6b_order.len() {
+                rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
+            }
+        }
+        write_with_log(out_dir.join("40_e6b_polyphony.rhai"), rhai)?;
     }
 
     // ── 00_quicklisten.rhai ──
