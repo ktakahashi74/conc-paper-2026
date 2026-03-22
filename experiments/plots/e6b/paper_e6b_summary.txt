@@ -1,0 +1,52 @@
+E6b summary
+----------
+Tuning: crowding=0.0050, capacity_weight=0.0700, capacity_radius_cents=35.0, free_voices=3, parent_share_weight=1.00, parent_energy_weight=0.25, juvenile_ticks=4, survival_low=0.30, survival_high=0.80, survival_recharge=0.200, background_death=0.0000, respawn_parent_prior_mix=0.15, same_band_discount=0.08, octave_discount=0.20
+
+Final LOO C_score:
+heredity, no selection: 0.3842 +/- 0.0278
+random,   no selection: 0.3889 +/- 0.0316
+heredity, selection:    0.8596 +/- 0.0232
+random,   selection:    0.8368 +/- 0.0189
+
+Final interval entropy:
+heredity, no selection: 3.7262 +/- 0.0853
+random,   no selection: 3.6094 +/- 0.1383
+heredity, selection:    1.1963 +/- 0.2633
+random,   selection:    1.1588 +/- 0.1608
+
+Final JI score (means):
+heredity, no selection: 0.1175
+random,   no selection: 0.1296
+heredity, selection:    0.5827
+random,   selection:    0.5740
+
+Final unique bins (means):
+heredity, no selection: 13.100
+random,   no selection: 13.400
+heredity, selection:    4.700
+random,   selection:    5.900
+
+Mean lifetime steps:
+heredity, no selection: 64.09
+random,   no selection: 64.03
+heredity, selection:    106.18
+random,   selection:    128.67
+
+Respawn redundancy diagnostics:
+same-pitch (<=15c): hered_nosel=0.0360  rand_nosel=0.0187  hered_sel=0.0267  rand_sel=0.0187
+same-family        : hered_nosel=0.0036  rand_nosel=0.0000  hered_sel=0.0032  rand_sel=0.0000
+same-octave        : hered_nosel=0.0000  rand_nosel=0.0000  hered_sel=0.0000  rand_sel=0.0000
+underfilled target : hered_nosel=0.9938  rand_nosel=0.0000  hered_sel=0.9828  rand_sel=0.0000
+mean band occupancy: hered_nosel=1.19  rand_nosel=0.00  hered_sel=1.17  rand_sel=0.00
+
+Stop reasons (min_deaths / steps_cap):
+heredity, no selection: 20/0
+random,   no selection: 20/0
+heredity, selection:    0/20
+random,   selection:    0/20
+
+Mean death cause counts:
+heredity, no selection: energy=2452.2, background=47.9, juvenile=0.0
+random,   no selection: energy=2452.0, background=48.2, juvenile=0.0
+heredity, selection:    energy=162.2, background=0.0, juvenile=0.0
+random,   selection:    energy=112.3, background=0.0, juvenile=0.0
