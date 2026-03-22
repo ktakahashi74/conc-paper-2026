@@ -2238,6 +2238,8 @@ fn plot_e2_emergent_harmony(
     dense_sweep: bool,
     candidate_search: bool,
 ) -> Result<(), Box<dyn Error>> {
+    let seeds = e2_dense_seed_slice(quick);
+    let max_worker_threads = if quick { Some(4) } else { None };
     let (
         baseline_runs,
         baseline_stats,
@@ -2248,7 +2250,7 @@ fn plot_e2_emergent_harmony(
         shuffled_runs,
     ) = std::thread::scope(|scope| {
         let baseline_handle = scope.spawn(|| {
-            e2_seed_sweep_cfg(
+            e2_seed_sweep_with_threads_for_seeds(
                 space,
                 anchor_hz,
                 E2Condition::Baseline,
@@ -2258,10 +2260,12 @@ fn plot_e2_emergent_harmony(
                 0,
                 E2_PAPER_N_AGENTS,
                 E2_PAPER_RANGE_OCT,
+                seeds,
+                max_worker_threads,
             )
         });
         let nohill_handle = scope.spawn(|| {
-            e2_seed_sweep_cfg(
+            e2_seed_sweep_with_threads_for_seeds(
                 space,
                 anchor_hz,
                 E2Condition::NoHillClimb,
@@ -2271,10 +2275,12 @@ fn plot_e2_emergent_harmony(
                 0,
                 E2_PAPER_N_AGENTS,
                 E2_PAPER_RANGE_OCT,
+                seeds,
+                max_worker_threads,
             )
         });
         let norep_handle = scope.spawn(|| {
-            e2_seed_sweep_cfg(
+            e2_seed_sweep_with_threads_for_seeds(
                 space,
                 anchor_hz,
                 E2Condition::NoCrowding,
@@ -2284,11 +2290,13 @@ fn plot_e2_emergent_harmony(
                 0,
                 E2_PAPER_N_AGENTS,
                 E2_PAPER_RANGE_OCT,
+                seeds,
+                max_worker_threads,
             )
         });
         let shuffled_handle = diagnostics.then(|| {
             scope.spawn(|| {
-                e2_seed_sweep_cfg(
+                e2_seed_sweep_with_threads_for_seeds(
                     space,
                     anchor_hz,
                     E2Condition::ShuffledLandscape,
@@ -2298,6 +2306,8 @@ fn plot_e2_emergent_harmony(
                     0,
                     E2_PAPER_N_AGENTS,
                     E2_PAPER_RANGE_OCT,
+                    seeds,
+                    max_worker_threads,
                 )
             })
         });
@@ -2957,13 +2967,18 @@ fn plot_e2_emergent_harmony(
         let diversity_ci95_plot_path = out_dir.join("paper_e2_diversity_summary_ci95.svg");
         render_diversity_summary_ci95_plot(&diversity_ci95_plot_path, &diversity_rows_vec)?;
     }
+    let (baseline_traj_c_score_loo_mean, baseline_traj_c_score_loo_ci95) =
+        e2_trajectory_mean_c_score_loo_stats(space, &baseline_runs);
+    let (nohill_traj_c_score_loo_mean, nohill_traj_c_score_loo_ci95) =
+        e2_trajectory_mean_c_score_loo_stats(space, &nohill_runs);
+
     let figure1_path = out_dir.join("paper_e2_figure_e2_1.svg");
     render_e2_figure1(
         &figure1_path,
-        &baseline_stats.mean_c_score_loo,
-        &baseline_ci95_c,
-        &nohill_stats.mean_c_score_loo,
-        &nohill_ci95_c,
+        &baseline_traj_c_score_loo_mean,
+        &baseline_traj_c_score_loo_ci95,
+        &nohill_traj_c_score_loo_mean,
+        &nohill_traj_c_score_loo_ci95,
         &baseline_stats,
         &nohill_stats,
         &baseline_ci95_g_scene,
@@ -27055,6 +27070,28 @@ fn mean_ci95_series(series_list: Vec<&Vec<f32>>) -> (Vec<f32>, Vec<f32>) {
     (mean, ci95)
 }
 
+fn e2_trajectory_mean_c_score_loo_stats(space: &Log2Space, runs: &[E2Run]) -> (Vec<f32>, Vec<f32>) {
+    if runs.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+    let workspace = build_consonance_workspace(space);
+    let (_erb_scan, du_scan) = erb_grid(space);
+    let mut per_run: Vec<Vec<f32>> = Vec::with_capacity(runs.len());
+    for run in runs {
+        let fixed_drone_idx = e2_fixed_drone(space, run.fixed_drone_hz).idx;
+        per_run.push(compute_e2_trajectory_mean_c_score_loo(
+            space,
+            &workspace,
+            &du_scan,
+            fixed_drone_idx,
+            run.fixed_drone_hz,
+            &run.trajectory_semitones,
+        ));
+    }
+    let refs: Vec<&Vec<f32>> = per_run.iter().collect();
+    mean_ci95_series(refs)
+}
+
 fn series_pairs(series: &[f32]) -> Vec<(f32, f32)> {
     series
         .iter()
@@ -30698,6 +30735,12 @@ fn draw_trajectory_panel(
         chart.draw_series(std::iter::once(PathElement::new(
             vec![(step as f32, y_min), (step as f32, y_max)],
             ShapeStyle::from(&BLACK.mix(0.55)).stroke_width(2),
+        )))?;
+        let y_text = y_max - 0.05 * (y_max - y_min);
+        chart.draw_series(std::iter::once(Text::new(
+            "phase switch".to_string(),
+            (step as f32, y_text),
+            ("sans-serif", 22).into_font().color(&BLACK),
         )))?;
     }
     // Muted palette cycling through the paper's base colors
