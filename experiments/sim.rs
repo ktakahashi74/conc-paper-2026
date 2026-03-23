@@ -4810,7 +4810,11 @@ fn sample_from_scene_peak_parent_bias(
         parent_weight = parent_weight.max(0.0);
         parent_weights.push(parent_weight);
         scene_weights.push(scene_weight);
-        final_weights.push((scene_weight * parent_weight).max(0.0));
+        final_weights.push(0.0);
+    }
+
+    for idx in 0..candidates.len() {
+        final_weights[idx] = (scene_weights[idx] * parent_weights[idx]).max(0.0);
     }
     if final_weights
         .iter()
@@ -7383,7 +7387,7 @@ impl E3AudioConfig {
             pop_size: 48,
             duration_sec: 8.0,
             condition: E3AudioCondition::Shared,
-            anchor_hz: E4_ANCHOR_HZ,
+            anchor_hz: 440.0,
             theta_freq_hz: 2.0,
         }
     }
@@ -7402,6 +7406,15 @@ impl E3AudioConfig {
         }
     }
 }
+
+// Keep the temporal-scaffold render as a short one-shot pulse. Around 30 ms is
+// long enough to hear the beat but short enough to avoid smearing the dense
+// shared/scrambled conditions into a continuous texture.
+const E3_AUDIO_NOTE_DUR_SEC: f32 = 0.030;
+const E3_AUDIO_NOTE_ATTACK_SEC: f32 = 0.0005;
+const E3_AUDIO_NOTE_AMP: f32 = 0.04;
+const E3_AUDIO_RHAI_DECAY_SEC: f32 = 0.024;
+const E3_AUDIO_RHAI_RELEASE_SEC: f32 = 0.002;
 
 #[derive(Clone, Copy, Debug)]
 struct E3AudioAttack {
@@ -7437,6 +7450,17 @@ fn validate_e3_audio_config(cfg: &E3AudioConfig) -> std::io::Result<()> {
     Ok(())
 }
 
+fn sample_e3_audio_pitch_hz(
+    rng: &mut impl Rng,
+    space: &Log2Space,
+    landscape: &Landscape,
+    anchor_hz: f32,
+) -> f32 {
+    let (min_freq, max_freq) = e3_tessitura_bounds_for_range(anchor_hz, space, E3_RANGE_OCT);
+    let log2_pitch = sample_e4_initial_pitch_log2(rng, space, landscape, min_freq, max_freq);
+    2.0f32.powf(log2_pitch)
+}
+
 fn simulate_e3_audio_attacks(
     cfg: &E3AudioConfig,
 ) -> std::io::Result<(Vec<f32>, Vec<E3AudioAttack>)> {
@@ -7454,9 +7478,17 @@ fn simulate_e3_audio_attacks(
     let kick_omega = TAU * kick_freq_hz;
     let steps_per_cycle = ((1.0 / kick_freq_hz) / SIM_DT).round().max(1.0) as usize;
 
-    let log2_anchor = cfg.anchor_hz.log2();
+    let space = Log2Space::new(E3_FMIN, E3_FMAX, E3_BINS_PER_OCT);
+    let params = make_landscape_params(&space, E3_FS, 1.0);
+    let landscape = build_anchor_landscape(
+        &space,
+        &params,
+        cfg.anchor_hz,
+        E4_ENV_PARTIALS_DEFAULT,
+        E4_ENV_PARTIAL_DECAY_DEFAULT,
+    );
     let pitches_hz: Vec<f32> = (0..cfg.pop_size)
-        .map(|_| 2.0f32.powf(rng.random_range((log2_anchor - 1.0)..(log2_anchor + 1.0))))
+        .map(|_| sample_e3_audio_pitch_hz(&mut rng, &space, &landscape, cfg.anchor_hz))
         .collect();
     let omegas: Vec<f32> = (0..cfg.pop_size)
         .map(|_| AGENT_OMEGA_MEAN * (1.0 + rng.random_range(-AGENT_JITTER..AGENT_JITTER)))
@@ -7506,7 +7538,10 @@ fn simulate_e3_audio_attacks(
 pub fn render_e3_audio(cfg: &E3AudioConfig, output_path: &std::path::Path) -> std::io::Result<()> {
     use std::f32::consts::TAU;
 
-    const NOTE_DUR_SEC: f32 = 0.12;
+    // Historical E3 supplementary audio used the internal renderer path with
+    // longer, brighter notes than the Rhai monitor. Keep that timbre here so
+    // the pulse remains legible in the dense shared/scaffold conditions.
+    const NOTE_DUR_SEC: f32 = 0.16;
     const NOTE_ATTACK_SEC: f32 = 0.005;
     const NOTE_AMP: f32 = 0.16;
 
@@ -7532,7 +7567,8 @@ pub fn render_e3_audio(cfg: &E3AudioConfig, output_path: &std::path::Path) -> st
                     .clamp(0.0, 1.0)
             };
             let phase = TAU * freq * local_t;
-            let voice = phase.sin() + 0.35 * (2.0 * phase).sin() + 0.18 * (3.0 * phase).sin();
+            let voice =
+                phase.sin() + 0.18 * (2.0 * phase).sin() + 0.08 * (3.0 * phase).sin();
             samples[sample_idx] += NOTE_AMP * env * voice;
         }
     }
@@ -7579,6 +7615,18 @@ pub fn render_e3_audio(cfg: &E3AudioConfig, output_path: &std::path::Path) -> st
 pub fn generate_e3_rhai(cfg: &E3AudioConfig, output_path: &std::path::Path) -> std::io::Result<()> {
     use std::io::Write;
 
+    #[derive(Clone, Copy)]
+    enum EventKind {
+        Release { attack_idx: usize },
+        Attack { attack_idx: usize, agent: usize },
+    }
+
+    #[derive(Clone, Copy)]
+    struct ScheduledEvent {
+        time: f32,
+        kind: EventKind,
+    }
+
     let (pitches_hz, mut attacks) = simulate_e3_audio_attacks(cfg)?;
     let condition_label = cfg.condition.label();
 
@@ -7597,7 +7645,7 @@ pub fn generate_e3_rhai(cfg: &E3AudioConfig, output_path: &std::path::Path) -> s
          // shared: continuous common scaffold\n\
          // scrambled: cycle-wise phase resets\n\
          // off: no scaffold coupling\n\
-         // Each attack creates a short-lived seq voice at a static audibility pitch.\n\
+         // Each attack emits a short one-shot pulse at a static audibility pitch.\n\
          // No external drone or metronome is mixed into the render.\n\n",
         n = cfg.pop_size,
         kick = cfg.theta_freq_hz
@@ -7605,28 +7653,71 @@ pub fn generate_e3_rhai(cfg: &E3AudioConfig, output_path: &std::path::Path) -> s
 
     for i in 0..cfg.pop_size {
         rhai.push_str(&format!(
-            "let s{i} = derive(harmonic).brain(\"seq\").pitch_mode(\"lock\")\
-             .amp(0.18).adsr(0.003, 0.08, 0.0, 0.03);\n"
+            "let s{i} = derive(sine).brain(\"seq\").pitch_mode(\"lock\")\
+             .amp({:.3}).adsr({:.3}, {:.3}, 0.0, {:.3});\n",
+            E3_AUDIO_NOTE_AMP,
+            E3_AUDIO_NOTE_ATTACK_SEC,
+            E3_AUDIO_RHAI_DECAY_SEC,
+            E3_AUDIO_RHAI_RELEASE_SEC
         ));
     }
     rhai.push('\n');
 
     attacks.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
 
-    rhai.push_str(&format!("scene(\"e3_{condition_label}\", || {{\n"));
-    let quant = 0.005f32;
-    let mut time_cursor = 0.0f32;
-    for attack in &attacks {
-        let target_t = (attack.time / quant).round() * quant;
-        if target_t > time_cursor + 0.0001 {
-            let wait = target_t - time_cursor;
-            rhai.push_str(&format!("    wait({wait:.4});\n"));
-            time_cursor = target_t;
+    let quant = 0.001f32;
+    let mut events = Vec::with_capacity(attacks.len() * 2);
+    for (attack_idx, attack) in attacks.iter().enumerate() {
+        let attack_t = (attack.time / quant).round() * quant;
+        let release_t = (attack_t + E3_AUDIO_NOTE_DUR_SEC)
+            .min(cfg.duration_sec)
+            .max(attack_t);
+        events.push(ScheduledEvent {
+            time: attack_t,
+            kind: EventKind::Attack {
+                attack_idx,
+                agent: attack.agent,
+            },
+        });
+        if release_t > attack_t + 1e-6 {
+            events.push(ScheduledEvent {
+                time: release_t,
+                kind: EventKind::Release { attack_idx },
+            });
         }
-        rhai.push_str(&format!(
-            "    create(s{}, 1).freq({:.2}); flush();\n",
-            attack.agent, pitches_hz[attack.agent]
-        ));
+    }
+    events.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| match (a.kind, b.kind) {
+                (EventKind::Release { .. }, EventKind::Attack { .. }) => std::cmp::Ordering::Less,
+                (EventKind::Attack { .. }, EventKind::Release { .. }) => {
+                    std::cmp::Ordering::Greater
+                }
+                _ => std::cmp::Ordering::Equal,
+            })
+    });
+
+    rhai.push_str(&format!("scene(\"e3_{condition_label}\", || {{\n"));
+    let mut time_cursor = 0.0f32;
+    for event in &events {
+        if event.time > time_cursor + 0.0001 {
+            let wait = event.time - time_cursor;
+            rhai.push_str(&format!("    wait({wait:.4});\n"));
+            time_cursor = event.time;
+        }
+        match event.kind {
+            EventKind::Attack { attack_idx, agent } => {
+                rhai.push_str(&format!(
+                    "    let g{attack_idx} = create(s{agent}, 1).freq({:.2}); flush();\n",
+                    pitches_hz[agent]
+                ));
+            }
+            EventKind::Release { attack_idx } => {
+                rhai.push_str(&format!("    release(g{attack_idx}); flush();\n"));
+            }
+        }
     }
     let remaining = cfg.duration_sec - time_cursor;
     if remaining > 0.01 {

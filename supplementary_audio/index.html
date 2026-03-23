@@ -41,24 +41,44 @@
 <p class="subtitle">Qualitative audio demonstrations accompanying<br>
 "Conchordal: A Bio-Acoustic Artificial Life Instrument"</p>
 
+<section class="notes" style="margin-top:0; margin-bottom:1.5rem">
+  <p>The main paper uses audio examples for <strong>Experiment 1</strong>,
+     <strong>Experiment 4</strong>, and <strong>Experiment 3</strong>. There is
+     no standalone audio track for <strong>Experiment 2</strong>, because that
+     assay is primarily about selection pressure and lifetime statistics rather
+     than a stable replayable scene.</p>
+</section>
+
 <div class="track">
-  <h2>00 &mdash; Quick Listen (Orientation)</h2>
-  <p class="meta">~77 s &middot; Curated montage: best-case emergence vs. ablation controls</p>
-  <p>Four short segments contrast the strongest emergent behaviour
-     with ablation controls:</p>
+  <h2>00 &mdash; Quick Listen (Showcase)</h2>
+  <p class="meta">~21 s &middot; strongest current examples from Exp. 1 and Exp. 4</p>
+  <p>Two short segments present the strongest current examples:</p>
   <ol class="segments">
-    <li><strong>E2 local-search</strong> &mdash; score-based local search + repulsion &rarr; consonant polyphony</li>
-    <li><strong>E6 both</strong> &mdash; hereditary respawn + hill-climbing &rarr; integration</li>
-    <li><strong>E2 random-walk</strong> &mdash; repulsion only, matched random local walk</li>
-    <li><strong>E6 neither</strong> &mdash; random respawn, no landscape &rarr; random control</li>
+    <li><strong>Exp. 1 local-search</strong> &mdash; score-based local search + repulsion &rarr; consonant polyphony</li>
+    <li><strong>Exp. 4 H+S</strong> &mdash; family-biased respawn + local azimuth search &rarr; hereditary polyphony</li>
   </ol>
+  <p>The Exp. 1 excerpt is cropped to 2 s before and 4 s after the phase switch.</p>
   <audio controls preload="none">
-    <source src="audio/00_quicklisten.wav?v=20260322-2" type="audio/wav">
+    <source src="audio/00_quicklisten_showcase.wav?v=20260323-2" type="audio/wav">
   </audio>
 </div>
 
 <div class="track">
-  <h2>10 &mdash; Emergent Polyphony (Experiment 2)</h2>
+  <h2>01 &mdash; Quick Listen (Controls)</h2>
+  <p class="meta">~21 s &middot; matched ablations for the same two assays</p>
+  <p>Two control segments mirror the showcase:</p>
+  <ol class="segments">
+    <li><strong>Exp. 1 no-hill</strong> &mdash; crowding only, no hill-climb</li>
+    <li><strong>Exp. 4 neither</strong> &mdash; matched random respawn, no selection</li>
+  </ol>
+  <p>The Exp. 1 control excerpt uses the same 2 s pre-switch / 4 s post-switch window.</p>
+  <audio controls preload="none">
+    <source src="audio/01_quicklisten_controls.wav?v=20260323-2" type="audio/wav">
+  </audio>
+</div>
+
+<div class="track">
+  <h2>10 &mdash; Self-Organized Polyphony (Experiment 1; internal E2)</h2>
   <p class="meta">~35 s &middot; baseline vs. no-hill, seed 0 and seed 10</p>
   <p>Two conditions &times; two seeds (index 0, 10). Each segment ~8 s.</p>
   <table>
@@ -74,32 +94,10 @@
 </div>
 
 <div class="track">
-  <h2>20 &mdash; Integration (Experiment 6)</h2>
-  <p class="meta">Current E6 integration montage &middot; heredity vs. hill-climb conditions</p>
-  <p>Four conditions &times; two seeds (index 0, 10). Each segment ~12 s.
-     Replayed from the full 32-agent paper regime with slower pitch updates and
-     lighter voices, ordered from most integrated to random within each seed.</p>
-  <table>
-    <tr><th>Condition</th><th>respawn</th><th>landscape_weight</th></tr>
-    <tr><td>both</td><td>parent-only H heredity</td><td>1.0</td></tr>
-    <tr><td>H-only</td><td>parent-only H heredity</td><td>0.0</td></tr>
-    <tr><td>hill-only</td><td>random</td><td>1.0</td></tr>
-    <tr><td>neither</td><td>random</td><td>0.0</td></tr>
-  </table>
-  <p>The current E6 audio replay uses parent-only harmonicity for hereditary respawn,
-     the same shared hill-climb profile, and the full 32-agent population. The
-     sonification is slowed and spectrally thinned for audibility, but the simulation
-     conditions match the paper regime.</p>
-  <audio controls preload="none">
-    <source src="audio/20_integration.wav?v=20260322-2" type="audio/wav">
-  </audio>
-</div>
-
-<div class="track">
-  <h2>40 &mdash; Hereditary Polyphony (Experiment 4; internal E6b)</h2>
+  <h2>40 &mdash; Hereditary Adaptation (Experiment 4; internal E6b)</h2>
   <p class="meta">~107 s &middot; heredity/random &times; selection on/off, seeds 0 and 10</p>
   <p>This replay tracks the current paper-facing hereditary assay. The population
-     is 16 agents, adult pitch remains locked, hereditary respawn is family-based,
+     is 16 agents, adult pitch remains locked, hereditary respawn is family-biased,
      the final azimuth is chosen by local search, and only newborns receive a
      brief slot-local settling phase. Within each seed, segments run from the
      strongest hereditary condition toward the matched-random controls.</p>
@@ -111,15 +109,15 @@
     <tr><td>neither</td><td>matched log-random candidates</td><td>off</td></tr>
   </table>
   <p>Listen for the clearest multi-band polyphony in <strong>H+S</strong>; the
-     heredity-only arm retains some structure, while the matched-random controls
+     heredity-only arm retains some family structure, while the matched-random controls
      remain broader and less musically focused.</p>
   <audio controls preload="none">
-    <source src="audio/40_e6b_polyphony.wav?v=20260322-2" type="audio/wav">
+    <source src="audio/40_e6b_polyphony.wav?v=20260323-2" type="audio/wav">
   </audio>
 </div>
 
 <div class="track">
-  <h2>30 &mdash; Temporal Scaffold (Experiment 3)</h2>
+  <h2>30 &mdash; Temporal Scaffold (Experiment 3; historical e3 filename prefix)</h2>
   <p class="meta">~8 s each &middot; shared vs. scrambled vs. off at 2 Hz</p>
   <p>These renders track the main paper's temporal-scaffold assay. All agents
      share the same pitch inventory and intrinsic-frequency jitter; only the
@@ -135,15 +133,15 @@
      weakening in <strong>scrambled</strong>, and the diffuse timing of <strong>off</strong>.</p>
   <p><strong>Shared</strong> &mdash; common scaffold, strongest beat alignment:</p>
   <audio controls preload="none">
-    <source src="audio/30_e3_shared.wav?v=20260322-2" type="audio/wav">
+    <source src="audio/30_e3_shared.wav?v=20260323-14" type="audio/wav">
   </audio>
   <p style="margin-top:0.75rem"><strong>Scrambled</strong> &mdash; cycle-wise phase resets weaken stability:</p>
   <audio controls preload="none">
-    <source src="audio/30_e3_scrambled.wav?v=20260322-2" type="audio/wav">
+    <source src="audio/30_e3_scrambled.wav?v=20260323-14" type="audio/wav">
   </audio>
   <p style="margin-top:0.75rem"><strong>Off</strong> &mdash; no scaffold, phases remain diffuse:</p>
   <audio controls preload="none">
-    <source src="audio/30_e3_off.wav?v=20260322-2" type="audio/wav">
+    <source src="audio/30_e3_off.wav?v=20260323-14" type="audio/wav">
   </audio>
 </div>
 

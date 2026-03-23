@@ -5,30 +5,43 @@ Qualitative audio demonstrations accompanying the paper
 
 **[Listen in browser](https://ktakahashi74.github.io/conc-paper/supplementary_audio/)**
 
+The paper-facing audio tracks correspond to **Experiment 1**, **Experiment 4**,
+and **Experiment 3**. There is **no standalone scene replay for Experiment 2**,
+because that assay is primarily about selection pressure and lifetime statistics
+rather than a stable emergent scene.
+
 ## Track listing
 
 | File | Role | Duration | Description |
 |------|------|----------|-------------|
-| `00_quicklisten.wav` | Orientation | ~77 s | Curated montage: best-case emergence vs. ablation controls |
-| `10_exp1_polyphony.wav` | Evidence (E2) | ~35 s | Current E2 replay montage: baseline vs. no-hill across seed 0 and seed 10 |
-| `20_integration.wav` | Evidence (E6) | ~107 s | Current E6 integration montage: full 32-agent paper regime, slowed for listening |
-| `40_e6b_polyphony.wav` | Evidence (Exp. 4 / E6b) | ~107 s | Current hereditary polyphony replay: heredity vs matched-random, selection on/off, seeds 0 and 10 |
-| `30_e3_shared.wav`, `30_e3_scrambled.wav`, `30_e3_off.wav` | Evidence (main E3) | ~8 s each | Agent-only render of shared temporal scaffold vs. scrambled/off controls |
+| `00_quicklisten_showcase.wav` | Orientation | ~21 s | Two-segment showcase: strongest current examples from Exp. 1 and Exp. 4 |
+| `01_quicklisten_controls.wav` | Orientation | ~21 s | Two-segment control montage: matched ablations for Exp. 1 and Exp. 4 |
+| `10_exp1_polyphony.wav` | Main-paper evidence (Exp. 1; internal `E2`) | ~35 s | Self-organized polyphony replay: local-search vs. no-hill across seed 0 and seed 10 |
+| `40_e6b_polyphony.wav` | Main-paper evidence (Exp. 4; internal `E6b`) | ~107 s | Hereditary adaptation replay: heredity vs. matched-random, selection on/off, seeds 0 and 10 |
+| `30_e3_shared.wav`, `30_e3_scrambled.wav`, `30_e3_off.wav` | Main-paper evidence (Exp. 3; historical `e3` filename prefix) | ~8 s each | Temporal scaffold render: shared vs. scrambled vs. off |
 
-### 00_quicklisten — Orientation montage
+### 00_quicklisten_showcase — Orientation montage (showcase)
 
-For quick orientation. Four short segments contrast the strongest
-emergent behaviour with ablation controls:
+For quick orientation. Two short segments present the strongest current
+examples:
 
-1. **E2 local-search** — score-based local search + repulsion → consonant polyphony
-2. **E6 both** — hereditary respawn + hill-climbing → integration
-3. **E2 random-walk** — repulsion only, matched random local walk
-4. **E6 neither** — random respawn, no landscape → random control
+1. **Exp. 1 local-search** — score-based local search + repulsion → consonant polyphony
+2. **Exp. 4 H+S** — family-biased respawn + local azimuth search → hereditary polyphony
 
-Each segment uses a 1 s fade-in and fade-out, with 2 s silence between
-segments.
+The Exp. 1 excerpt is cropped to **2 s before** and **4 s after** the phase switch.
+Each segment uses a 1 s fade-in and fade-out, with 2 s silence between segments.
 
-### 10_exp1_polyphony — Experiment 2 (E2)
+### 01_quicklisten_controls — Orientation montage (controls)
+
+Matched control versions of the same two assays:
+
+1. **Exp. 1 no-hill** — crowding only, no hill-climb
+2. **Exp. 4 neither** — matched random respawn, no selection
+
+The Exp. 1 control excerpt is cropped to the same **2 s pre-switch / 4 s post-switch**
+window for direct comparison.
+
+### 10_exp1_polyphony — Experiment 1 (internal ID: E2)
 
 Two conditions × two seeds (index 0, 10). Each segment ~8 s:
 
@@ -39,27 +52,6 @@ Two conditions × two seeds (index 0, 10). Each segment ~8 s:
 
 **Expected:** baseline preserves the current hill-climb + crowding regime;
 no-hill removes local search while keeping the same crowding field.
-
-### 20_integration — Experiment 6 (E6)
-
-Four conditions × two seeds (index 0, 10). Each segment ~12 s. Within each seed,
-segments are ordered from most integrated to random. The replay uses the full
-32-agent paper regime, but the sonification is slowed and spectrally thinned so
-the pitch structure is still audible:
-
-| Condition | respawn | landscape_weight |
-|-----------|---------|-----------------|
-| both | parent-only H heredity | 1.0 |
-| H-only | parent-only H heredity | 0.0 |
-| hill-only | random | 1.0 |
-| neither | random | 0.0 |
-
-The E6 supplementary render uses parent-only harmonicity for hereditary respawn
-and the same shared hill-climb profile, replayed as a 32-agent per-life montage
-with slower updates and near-sine voices for audibility.
-
-**Expected:** "both" achieves the highest consonance score, with H-only above
-the random respawn controls.
 
 ### 40_e6b_polyphony — Experiment 4 (internal ID: E6b)
 
@@ -76,13 +68,14 @@ segments are ordered from strongest hereditary fusion to null control:
 This replay uses the current paper-facing hereditary regime: 16-agent population,
 adult pitch locked, a brief 2-tick slot-local juvenile settling phase, and
 family-biased respawn whose final azimuth is chosen by local search rather than
-replayed from the parent. Sonification again uses slowed per-life harmonic voices.
+inherited directly from the parent. Sonification again uses slowed per-life
+harmonic voices.
 
 **Expected:** H+S should be the clearest multi-band polyphony, H-only should retain
 some family structure without the same metabolic sharpening, and the matched
 random controls should remain broader and more diffuse.
 
-### 30_exp3_temporal_scaffold — Experiment 3 (main paper)
+### 30_exp3_temporal_scaffold — Experiment 3 (historical `e3` filename prefix)
 
 Three qualitative renders contrast the temporal scaffold conditions used
 in the main paper's Experiment 3:
@@ -104,15 +97,16 @@ No external drone or metronome is mixed into track 30.
 
 ### Seed selection
 
-Seeds are taken by ordinal index (0 and 10) from the paper's shared seed
-lists (`E2_SEEDS`, `E6_SEEDS`, `E6B_SEEDS` in `experiments/paper_plots.rs`). No
-cherry-picking.
+Seeds are taken by ordinal index from the experiment-specific seed lists in
+`experiments/paper_plots.rs`, with no cherry-picking. The main-paper replay
+tracks use the current `E2` and `E6b` seed schedules; track `30` is a fixed
+illustrative temporal render.
 
 ### Rendering chain
 
 All tracks are rendered with `conchordal-render` using the same pipeline:
 
-- Primary voices: `harmonic` (neutral harmonic series; E6 uses a 1-partial voice for clarity)
+- Primary voices: `harmonic` (neutral harmonic series)
 - Fixed reference drones, where present: `sine`
 - Output: mono WAV, 48 kHz
 - No reverb, no mastering, no per-file loudness optimisation
@@ -137,8 +131,8 @@ claims rest on the paper's simulation statistics (Section 5).
 |--------|-------------------------------|------------------------|
 | Landscape | Computed from known frequencies | Computed from audio signal (NSGT) |
 | Update timing | Discrete steps | Real-time hop rate |
-| E2 local-search | Discrete grid + LOO | Continuous frequency + native pitch_core |
-| E6 heredity | Custom parent selection | RuntimeGroup-based |
+| Exp. 1 local-search | Discrete grid + LOO | Continuous frequency + native pitch_core |
+| Exp. 4 heredity | Family-biased respawn + local azimuth search | RuntimeGroup-based |
 | Qualitative behaviour | Same attractors | Same attractors |
 | Quantitative match | — | Not guaranteed |
 
@@ -149,4 +143,5 @@ the same, but timing and update granularity differ.
 ## Manifest
 
 See `manifest.csv` for per-segment metadata (file, segment index, label,
-experiment, condition, seed, start/end times).
+internal experiment ID, paper experiment label, condition, seed, start/end
+times, and whether the track is an orientation clip or main-paper evidence).

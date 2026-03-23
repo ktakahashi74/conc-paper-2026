@@ -17,14 +17,18 @@ echo "Regenerating Rhai scenarios..."
 
 for rhai in scenarios/*.rhai; do
   name=$(basename "$rhai" .rhai)
+  if [[ "$name" == 30_e3_* ]]; then
+    echo "Skipping ${name}; E3 WAVs are rendered directly by paper --e3-audio"
+    continue
+  fi
   echo "Rendering ${name}..."
   $RENDER "$rhai" --output "audio/${name}.wav"
-  if [ "$name" = "00_quicklisten" ]; then
-    (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-quicklisten)
+  if [ "$name" = "00_quicklisten_showcase" ]; then
+    (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-quicklisten-showcase)
+  elif [ "$name" = "01_quicklisten_controls" ]; then
+    (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-quicklisten-controls)
   elif [ "$name" = "10_exp1_polyphony" ]; then
     (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-polyphony)
-  elif [ "$name" = "20_integration" ]; then
-    (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-integration)
   elif [ "$name" = "40_e6b_polyphony" ]; then
     (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-e6b)
   fi

@@ -1686,25 +1686,34 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
         generate_e6_sampler_debug_plots()?;
         return Ok(());
     }
-    // Handle --e3-audio: generate supplementary Experiment 3 scenarios.
-    // WAV rendering is intentionally left to supplementary_audio/render.sh,
-    // which routes all scenarios through conchordal-render.
+    // Handle --e3-audio: generate supplementary Experiment 3 monitor scenarios
+    // and refresh the paper-facing WAVs via the internal renderer path.
     if args.iter().any(|arg| arg == "--e3-audio") {
         let cfg_shared = crate::sim::E3AudioConfig::default_shared();
         let cfg_scrambled = crate::sim::E3AudioConfig::default_scrambled();
         let cfg_off = crate::sim::E3AudioConfig::default_off();
         let scenario_dir = PathBuf::from("supplementary_audio/scenarios");
+        let audio_dir = PathBuf::from("supplementary_audio/audio");
         crate::sim::generate_e3_rhai(&cfg_shared, &scenario_dir.join("30_e3_shared.rhai"))?;
         crate::sim::generate_e3_rhai(&cfg_scrambled, &scenario_dir.join("30_e3_scrambled.rhai"))?;
         crate::sim::generate_e3_rhai(&cfg_off, &scenario_dir.join("30_e3_off.rhai"))?;
+        crate::sim::render_e3_audio(&cfg_shared, &audio_dir.join("30_e3_shared.wav"))?;
+        crate::sim::render_e3_audio(&cfg_scrambled, &audio_dir.join("30_e3_scrambled.wav"))?;
+        crate::sim::render_e3_audio(&cfg_off, &audio_dir.join("30_e3_off.wav"))?;
         return Ok(());
     }
-    if args.iter().any(|arg| arg == "--postprocess-quicklisten") {
-        postprocess_quicklisten_wav_default()?;
+    if args
+        .iter()
+        .any(|arg| arg == "--postprocess-quicklisten-showcase")
+    {
+        postprocess_quicklisten_showcase_wav_default()?;
         return Ok(());
     }
-    if args.iter().any(|arg| arg == "--postprocess-integration") {
-        postprocess_integration_wav_default()?;
+    if args
+        .iter()
+        .any(|arg| arg == "--postprocess-quicklisten-controls")
+    {
+        postprocess_quicklisten_controls_wav_default()?;
         return Ok(());
     }
     if args.iter().any(|arg| arg == "--postprocess-e6b") {
@@ -36614,6 +36623,8 @@ const AUDIO_STEP_SEC: f32 = 0.12;
 const AUDIO_GAP_SEC: f32 = 1.0;
 const AUDIO_QUICKLISTEN_GAP_SEC: f32 = AUDIO_GAP_SEC + 1.0;
 const AUDIO_QUICKLISTEN_FADE_SEC: f32 = 1.0;
+const AUDIO_QUICKLISTEN_E2_PRE_SWITCH_SEC: f32 = 2.0;
+const AUDIO_QUICKLISTEN_E2_POST_SWITCH_SEC: f32 = 4.0;
 const AUDIO_INTEGRATION_FADE_SEC: f32 = 0.2;
 const AUDIO_E2_POLYPHONY_TARGET_SEGMENT_SEC: f32 = 8.0;
 const AUDIO_N_SELECT_E2: usize = 8;
@@ -36624,7 +36635,6 @@ const AUDIO_E2_AGENT_SUSTAIN_LEVEL: f32 = 0.50;
 const AUDIO_E2_AGENT_RELEASE_SEC: f32 = 0.8;
 const AUDIO_E2_AGENT_PARTIALS: usize = E4_ENV_PARTIALS_DEFAULT as usize;
 const AUDIO_E6_STEP_SEC: f32 = 0.40;
-const AUDIO_E6_POP_SIZE: usize = E6_POP_SIZE;
 /// How many E6 snapshots to replay per segment (last N of run)
 const AUDIO_E6_TAIL_SNAPSHOTS: usize = 30;
 const AUDIO_E6_AGENT_AMP: f32 = 0.0025;
@@ -36634,6 +36644,7 @@ const AUDIO_E6_AGENT_ATTACK_SEC: f32 = 0.08;
 const AUDIO_E6_AGENT_DECAY_SEC: f32 = 0.45;
 const AUDIO_E6_AGENT_SUSTAIN_LEVEL: f32 = 0.50;
 const AUDIO_E6_AGENT_RELEASE_SEC: f32 = 0.45;
+const AUDIO_E6_HS_GAIN: f32 = 1.8;
 
 fn audio_landscape_agent_brightness() -> f32 {
     // HarmonicBody maps brightness linearly to spectral slope in [1.2, 0.2].
@@ -36806,6 +36817,23 @@ fn downsample_e2_trajectory_for_audio(
         .collect()
 }
 
+fn slice_e2_trajectory_window(
+    trajectory_semitones: &[Vec<f32>],
+    start_step: usize,
+    end_step_exclusive: usize,
+) -> Vec<Vec<f32>> {
+    if trajectory_semitones.is_empty() {
+        return Vec::new();
+    }
+    let n_steps = trajectory_semitones[0].len();
+    let lo = start_step.min(n_steps);
+    let hi = end_step_exclusive.min(n_steps).max(lo);
+    trajectory_semitones
+        .iter()
+        .map(|trace| trace[lo..hi].to_vec())
+        .collect()
+}
+
 fn e6_audio_agents_at_snapshot<'a>(
     snapshot: &'a E6PitchSnapshot,
     selected_agent_ids: Option<&std::collections::BTreeSet<usize>>,
@@ -36832,8 +36860,19 @@ fn rhai_e6_segment(
     step_sec: f32,
     selected_agent_ids: Option<&std::collections::BTreeSet<usize>>,
 ) -> String {
+    rhai_e6_segment_with_gain(scene_name, snapshots, step_sec, selected_agent_ids, 1.0)
+}
+
+fn rhai_e6_segment_with_gain(
+    scene_name: &str,
+    snapshots: &[&E6PitchSnapshot],
+    step_sec: f32,
+    selected_agent_ids: Option<&std::collections::BTreeSet<usize>>,
+    amp_scale: f32,
+) -> String {
     let mut s = format!("scene(\"{scene_name}\", || {{\n");
     let audio_e6_agent_brightness = audio_landscape_agent_brightness();
+    let voice_amp = AUDIO_E6_AGENT_AMP * amp_scale.max(0.0);
 
     if snapshots.is_empty() {
         s.push_str("    wait(1.0);\n});\n");
@@ -36841,7 +36880,7 @@ fn rhai_e6_segment(
     }
     s.push_str(&format!(
         "    let e6_voice = derive(harmonic)\n        .brain(\"drone\")\n        .pitch_mode(\"lock\")\n        .amp({:.3})\n        .modes(harmonic_modes().count({}))\n        .brightness({:.3})\n        .sustain_drive({:.3})\n        .pitch_smooth(0.12)\n        .adsr({:.3}, {:.3}, {:.3}, {:.3});\n",
-        AUDIO_E6_AGENT_AMP,
+        voice_amp,
         AUDIO_E6_AGENT_PARTIALS,
         audio_e6_agent_brightness,
         AUDIO_E6_AGENT_SUSTAIN_DRIVE,
@@ -36857,7 +36896,7 @@ fn rhai_e6_segment(
         active_freqs.insert(agent.life_id, agent.freq_hz);
         s.push_str(&format!(
             "    let l{} = create(e6_voice, 1).freq({:.2}).amp({:.3});\n",
-            agent.life_id, agent.freq_hz, AUDIO_E6_AGENT_AMP
+            agent.life_id, agent.freq_hz, voice_amp
         ));
     }
     s.push_str("    flush();\n");
@@ -36883,7 +36922,7 @@ fn rhai_e6_segment(
                 None => {
                     s.push_str(&format!(
                         "    let l{} = create(e6_voice, 1).freq({:.2}).amp({:.3});\n",
-                        agent.life_id, agent.freq_hz, AUDIO_E6_AGENT_AMP
+                        agent.life_id, agent.freq_hz, voice_amp
                     ));
                     any_changed = true;
                 }
@@ -37159,24 +37198,12 @@ fn postprocess_named_wav_default(wav_stem: &str, fade_sec: f32) -> io::Result<()
     Ok(())
 }
 
-fn postprocess_quicklisten_wav_default() -> io::Result<()> {
-    postprocess_named_wav_default("00_quicklisten", AUDIO_QUICKLISTEN_FADE_SEC)
+fn postprocess_quicklisten_showcase_wav_default() -> io::Result<()> {
+    postprocess_named_wav_default("00_quicklisten_showcase", AUDIO_QUICKLISTEN_FADE_SEC)
 }
 
-fn postprocess_integration_wav_default() -> io::Result<()> {
-    let wav_stem = "20_integration";
-    let (wav_path, rhai_path, manifest_path) = resolve_audio_postprocess_paths(wav_stem);
-    let windows = parse_rhai_scene_windows(&rhai_path)?;
-    let wav_name = format!("{wav_stem}.wav");
-    rewrite_audio_manifest(&manifest_path, &wav_name, &windows)?;
-    apply_segment_fades_i16(&wav_path, &windows, AUDIO_INTEGRATION_FADE_SEC)?;
-    peak_normalize_i16(&wav_path, -6.0)?;
-    eprintln!(
-        "postprocessed {wav_name}: {} segments, {:.1}s fades, peak-normalized to -6 dBFS",
-        windows.len(),
-        AUDIO_INTEGRATION_FADE_SEC
-    );
-    Ok(())
+fn postprocess_quicklisten_controls_wav_default() -> io::Result<()> {
+    postprocess_named_wav_default("01_quicklisten_controls", AUDIO_QUICKLISTEN_FADE_SEC)
 }
 
 fn postprocess_e6b_wav_default() -> io::Result<()> {
@@ -37253,42 +37280,6 @@ fn run_audio_e2_jobs_parallel(
         .unwrap()
         .into_iter()
         .map(|slot| slot.expect("missing E2 audio output"))
-        .collect()
-}
-
-fn run_audio_e6_jobs_parallel(jobs: Vec<(String, E6RunConfig)>) -> Vec<(String, E6RunResult)> {
-    if jobs.is_empty() {
-        return Vec::new();
-    }
-    let worker_count = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
-        .min(jobs.len())
-        .max(1);
-    let next = AtomicUsize::new(0);
-    let slots: Mutex<Vec<Option<(String, E6RunResult)>>> =
-        Mutex::new((0..jobs.len()).map(|_| None).collect());
-    std::thread::scope(|scope| {
-        for _ in 0..worker_count {
-            scope.spawn(|| {
-                loop {
-                    let idx = next.fetch_add(1, Ordering::Relaxed);
-                    if idx >= jobs.len() {
-                        break;
-                    }
-                    let (label, cfg) = &jobs[idx];
-                    eprintln!("    E6 {label}");
-                    let result = run_e6(cfg);
-                    slots.lock().unwrap()[idx] = Some((label.clone(), result));
-                }
-            });
-        }
-    });
-    slots
-        .into_inner()
-        .unwrap()
-        .into_iter()
-        .map(|slot| slot.expect("missing E6 audio output"))
         .collect()
 }
 
@@ -37410,159 +37401,6 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         write_with_log(out_dir.join("10_exp1_polyphony.rhai"), rhai)?;
     }
 
-    // ── E6 runs ──
-    struct E6AudioSeg {
-        label: &'static str,
-        condition: E6Condition,
-        selection_enabled: bool,
-    }
-    let e6_conditions = [
-        E6AudioSeg {
-            label: "random_nosel",
-            condition: E6Condition::Random,
-            selection_enabled: false,
-        },
-        E6AudioSeg {
-            label: "heredity_nosel",
-            condition: E6Condition::Heredity,
-            selection_enabled: false,
-        },
-        E6AudioSeg {
-            label: "random_sel",
-            condition: E6Condition::Random,
-            selection_enabled: true,
-        },
-        E6AudioSeg {
-            label: "heredity_sel",
-            condition: E6Condition::Heredity,
-            selection_enabled: true,
-        },
-    ];
-    let e6_seed_a = E6_SEEDS[0];
-    let e6_seed_b = *E6_SEEDS.last().unwrap_or(&E6_SEEDS[0]);
-    let e6_seeds: [u64; 2] = [e6_seed_a, e6_seed_b];
-
-    eprintln!("  [audio-rhai] Running E6 simulations...");
-    let mut e6_jobs: Vec<(String, E6RunConfig)> = Vec::new();
-    for cond in &e6_conditions {
-        for &seed in &e6_seeds {
-            let label = format!(
-                "seed{}_{}",
-                if seed == e6_seed_a { "0" } else { "1" },
-                cond.label
-            );
-            let cfg = E6RunConfig {
-                seed,
-                steps_cap: E6_STEPS_CAP,
-                min_deaths: E6_MIN_DEATHS,
-                pop_size: AUDIO_E6_POP_SIZE,
-                first_k: E6_FIRST_K,
-                condition: cond.condition,
-                snapshot_interval: E6_SNAPSHOT_INTERVAL,
-                landscape_weight: 0.0,
-                shuffle_landscape: false,
-                env_partials: None,
-                oracle_azimuth_radius_st: None,
-                oracle_global_anchor_c: false,
-                oracle_freeze_pitch_after_respawn: false,
-                crowding_strength_override: Some(0.0),
-                adaptation_enabled_override: Some(false),
-                range_oct_override: Some(E6_MAIN_RANGE_OCT),
-                e2_aligned_exact_local_search_radius_st: None,
-                disable_within_life_pitch_movement: true,
-                selection_enabled: cond.selection_enabled,
-                selection_contextual_mix_weight: if cond.selection_enabled { 0.25 } else { 0.0 },
-                selection_score_mode: E6SelectionScoreMode::PolyphonicLooCrowding,
-                polyphonic_crowding_weight_override: None,
-                polyphonic_overcapacity_weight_override: None,
-                polyphonic_capacity_radius_cents_override: None,
-                polyphonic_capacity_free_voices_override: None,
-                polyphonic_parent_share_weight_override: None,
-                polyphonic_parent_energy_weight_override: None,
-                juvenile_contextual_tuning_ticks_override: None,
-                juvenile_contextual_settlement_enabled: false,
-                juvenile_cull_enabled: false,
-                record_life_diagnostics: true,
-                survival_score_low_override: None,
-                survival_score_high_override: None,
-                survival_recharge_per_sec_override: None,
-                background_death_rate_per_sec_override: None,
-                respawn_parent_prior_mix_override: None,
-                respawn_same_band_discount_override: None,
-                respawn_octave_discount_override: None,
-                parent_proposal_kind_override: None,
-                parent_proposal_sigma_st_override: None,
-                parent_proposal_unison_notch_gain_override: None,
-                parent_proposal_unison_notch_sigma_st_override: None,
-                parent_proposal_candidate_count_override: None,
-                azimuth_mode_override: None,
-                family_occupancy_strength_override: None,
-                family_nfd_mode: E6FamilyNfdMode::Off,
-                respawn_mode: E6RespawnMode::VacantNicheByParentPrior,
-                legacy_family_min_spacing_cents: None,
-            };
-            e6_jobs.push((label, cfg));
-        }
-    }
-    let e6_results = run_audio_e6_jobs_parallel(e6_jobs);
-
-    // ── 20_integration.rhai ──
-    {
-        let detail = format!(
-            "// per-life agent replay from a {}-agent population, tail {} snapshots per segment\n\
-             // snapshot_interval={} steps, replay_step_sec={:.3}\n\
-             // each life uses harmonic ADSR atk={:.2}s dec={:.2}s sus={:.2} rel={:.2}s\n\
-             //\n\
-             // 8 segments: 2x2 selection x heredity, 2 seeds\n\
-             //   heredity+selection : hereditary respawn + continuous C recharge\n\
-             //   random+selection   : random respawn + continuous C recharge\n\
-             //   heredity only      : hereditary respawn, no selection\n\
-             //   random only        : random respawn, no selection\n\
-             //\n\
-             //   E6_SEEDS[first] = {}\n\
-             //   E6_SEEDS[last]  = {}",
-            AUDIO_E6_POP_SIZE,
-            AUDIO_E6_TAIL_SNAPSHOTS,
-            E6_SNAPSHOT_INTERVAL,
-            AUDIO_E6_STEP_SEC,
-            AUDIO_E6_AGENT_ATTACK_SEC,
-            AUDIO_E6_AGENT_DECAY_SEC,
-            AUDIO_E6_AGENT_SUSTAIN_LEVEL,
-            AUDIO_E6_AGENT_RELEASE_SEC,
-            e6_seed_a,
-            e6_seed_b,
-        );
-        let mut rhai = rhai_replay_header(
-            "20_integration.rhai -- E6: Selection x heredity replay",
-            &detail,
-        );
-        let integration_order = [
-            "seed0_heredity_sel",
-            "seed0_random_sel",
-            "seed0_heredity_nosel",
-            "seed0_random_nosel",
-            "seed1_heredity_sel",
-            "seed1_random_sel",
-            "seed1_heredity_nosel",
-            "seed1_random_nosel",
-        ];
-        for (i, label) in integration_order.iter().enumerate() {
-            let (_, result) = e6_results
-                .iter()
-                .find(|(candidate, _)| candidate == label)
-                .unwrap_or_else(|| panic!("missing E6 audio result for label {label}"));
-            let snaps = &result.snapshots;
-            let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
-            let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
-            let scene = format!("s{}_{label}", i + 1);
-            rhai.push_str(&rhai_e6_segment(&scene, &tail, AUDIO_E6_STEP_SEC, None));
-            if i + 1 < integration_order.len() {
-                rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
-            }
-        }
-        write_with_log(out_dir.join("20_integration.rhai"), rhai)?;
-    }
-
     // ── E6b runs ──
     struct E6bAudioSeg {
         label: &'static str,
@@ -37650,7 +37488,8 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
              // each life uses harmonic ADSR atk={:.2}s dec={:.2}s sus={:.2} rel={:.2}s\n\
              //\n\
              // 8 segments: heredity/random x selection on/off, 2 seeds (index 0 and 10)\n\
-             // current E6b regime: adult pitch locked, juvenile settlement on, hereditary family replay\n\
+             // current E6b regime: adult pitch locked, juvenile settlement on,\n\
+             // family-biased respawn with local azimuth search\n\
              //   E6B_SEEDS[0]  = {}\n\
              //   E6B_SEEDS[10] = {}",
             E6B_DEFAULT_POP_SIZE,
@@ -37687,7 +37526,18 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
             let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
             let scene = format!("s{}_{label}", i + 1);
-            rhai.push_str(&rhai_e6_segment(&scene, &tail, AUDIO_E6_STEP_SEC, None));
+            let amp_scale = if label.ends_with("heredity_sel") {
+                AUDIO_E6_HS_GAIN
+            } else {
+                1.0
+            };
+            rhai.push_str(&rhai_e6_segment_with_gain(
+                &scene,
+                &tail,
+                AUDIO_E6_STEP_SEC,
+                None,
+                amp_scale,
+            ));
             if i + 1 < e6b_order.len() {
                 rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
             }
@@ -37695,26 +37545,42 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         write_with_log(out_dir.join("40_e6b_polyphony.rhai"), rhai)?;
     }
 
-    // ── 00_quicklisten.rhai ──
-    // 4 segments: E2 baseline seed0, E6 both seed0, E2 nohill seed0, E6 neither seed0
+    let quicklisten_pre_steps =
+        (AUDIO_QUICKLISTEN_E2_PRE_SWITCH_SEC / AUDIO_STEP_SEC).round() as usize;
+    let quicklisten_post_steps =
+        (AUDIO_QUICKLISTEN_E2_POST_SWITCH_SEC / AUDIO_STEP_SEC).round() as usize;
+    let quicklisten_start = E2_PHASE_SWITCH_STEP.saturating_sub(quicklisten_pre_steps);
+    let quicklisten_end = E2_PHASE_SWITCH_STEP + quicklisten_post_steps + 1;
+    let e2_baseline_quicklisten = slice_e2_trajectory_window(
+        &e2_runs[0].trajectory_semitones,
+        quicklisten_start,
+        quicklisten_end,
+    );
+    let e2_nohill_quicklisten = slice_e2_trajectory_window(
+        &e2_runs[1].trajectory_semitones,
+        quicklisten_start,
+        quicklisten_end,
+    );
+
+    // ── 00_quicklisten_showcase.rhai ──
+    // 2 segments: Exp. 1 local-search and Exp. 4 H+S, seed 0
     {
         let detail = format!(
-            "// 4 segments (curated highlights); all E2 segments include 1 fixed drone at 220 Hz,\n\
-             // and E6 segments use per-life harmonic ADSR voices plus a fixed 220 Hz sine anchor:\n\
-             //   1. E2 baseline  (seed 0) -- hill-climbing + crowding\n\
-             //   2. E6 selection+heredity (seed 0)\n\
-             //   3. E2 no-hill   (seed 0) -- crowding only\n\
-             //   4. E6 random/no-selection (seed 0) -- pure null control"
+            "// 2 showcase segments; Exp. 1 is cropped to {:.1}s before and {:.1}s after the phase switch,\n\
+             // and Exp. 4 uses per-life harmonic ADSR voices plus a fixed 220 Hz sine anchor:\n\
+             //   1. Exp. 1 local-search (seed 0) -- hill-climbing + crowding around the phase switch\n\
+             //   2. Exp. 4 H+S         (seed 0) -- family-biased respawn + local azimuth search",
+            AUDIO_QUICKLISTEN_E2_PRE_SWITCH_SEC, AUDIO_QUICKLISTEN_E2_POST_SWITCH_SEC,
         );
         let mut rhai = rhai_replay_header(
-            "00_quicklisten.rhai -- Orientation montage (replay)",
+            "00_quicklisten_showcase.rhai -- Showcase montage (replay)",
             &detail,
         );
 
         // Segment 1: E2 baseline seed0 (index 0)
         rhai.push_str(&rhai_e2_segment(
-            "ql1_e2_baseline",
-            &e2_runs[0].trajectory_semitones,
+            "qls1_exp1_local_search",
+            &e2_baseline_quicklisten,
             anchor_hz,
             &e2_selected,
             Some(e2_runs[0].fixed_drone_hz),
@@ -37722,27 +37588,44 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         ));
         rhai.push_str(&format!("wait({AUDIO_QUICKLISTEN_GAP_SEC:.1});\n\n"));
 
-        // Segment 2: E6 heredity + selection, seed 0
-        let e6_sel_hered_seed0 = &e6_results
+        // Segment 2: E6b heredity + selection, seed 0
+        let e6b_sel_hered_seed0 = &e6b_results
             .iter()
             .find(|(label, _)| label == "seed0_heredity_sel")
-            .expect("missing E6 audio result for seed0_heredity_sel")
+            .expect("missing E6b audio result for seed0_heredity_sel")
             .1;
-        let snaps = &e6_sel_hered_seed0.snapshots;
+        let snaps = &e6b_sel_hered_seed0.snapshots;
         let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
         let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
-        rhai.push_str(&rhai_e6_segment(
-            "ql2_e6_sel_hered",
+        rhai.push_str(&rhai_e6_segment_with_gain(
+            "qls2_exp4_hs",
             &tail,
             AUDIO_E6_STEP_SEC,
             None,
+            AUDIO_E6_HS_GAIN,
         ));
-        rhai.push_str(&format!("wait({AUDIO_QUICKLISTEN_GAP_SEC:.1});\n\n"));
+        write_with_log(out_dir.join("00_quicklisten_showcase.rhai"), rhai)?;
+    }
+
+    // ── 01_quicklisten_controls.rhai ──
+    // 2 segments: Exp. 1 no-hill and Exp. 4 neither, seed 0
+    {
+        let detail = format!(
+            "// 2 control segments; Exp. 1 is cropped to {:.1}s before and {:.1}s after the phase switch,\n\
+             // and Exp. 4 uses per-life harmonic ADSR voices plus a fixed 220 Hz sine anchor:\n\
+             //   1. Exp. 1 no-hill (seed 0) -- crowding only around the phase switch\n\
+             //   2. Exp. 4 neither (seed 0) -- matched random respawn, no selection",
+            AUDIO_QUICKLISTEN_E2_PRE_SWITCH_SEC, AUDIO_QUICKLISTEN_E2_POST_SWITCH_SEC,
+        );
+        let mut rhai = rhai_replay_header(
+            "01_quicklisten_controls.rhai -- Control montage (replay)",
+            &detail,
+        );
 
         // Segment 3: E2 nohill seed0 (index 1)
         rhai.push_str(&rhai_e2_segment(
-            "ql3_e2_nohill",
-            &e2_runs[1].trajectory_semitones,
+            "qlc1_exp1_nohill",
+            &e2_nohill_quicklisten,
             anchor_hz,
             &e2_selected,
             Some(e2_runs[1].fixed_drone_hz),
@@ -37750,23 +37633,23 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         ));
         rhai.push_str(&format!("wait({AUDIO_QUICKLISTEN_GAP_SEC:.1});\n\n"));
 
-        // Segment 4: E6 random + no selection, seed 0
-        let e6_random_nosel_seed0 = &e6_results
+        // Segment 4: E6b random + no selection, seed 0
+        let e6b_random_nosel_seed0 = &e6b_results
             .iter()
             .find(|(label, _)| label == "seed0_random_nosel")
-            .expect("missing E6 audio result for seed0_random_nosel")
+            .expect("missing E6b audio result for seed0_random_nosel")
             .1;
-        let snaps = &e6_random_nosel_seed0.snapshots;
+        let snaps = &e6b_random_nosel_seed0.snapshots;
         let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
         let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
         rhai.push_str(&rhai_e6_segment(
-            "ql4_e6_random_nosel",
+            "qlc2_exp4_neither",
             &tail,
             AUDIO_E6_STEP_SEC,
             None,
         ));
 
-        write_with_log(out_dir.join("00_quicklisten.rhai"), rhai)?;
+        write_with_log(out_dir.join("01_quicklisten_controls.rhai"), rhai)?;
     }
 
     eprintln!("Audio replay Rhai scripts written to supplementary_audio/scenarios/");
