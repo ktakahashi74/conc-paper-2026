@@ -6,12 +6,11 @@ first, start from the public-facing page:
 - [Audio Supplement Page](https://ktakahashi74.github.io/conc-paper-2026/supplementary_audio/)
 - [Supplementary PDF](../supplementary.pdf)
 - [Experiments README](../experiments/README.md)
-- [Manifest](manifest.csv)
 
 ## What lives here
 
 - `index.html`: reviewer-facing listening page
-- `manifest.csv`: per-segment metadata for the public tracks
+- `manifest.csv`: per-segment metadata for regeneration and verification
 - `audio/`: rendered WAV files served by the listening page
 - `scenarios/`: generated Rhai scenarios for the scenario-based tracks
 - `render.sh`: convenience wrapper for the scenario-based renders
@@ -100,6 +99,6 @@ target/release/paper --e3-audio
 ## Notes
 
 - The public-facing descriptions live on [index.html](index.html), not here.
-- `manifest.csv` is the authoritative index for segment boundaries and labels.
+- `manifest.csv` remains available as auxiliary metadata for segment boundaries and labels.
 - The audio supplement is qualitative support; the quantitative results live in
   the experiment outputs under [../experiments/plots/README.md](../experiments/plots/README.md).
