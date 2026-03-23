@@ -8,7 +8,7 @@ Quick links:
 - [Top-level README](../README.md)
 - [Generated Data README](plots/README.md)
 - [Supplementary PDF](../supplementary.pdf)
-- [Audio Supplement Page](https://ktakahashi74.github.io/conc-paper/supplementary_audio/)
+- [Audio Supplement Page](https://ktakahashi74.github.io/conc-paper-2026/supplementary_audio/)
 - [Audio Rendering README](../supplementary_audio/README.md)
 
 ## What this directory contains
@@ -36,9 +36,7 @@ IDs (`E1`...`E7`) for continuity.
 | Consonance as Selection Pressure | Fig. 3 | `E3` | metabolic selection assay |
 | Hereditary Adaptation | Fig. 4 | `E6b` | current paper-facing hereditary assay |
 | Temporal Scaffold | Fig. 5 | `E7` | timing scaffold assay |
-| Legacy hereditary assay | — | `E6` | previous hereditary implementation, kept for reference |
 | Supplementary mechanism check | — | `E5` | spectral–temporal bridge check |
-| Skipped internal slot | — | `E4` | not used in the current paper |
 
 ## Quick start
 
@@ -58,8 +56,8 @@ just paper --clean --exp e2
 ```
 
 When `--exp` is omitted, the default set `e1,e2,e3,e6b,e7` is run. This covers
-the current paper-facing assay families and leaves the legacy hereditary assay
-(`e6`) out of the default pipeline.
+the current paper-facing assay families. Legacy internal assays removed from the
+current paper pipeline are intentionally not runnable through `--exp`.
 
 ## Running directly
 
