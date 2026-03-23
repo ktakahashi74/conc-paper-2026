@@ -1,4 +1,4 @@
-# Experiments and Plot Generation
+# Experiments, Code, and Data
 
 This directory contains the experiment runner and plot generator used to produce
 the paper's figures, summaries, and exported data tables.
@@ -7,9 +7,23 @@ Quick links:
 
 - [Top-level README](../README.md)
 - [Generated Data README](plots/README.md)
-- [Paper PDF](../main.pdf)
 - [Supplementary PDF](../supplementary.pdf)
 - [Audio Supplement Page](../supplementary_audio/index.html)
+- [Audio Rendering README](../supplementary_audio/README.md)
+
+## What this directory contains
+
+The main paper pipeline lives here.
+
+- `main.rs`: CLI entry point
+- `paper_plots.rs`: experiment orchestration, figure generation, CSV export, and audio-scenario generation
+- `sim.rs`: shared simulation harness for the paper assays
+- `scenarios/`: lightweight Rhai demos and checks
+- `plots/`: generated figures, CSVs, summaries, and tables
+
+If you want to understand how the code maps to the paper, this is the main
+entry point. If you want only the rendered outputs, go straight to
+[plots/README.md](plots/README.md).
 
 ## Paper-facing assay names and internal IDs
 
@@ -55,19 +69,28 @@ cargo run --release --bin paper -- --exp e6b,e7
 cargo run --release --bin paper -- --clean --exp e2
 ```
 
-## Generated outputs
+## Generated data overview
 
 All generated artifacts are written under `experiments/plots/<id>/`.
 
-For the output layout, file types, and the key paper-facing figure/table files,
-see [plots/README.md](plots/README.md).
+The current paper-facing figure mapping is:
 
-In brief:
+| Figure | Assay name | Output directory | Files to inspect first |
+|--------|------------|------------------|------------------------|
+| Fig. 2 | Self-Organized Polyphony | `plots/e2/` | `paper_e2_figure_e2_1.pdf`, `paper_e2_figure_e2_2.pdf`, `paper_e2_summary.csv` |
+| Fig. 3 | Consonance as Selection Pressure | `plots/e3/` | `paper_e3_figure4.pdf`, `paper_e3_lifetimes.csv` |
+| Fig. 4 | Hereditary Adaptation | `plots/e6b/` | `paper_e6b_figure.pdf`, `paper_e6b_summary.txt`, `paper_e6b_endpoint_metrics.csv` |
+| Fig. 5 | Temporal Scaffold | `plots/e7/` | `paper_e7_figure.pdf`, `paper_e7_summary.csv` |
 
-- `.svg` — source vector plots
-- `.pdf` — converted figure PDFs
-- `.csv` — exported numeric tables
-- `.txt` — summary reports and comparison notes
+Common file types:
+
+- `.svg`: source vector plots written by the Rust pipeline
+- `.pdf`: paper-facing figure PDFs
+- `.csv`: numeric tables and time series
+- `.txt`: compact summaries and comparison notes
+
+For a directory-by-directory index, including legacy outputs, see
+[plots/README.md](plots/README.md).
 
 ## Build and test
 

@@ -2,14 +2,11 @@
 
 Paper, generated data, audio supplement, and experiment code.
 
-## Start Here
+## Quick Start
 
-- **[Paper PDF](main.pdf)** — main manuscript
 - **[Supplementary PDF](supplementary.pdf)** — extended methods, ablations, and tables
-- **[Audio Supplement Page](supplementary_audio/index.html)** — browser-based listening examples
-- **[Audio Supplement README](supplementary_audio/README.md)** — track descriptions, rendering notes, and manifest link
-- **[Experiments README](experiments/README.md)** — how to run the experiment code and how paper-facing assay names map to internal IDs
-- **[Generated Data README](experiments/plots/README.md)** — where figure files, CSVs, and summary tables live
+- **[Audio Supplement](supplementary_audio/index.html)** — browser-based listening examples with track notes and links back to the paper and data
+- **[Experiments](experiments/README.md)** — experiment-code overview, data layout, and reproduction commands
 
 ## Abstract
 
@@ -30,11 +27,17 @@ experiments/
   scenarios/              Rhai demo scripts for headless checks
   plots/                  Generated figures, tables, and summaries
 supplementary_audio/
-  README.md               Audio supplement guide
+  README.md               Audio rendering and reproduction guide
   index.html              Browser-facing audio page
   audio/                  Rendered WAV files
 justfile                  Build recipes
 ```
+
+## Navigation
+
+- For paper-facing methods and ablations, start from [supplementary.pdf](supplementary.pdf).
+- For listening, start from [supplementary_audio/index.html](supplementary_audio/index.html).
+- For code, generated data, and exact run commands, start from [experiments/README.md](experiments/README.md).
 
 ## Dependencies
 

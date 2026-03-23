@@ -1,4 +1,4 @@
-# Generated Data and Figures
+# Generated Data Index
 
 This directory holds generated outputs from the paper experiments. These files
 are derived artifacts: they can be regenerated from the code in the repository
@@ -8,9 +8,11 @@ Quick links:
 
 - [Top-level README](../../README.md)
 - [Experiments README](../README.md)
-- [Paper PDF](../../main.pdf)
 - [Supplementary PDF](../../supplementary.pdf)
 - [Audio Supplement Page](../../supplementary_audio/index.html)
+
+Use this page as a file index. For the overall code layout, run commands, and
+paper-facing assay mapping, start from [../README.md](../README.md).
 
 ## Directory layout
 
