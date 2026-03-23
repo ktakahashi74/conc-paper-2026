@@ -17,20 +17,26 @@ echo "Regenerating Rhai scenarios..."
 
 for rhai in scenarios/*.rhai; do
   name=$(basename "$rhai" .rhai)
-  if [[ "$name" == 30_e3_* ]]; then
-    echo "Skipping ${name}; E3 WAVs are rendered directly by paper --e3-audio"
+  if [[ "$name" == temporal_scaffold_* ]]; then
+    echo "Skipping ${name}; temporal scaffold WAVs are rendered directly by paper --e3-audio"
     continue
   fi
   echo "Rendering ${name}..."
   $RENDER "$rhai" --output "audio/${name}.wav"
-  if [ "$name" = "00_quicklisten_showcase" ]; then
+  if [ "$name" = "showcase" ]; then
     (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-quicklisten-showcase)
-  elif [ "$name" = "01_quicklisten_controls" ]; then
+  elif [ "$name" = "controls" ]; then
     (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-quicklisten-controls)
-  elif [ "$name" = "10_exp1_polyphony" ]; then
+  elif [ "$name" = "self_organized_polyphony" ]; then
     (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-polyphony)
-  elif [ "$name" = "40_e6b_polyphony" ]; then
+  elif [ "$name" = "self_organized_polyphony_no_hill" ]; then
+    (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-polyphony-no-hill)
+  elif [ "$name" = "hereditary_adaptation" ]; then
     (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-e6b)
+  elif [ "$name" = "hereditary_adaptation_controls" ]; then
+    (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-hereditary-controls)
+  elif [ "$name" = "hereditary_adaptation_candidates" ]; then
+    (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-hereditary-candidates)
   fi
   echo "  → audio/${name}.wav"
 done

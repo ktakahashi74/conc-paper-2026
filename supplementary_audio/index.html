@@ -15,6 +15,8 @@
          max-width: 720px; margin: 0 auto; padding: 2rem 1.5rem; line-height: 1.6; }
   h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
   .subtitle { color: var(--muted); font-style: italic; margin-bottom: 2rem; font-size: 0.95rem; }
+  .nav { margin: 0 0 1.5rem; font-size: 0.9rem; color: var(--muted); }
+  .nav a { margin-right: 0.9rem; white-space: nowrap; }
   .track { border: 1px solid var(--border); border-radius: 6px;
            padding: 1.25rem; margin-bottom: 1.5rem; }
   .track h2 { font-size: 1.1rem; margin-bottom: 0.15rem; color: var(--accent); }
@@ -40,89 +42,94 @@
 <h1>Audio Supplement — Conchordal</h1>
 <p class="subtitle">Qualitative audio demonstrations accompanying<br>
 "Conchordal: A Bio-Acoustic Artificial Life Instrument"</p>
+<p class="nav">
+  <a href="https://github.com/ktakahashi74/conc-paper/blob/main/supplementary_audio/README.md">Audio README</a>
+  <a href="https://github.com/ktakahashi74/conc-paper/blob/main/experiments/plots/README.md">Generated Data Guide</a>
+  <a href="../main.pdf">Paper PDF</a>
+  <a href="../supplementary.pdf">Supplementary PDF</a>
+  <a href="manifest.csv">Manifest</a>
+  <a href="https://github.com/ktakahashi74/conc-paper">Repository</a>
+</p>
 
 <section class="notes" style="margin-top:0; margin-bottom:1.5rem">
-  <p>The main paper uses audio examples for <strong>Experiment 1</strong>,
-     <strong>Experiment 4</strong>, and <strong>Experiment 3</strong>. There is
-     no standalone audio track for <strong>Experiment 2</strong>, because that
-     assay is primarily about selection pressure and lifetime statistics rather
-     than a stable replayable scene.</p>
+  <p>The paper uses audio examples for <strong>Self-Organized Polyphony</strong>,
+     <strong>Hereditary Adaptation</strong>, and <strong>Temporal Scaffold</strong>.
+     There is no standalone audio track for the selection-pressure assay, because that
+     result is primarily about lifetime statistics rather than a stable replayable scene.</p>
 </section>
 
 <div class="track">
-  <h2>00 &mdash; Quick Listen (Showcase)</h2>
-  <p class="meta">~21 s &middot; strongest current examples from Exp. 1 and Exp. 4</p>
-  <p>Two short segments present the strongest current examples:</p>
+  <h2>Quick Listen</h2>
+  <p class="meta">two short orientation tracks &middot; strongest examples and matched controls</p>
+  <p><strong>Showcase</strong> pairs the clearest current hereditary example with a local-search excerpt
+     cropped to 2 s before and 6 s after the phase switch.</p>
   <ol class="segments">
-    <li><strong>Exp. 1 local-search</strong> &mdash; score-based local search + repulsion &rarr; consonant polyphony</li>
-    <li><strong>Exp. 4 H+S</strong> &mdash; family-biased respawn + local azimuth search &rarr; hereditary polyphony</li>
+    <li><strong>Heredity + selection</strong> &mdash; family-biased respawn plus local azimuth search</li>
+    <li><strong>Local search</strong> &mdash; hill-climbing plus crowding around the phase switch</li>
   </ol>
-  <p>The Exp. 1 excerpt is cropped to 2 s before and 4 s after the phase switch.</p>
   <audio controls preload="none">
-    <source src="audio/00_quicklisten_showcase.wav?v=20260323-2" type="audio/wav">
+    <source src="audio/showcase.wav?v=20260323-16" type="audio/wav">
+  </audio>
+  <p style="margin-top:0.9rem"><strong>Controls</strong> mirrors the same two assays with matched ablations:</p>
+  <ol class="segments">
+    <li><strong>Neither</strong> &mdash; matched random respawn, no selection</li>
+    <li><strong>No hill-climb</strong> &mdash; crowding only, no local hill-climb</li>
+  </ol>
+  <audio controls preload="none">
+    <source src="audio/controls.wav?v=20260323-16" type="audio/wav">
   </audio>
 </div>
 
 <div class="track">
-  <h2>01 &mdash; Quick Listen (Controls)</h2>
-  <p class="meta">~21 s &middot; matched ablations for the same two assays</p>
-  <p>Two control segments mirror the showcase:</p>
-  <ol class="segments">
-    <li><strong>Exp. 1 no-hill</strong> &mdash; crowding only, no hill-climb</li>
-    <li><strong>Exp. 4 neither</strong> &mdash; matched random respawn, no selection</li>
-  </ol>
-  <p>The Exp. 1 control excerpt uses the same 2 s pre-switch / 4 s post-switch window.</p>
-  <audio controls preload="none">
-    <source src="audio/01_quicklisten_controls.wav?v=20260323-2" type="audio/wav">
-  </audio>
-</div>
-
-<div class="track">
-  <h2>10 &mdash; Self-Organized Polyphony (Experiment 1; internal E2)</h2>
-  <p class="meta">~35 s &middot; baseline vs. no-hill, seed 0 and seed 10</p>
-  <p>Two conditions &times; two seeds (index 0, 10). Each segment ~8 s.</p>
+  <h2>Self-Organized Polyphony</h2>
+  <p class="meta">two companion tracks &middot; local-search seeds and no-hill controls</p>
+  <p>Each track contains two seeds (0 and 10). Each segment is about 8 s.</p>
   <table>
     <tr><th>Condition</th><th>landscape_weight</th><th>repulsion</th></tr>
     <tr><td>local-search</td><td>1.0</td><td>0.15 @ 72 cents</td></tr>
     <tr><td>no-hill</td><td>0.0</td><td>0.15 @ 72 cents</td></tr>
   </table>
-  <p>baseline preserves the current hill-climb + crowding regime; no-hill removes
+  <p>Local search preserves the hill-climb plus crowding regime; no-hill removes
      local search while keeping the same crowding field and seed schedule.</p>
+  <p><strong>Adaptive condition</strong> &mdash; local-search across seed 0 and seed 10:</p>
   <audio controls preload="none">
-    <source src="audio/10_exp1_polyphony.wav?v=20260322-2" type="audio/wav">
+    <source src="audio/self_organized_polyphony.wav?v=20260323-16" type="audio/wav">
+  </audio>
+  <p style="margin-top:0.75rem"><strong>Control</strong> &mdash; no-hill across seed 0 and seed 10:</p>
+  <audio controls preload="none">
+    <source src="audio/self_organized_polyphony_no_hill.wav?v=20260323-16" type="audio/wav">
   </audio>
 </div>
 
 <div class="track">
-  <h2>40 &mdash; Hereditary Adaptation (Experiment 4; internal E6b)</h2>
-  <p class="meta">~107 s &middot; heredity/random &times; selection on/off, seeds 0 and 10</p>
-  <p>This replay tracks the current paper-facing hereditary assay. The population
-     is 16 agents, adult pitch remains locked, hereditary respawn is family-biased,
-     the final azimuth is chosen by local search, and only newborns receive a
-     brief slot-local settling phase. Within each seed, segments run from the
-     strongest hereditary condition toward the matched-random controls.</p>
+  <h2>Hereditary Adaptation</h2>
+  <p class="meta">two companion tracks &middot; hereditary conditions and matched controls</p>
+  <p>This replay tracks the current hereditary assay. The population is 16 agents,
+     adult pitch remains locked, respawn is family-biased, the final azimuth is
+     chosen by local search, and only newborns receive a brief slot-local settling phase.</p>
   <table>
     <tr><th>Condition</th><th>respawn</th><th>selection</th></tr>
-    <tr><td>H+S</td><td>family-biased respawn + local azimuth search</td><td>on</td></tr>
-    <tr><td>H-only</td><td>family-biased respawn + local azimuth search</td><td>off</td></tr>
-    <tr><td>S-only</td><td>matched log-random candidates</td><td>on</td></tr>
+    <tr><td>heredity + selection</td><td>family-biased respawn + local azimuth search</td><td>on</td></tr>
+    <tr><td>heredity only</td><td>family-biased respawn + local azimuth search</td><td>off</td></tr>
+    <tr><td>selection only</td><td>matched log-random candidates</td><td>on</td></tr>
     <tr><td>neither</td><td>matched log-random candidates</td><td>off</td></tr>
   </table>
-  <p>Listen for the clearest multi-band polyphony in <strong>H+S</strong>; the
-     heredity-only arm retains some family structure, while the matched-random controls
-     remain broader and less musically focused.</p>
+  <p><strong>Hereditary conditions</strong> &mdash; heredity + selection and heredity only across seed 0 and seed 10:</p>
   <audio controls preload="none">
-    <source src="audio/40_e6b_polyphony.wav?v=20260323-2" type="audio/wav">
+    <source src="audio/hereditary_adaptation.wav?v=20260323-16" type="audio/wav">
+  </audio>
+  <p style="margin-top:0.75rem"><strong>Matched controls</strong> &mdash; selection only and neither across seed 0 and seed 10:</p>
+  <audio controls preload="none">
+    <source src="audio/hereditary_adaptation_controls.wav?v=20260323-16" type="audio/wav">
   </audio>
 </div>
 
 <div class="track">
-  <h2>30 &mdash; Temporal Scaffold (Experiment 3; historical e3 filename prefix)</h2>
+  <h2>Temporal Scaffold</h2>
   <p class="meta">~8 s each &middot; shared vs. scrambled vs. off at 2 Hz</p>
-  <p>These renders track the main paper's temporal-scaffold assay. All agents
-     share the same pitch inventory and intrinsic-frequency jitter; only the
-     temporal drive changes across conditions. No external drone or metronome
-     is mixed into these examples.</p>
+  <p>These renders track the temporal-scaffold assay. All agents share the same
+     pitch inventory and intrinsic-frequency jitter; only the temporal drive changes
+     across conditions. No external drone or metronome is mixed into these examples.</p>
   <table>
     <tr><th>Condition</th><th>Drive</th><th>Coupling</th></tr>
     <tr><td>shared</td><td>single continuous 2 Hz phase reference</td><td>fixed</td></tr>
@@ -133,32 +140,35 @@
      weakening in <strong>scrambled</strong>, and the diffuse timing of <strong>off</strong>.</p>
   <p><strong>Shared</strong> &mdash; common scaffold, strongest beat alignment:</p>
   <audio controls preload="none">
-    <source src="audio/30_e3_shared.wav?v=20260323-14" type="audio/wav">
+    <source src="audio/temporal_scaffold_shared.wav?v=20260323-16" type="audio/wav">
   </audio>
   <p style="margin-top:0.75rem"><strong>Scrambled</strong> &mdash; cycle-wise phase resets weaken stability:</p>
   <audio controls preload="none">
-    <source src="audio/30_e3_scrambled.wav?v=20260323-14" type="audio/wav">
+    <source src="audio/temporal_scaffold_scrambled.wav?v=20260323-16" type="audio/wav">
   </audio>
   <p style="margin-top:0.75rem"><strong>Off</strong> &mdash; no scaffold, phases remain diffuse:</p>
   <audio controls preload="none">
-    <source src="audio/30_e3_off.wav?v=20260323-14" type="audio/wav">
+    <source src="audio/temporal_scaffold_off.wav?v=20260323-16" type="audio/wav">
   </audio>
 </div>
 
 <section class="notes">
   <h2>Methodology</h2>
-  <p>Seeds are taken by ordinal index (0 and 10) from the paper's shared seed
-     lists &mdash; no cherry-picking. All tracks are rendered with
-     <code>conchordal-render</code>: harmonic voices, mono WAV at 48 kHz,
-     no reverb, no mastering, identical chain across all tracks.</p>
-  <p>These audio demonstrations are <strong>qualitative support only</strong>.
-     Quantitative claims rest on the paper's simulation statistics (Section 5).
-     The audio is generated by the instrument's native Rhai scenario system,
-     not by replaying simulation event logs.</p>
+  <p>Seeds are taken by ordinal index from the paper's shared seed lists &mdash; no cherry-picking.
+     The orientation clips and the self-organized polyphony / hereditary adaptation replays are
+     rendered from generated scenario scripts; the temporal scaffold monitor is rendered directly
+     by the paper tool. All outputs are mono WAV at 48 kHz with no added reverb or mastering.</p>
+  <p>These audio demonstrations are <strong>qualitative support only</strong>. Quantitative claims
+     rest on the paper's simulation statistics. They are listening aids derived from the same
+     experimental settings, not the source of the paper's quantitative analyses.</p>
 </section>
 
 <footer>
-  Conchordal
+  Conchordal ·
+  <a href="https://github.com/ktakahashi74/conc-paper/blob/main/supplementary_audio/README.md">Audio README</a> ·
+  <a href="https://github.com/ktakahashi74/conc-paper/blob/main/experiments/plots/README.md">Generated Data Guide</a> ·
+  <a href="../main.pdf">Paper PDF</a> ·
+  <a href="../supplementary.pdf">Supplementary PDF</a>
 </footer>
 
 </body>

@@ -1,37 +1,73 @@
-# Paper Experiments
+# Experiments and Plot Generation
 
-Experiment runner and plot generator for all figures and statistical analyses in the paper.
+This directory contains the experiment runner and plot generator used to produce
+the paper's figures, summaries, and exported data tables.
 
-## Experiment mapping
+Quick links:
 
-Paper results are discussed in the order Exp. 1, Exp. 2, Exp. 4, Exp. 3. Internal IDs keep the historical `E1`...`E7` naming.
+- [Top-level README](../README.md)
+- [Generated Data README](plots/README.md)
+- [Paper PDF](../main.pdf)
+- [Supplementary PDF](../supplementary.pdf)
+- [Audio Supplement Page](../supplementary_audio/index.html)
 
-| Paper        | Internal ID | Topic                                          |
-|--------------|-------------|------------------------------------------------|
-| Experiment 1 | E1, E2      | Landscape Attractors & Self-Organised Polyphony |
-| Experiment 2 | E3          | Consonance as Selection Pressure               |
-| Experiment 4 | E6b         | Hereditary Adaptation                          |
-| Experiment 3 | E7          | Temporal Scaffold                              |
-| *(skipped)*  | E4          | *(excluded from paper)*                        |
-| Legacy hereditary assay | E6 | Previous Exp. 4 implementation               |
-| Supplementary mechanism check | E5 | Configurable spectral--temporal bridge |
+## Paper-facing assay names and internal IDs
+
+The manuscript uses paper-facing assay names. The code keeps historical internal
+IDs (`E1`...`E7`) for continuity.
+
+| Paper-facing assay | Main figure | Internal ID(s) | Notes |
+|--------------------|-------------|----------------|-------|
+| Self-Organized Polyphony | Fig. 2 | `E1`, `E2` | landscape attractors and local-search polyphony |
+| Consonance as Selection Pressure | Fig. 3 | `E3` | metabolic selection assay |
+| Hereditary Adaptation | Fig. 4 | `E6b` | current paper-facing hereditary assay |
+| Temporal Scaffold | Fig. 5 | `E7` | timing scaffold assay |
+| Legacy hereditary assay | — | `E6` | previous hereditary implementation, kept for reference |
+| Supplementary mechanism check | — | `E5` | spectral–temporal bridge check |
+| Skipped internal slot | — | `E4` | not used in the current paper |
 
 ## Quick start
 
 ```bash
-# Run all experiments (release build) + convert SVG→PDF + build paper
+# Run all paper-facing experiments, convert SVG→PDF, and build the paper
 just all
 
-# Run a single experiment
-just paper --exp e2
+# Run experiments only (release build)
+just paper
 
-# Run experiments + SVG→PDF conversion (no LaTeX)
-just paper-pdf --exp e2
+# Run a subset
+just paper --exp e2
+just paper --exp e6b,e7
+
+# Clean generated outputs first
+just paper --clean --exp e2
 ```
 
-When `--exp` is omitted, the default set `e1,e2,e3,e6b,e7` is run.
-This corresponds to paper order Exp. 1, Exp. 2, Exp. 4, Exp. 3.
-`e6` remains available as the legacy hereditary assay.
+When `--exp` is omitted, the default set `e1,e2,e3,e6b,e7` is run. This covers
+the current paper-facing assay families and leaves the legacy hereditary assay
+(`e6`) out of the default pipeline.
+
+## Running directly
+
+```bash
+cargo run --release --bin paper -- --exp e2
+cargo run --release --bin paper -- --exp e6b,e7
+cargo run --release --bin paper -- --clean --exp e2
+```
+
+## Generated outputs
+
+All generated artifacts are written under `experiments/plots/<id>/`.
+
+For the output layout, file types, and the key paper-facing figure/table files,
+see [plots/README.md](plots/README.md).
+
+In brief:
+
+- `.svg` — source vector plots
+- `.pdf` — converted figure PDFs
+- `.csv` — exported numeric tables
+- `.txt` — summary reports and comparison notes
 
 ## Build and test
 
@@ -40,52 +76,18 @@ cargo check --bin paper
 cargo test --bin paper
 ```
 
-## Options
-
-```bash
-cargo run --release --bin paper -- --exp e3        # Single experiment
-cargo run --release --bin paper -- --exp e1,e3     # Multiple experiments
-cargo run --release --bin paper -- --clean --exp e2 # Clean output first
-```
-
-## Output
-
-All outputs are written to `experiments/plots/<exp>/` (e.g., `experiments/plots/e2/`).
-
-- `.svg` — vector plots
-- `.pdf` — converted from SVG via `rsvg-convert` or `inkscape`
-- `.csv` — raw data tables
-- `.txt` — statistical summaries and comparison reports
-
-Key output files per experiment:
-
-| Experiment | Main figure | Key data files |
-|------------|-------------|----------------|
-| E1 | `paper_e1_landscape_scan_anchor220.svg` | `paper_e1_anchor_robustness.txt` |
-| E2 | `paper_e2_figure_e2_1.svg`, `paper_e2_figure_e2_2.svg` | `paper_e2_shuffled_comparison.txt`, `paper_e2_terrain_controls.txt`, `paper_e2_coefficient_sweep.txt` |
-| E3 | `paper_e3_figure4.svg` | `paper_e3_lifetimes.csv` |
-| E5 | `paper_e5_figure.svg` | `paper_e5_summary.csv` (supplementary mechanism check) |
-| E6 | `paper_e6_figure.svg`, `paper_e6_integration_figure.svg` | `paper_e6_summary.csv` (legacy hereditary assay) |
-| E6b | `paper_e6b_figure.svg` | `paper_e6b_endpoint_metrics.csv`, `paper_e6b_exp1_benchmark.txt` (current paper Exp. 4) |
-| E7 | `paper_e7_figure.svg` | `paper_e7_summary.csv` |
-
-Use `--clean` when you need strict reproducibility from a fully fresh output tree.
-
 ## Concurrency lock
 
 `paper` rejects concurrent runs via a lock at `experiments/.paper_plots.lock`.
-If a previous run crashed, remove that lock directory and retry.
+If a previous run crashed, remove that directory and retry.
 
 ## Headless demo scenarios
 
-Lightweight Rhai scripts for quick behavioural checks (not for plot generation):
+Lightweight Rhai scripts for quick behavioural checks live in
+`experiments/scenarios/`. They are not the figure-generation pipeline.
+
+Example:
 
 ```bash
 cargo run -- --nogui experiments/scenarios/e1_landscape_scan_demo.rhai
 ```
-
-Available scenarios:
-- `e1_landscape_scan_demo.rhai`
-- `e2_emergent_harmony_demo.rhai`
-- `e3_metabolic_selection_demo.rhai`
-- `e5_rhythmic_entrainment_demo.rhai`

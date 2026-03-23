@@ -1,8 +1,15 @@
 # Conchordal: Emergent Harmony via Direct Cognitive Coupling in a Psychoacoustic Landscape
 
-Paper and experiment code.
+Paper, generated data, audio supplement, and experiment code.
 
-**[Supplementary Material (PDF)](supplementary.pdf)** — terrain controls, ablation details, and additional tables (S1–S8).
+## Start Here
+
+- **[Paper PDF](main.pdf)** — main manuscript
+- **[Supplementary PDF](supplementary.pdf)** — extended methods, ablations, and tables
+- **[Audio Supplement Page](supplementary_audio/index.html)** — browser-based listening examples
+- **[Audio Supplement README](supplementary_audio/README.md)** — track descriptions, rendering notes, and manifest link
+- **[Experiments README](experiments/README.md)** — how to run the experiment code and how paper-facing assay names map to internal IDs
+- **[Generated Data README](experiments/plots/README.md)** — where figure files, CSVs, and summary tables live
 
 ## Abstract
 
@@ -16,10 +23,16 @@ supplementary.tex         Supplementary material
 conc.bib                  Bibliography
 alifeconf.sty             Conference style
 experiments/
+  README.md               Experiment runner guide
   main.rs                 CLI entry point
   paper_plots.rs          All experiment and plot logic
   sim.rs                  Simulation harness
   scenarios/              Rhai demo scripts for headless checks
+  plots/                  Generated figures, tables, and summaries
+supplementary_audio/
+  README.md               Audio supplement guide
+  index.html              Browser-facing audio page
+  audio/                  Rendered WAV files
 justfile                  Build recipes
 ```
 
@@ -45,6 +58,8 @@ just all
 ```
 
 This runs all experiments (release build), converts SVG plots to PDF, and builds `main.pdf`.
+Generated figures, CSVs, and summary tables are written under `experiments/plots/`.
+Audio tracks are written under `supplementary_audio/audio/`.
 
 ### Step by step
 
@@ -67,19 +82,9 @@ just paper --exp e1,e3       # Multiple experiments
 just paper --clean --exp e2  # Clean plots directory first
 ```
 
-### Experiment mapping
-
-Paper results are discussed in the order Exp. 1, Exp. 2, Exp. 4, Exp. 3. Internal IDs keep the historical `E1`...`E7` naming.
-
-| Paper        | Internal ID | Topic                        |
-|--------------|-------------|------------------------------|
-| Experiment 1 | E1, E2      | Landscape Attractors & Self-Organised Polyphony |
-| Experiment 2 | E3          | Consonance as Selection      |
-| Experiment 4 | E6b         | Hereditary Adaptation        |
-| Experiment 3 | E7          | Temporal Scaffold            |
-| *(E4 skipped)* | E4        | *(excluded from paper)*      |
-| Legacy hereditary assay | E6 | Previous Exp. 4 implementation |
-| Supplementary mechanism check | E5 | Configurable spectral--temporal bridge |
+Historical internal experiment IDs (`E1`...`E7`) are still used in the code and
+output directories. The paper-facing assay names and their internal mappings are
+documented in [experiments/README.md](experiments/README.md).
 
 ### Verify
 

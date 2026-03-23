@@ -1686,20 +1686,29 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
         generate_e6_sampler_debug_plots()?;
         return Ok(());
     }
-    // Handle --e3-audio: generate supplementary Experiment 3 monitor scenarios
-    // and refresh the paper-facing WAVs via the internal renderer path.
+    // Handle --e3-audio: generate temporal-scaffold monitor scenarios and
+    // refresh the paper-facing WAVs via the internal renderer path.
     if args.iter().any(|arg| arg == "--e3-audio") {
         let cfg_shared = crate::sim::E3AudioConfig::default_shared();
         let cfg_scrambled = crate::sim::E3AudioConfig::default_scrambled();
         let cfg_off = crate::sim::E3AudioConfig::default_off();
         let scenario_dir = PathBuf::from("supplementary_audio/scenarios");
         let audio_dir = PathBuf::from("supplementary_audio/audio");
-        crate::sim::generate_e3_rhai(&cfg_shared, &scenario_dir.join("30_e3_shared.rhai"))?;
-        crate::sim::generate_e3_rhai(&cfg_scrambled, &scenario_dir.join("30_e3_scrambled.rhai"))?;
-        crate::sim::generate_e3_rhai(&cfg_off, &scenario_dir.join("30_e3_off.rhai"))?;
-        crate::sim::render_e3_audio(&cfg_shared, &audio_dir.join("30_e3_shared.wav"))?;
-        crate::sim::render_e3_audio(&cfg_scrambled, &audio_dir.join("30_e3_scrambled.wav"))?;
-        crate::sim::render_e3_audio(&cfg_off, &audio_dir.join("30_e3_off.wav"))?;
+        crate::sim::generate_e3_rhai(
+            &cfg_shared,
+            &scenario_dir.join("temporal_scaffold_shared.rhai"),
+        )?;
+        crate::sim::generate_e3_rhai(
+            &cfg_scrambled,
+            &scenario_dir.join("temporal_scaffold_scrambled.rhai"),
+        )?;
+        crate::sim::generate_e3_rhai(&cfg_off, &scenario_dir.join("temporal_scaffold_off.rhai"))?;
+        crate::sim::render_e3_audio(&cfg_shared, &audio_dir.join("temporal_scaffold_shared.wav"))?;
+        crate::sim::render_e3_audio(
+            &cfg_scrambled,
+            &audio_dir.join("temporal_scaffold_scrambled.wav"),
+        )?;
+        crate::sim::render_e3_audio(&cfg_off, &audio_dir.join("temporal_scaffold_off.wav"))?;
         return Ok(());
     }
     if args
@@ -1720,8 +1729,29 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
         postprocess_e6b_wav_default()?;
         return Ok(());
     }
+    if args
+        .iter()
+        .any(|arg| arg == "--postprocess-hereditary-controls")
+    {
+        postprocess_hereditary_controls_wav_default()?;
+        return Ok(());
+    }
+    if args
+        .iter()
+        .any(|arg| arg == "--postprocess-hereditary-candidates")
+    {
+        postprocess_hereditary_candidates_wav_default()?;
+        return Ok(());
+    }
     if args.iter().any(|arg| arg == "--postprocess-polyphony") {
         postprocess_polyphony_wav_default()?;
+        return Ok(());
+    }
+    if args
+        .iter()
+        .any(|arg| arg == "--postprocess-polyphony-no-hill")
+    {
+        postprocess_polyphony_no_hill_wav_default()?;
         return Ok(());
     }
 
@@ -36624,7 +36654,7 @@ const AUDIO_GAP_SEC: f32 = 1.0;
 const AUDIO_QUICKLISTEN_GAP_SEC: f32 = AUDIO_GAP_SEC + 1.0;
 const AUDIO_QUICKLISTEN_FADE_SEC: f32 = 1.0;
 const AUDIO_QUICKLISTEN_E2_PRE_SWITCH_SEC: f32 = 2.0;
-const AUDIO_QUICKLISTEN_E2_POST_SWITCH_SEC: f32 = 4.0;
+const AUDIO_QUICKLISTEN_E2_POST_SWITCH_SEC: f32 = 6.0;
 const AUDIO_INTEGRATION_FADE_SEC: f32 = 0.2;
 const AUDIO_E2_POLYPHONY_TARGET_SEGMENT_SEC: f32 = 8.0;
 const AUDIO_N_SELECT_E2: usize = 8;
@@ -37062,11 +37092,11 @@ fn rewrite_audio_manifest(
             continue;
         }
         let mut cols: Vec<String> = line.split(',').map(|s| s.to_string()).collect();
-        if cols.len() >= 8
+        if cols.len() >= 9
             && let Some(window) = by_label.get(cols[2].as_str())
         {
-            cols[6] = format!("{:.1}", window.start_sec);
-            cols[7] = format!("{:.1}", window.end_sec);
+            cols[5] = format!("{:.1}", window.start_sec);
+            cols[6] = format!("{:.1}", window.end_sec);
         }
         out.push_str(&cols.join(","));
         out.push('\n');
@@ -37199,15 +37229,14 @@ fn postprocess_named_wav_default(wav_stem: &str, fade_sec: f32) -> io::Result<()
 }
 
 fn postprocess_quicklisten_showcase_wav_default() -> io::Result<()> {
-    postprocess_named_wav_default("00_quicklisten_showcase", AUDIO_QUICKLISTEN_FADE_SEC)
+    postprocess_named_wav_default("showcase", AUDIO_QUICKLISTEN_FADE_SEC)
 }
 
 fn postprocess_quicklisten_controls_wav_default() -> io::Result<()> {
-    postprocess_named_wav_default("01_quicklisten_controls", AUDIO_QUICKLISTEN_FADE_SEC)
+    postprocess_named_wav_default("controls", AUDIO_QUICKLISTEN_FADE_SEC)
 }
 
-fn postprocess_e6b_wav_default() -> io::Result<()> {
-    let wav_stem = "40_e6b_polyphony";
+fn postprocess_e6b_named_wav_default(wav_stem: &str) -> io::Result<()> {
     let (wav_path, rhai_path, manifest_path) = resolve_audio_postprocess_paths(wav_stem);
     let windows = parse_rhai_scene_windows(&rhai_path)?;
     let wav_name = format!("{wav_stem}.wav");
@@ -37222,16 +37251,40 @@ fn postprocess_e6b_wav_default() -> io::Result<()> {
     Ok(())
 }
 
-fn postprocess_polyphony_wav_default() -> io::Result<()> {
-    let (wav_path, rhai_path, manifest_path) = resolve_audio_postprocess_paths("10_exp1_polyphony");
+fn postprocess_e6b_wav_default() -> io::Result<()> {
+    postprocess_e6b_named_wav_default("hereditary_adaptation")
+}
+
+fn postprocess_hereditary_controls_wav_default() -> io::Result<()> {
+    postprocess_e6b_named_wav_default("hereditary_adaptation_controls")
+}
+
+fn postprocess_hereditary_candidates_wav_default() -> io::Result<()> {
+    postprocess_named_wav_default(
+        "hereditary_adaptation_candidates",
+        AUDIO_INTEGRATION_FADE_SEC,
+    )
+}
+
+fn rewrite_manifest_only_for_stem(wav_stem: &str) -> io::Result<()> {
+    let (wav_path, rhai_path, manifest_path) = resolve_audio_postprocess_paths(wav_stem);
     let windows = parse_rhai_scene_windows(&rhai_path)?;
-    rewrite_audio_manifest(&manifest_path, "10_exp1_polyphony.wav", &windows)?;
+    let wav_name = format!("{wav_stem}.wav");
+    rewrite_audio_manifest(&manifest_path, &wav_name, &windows)?;
     eprintln!(
-        "updated manifest for 10_exp1_polyphony.wav: {} segments",
+        "updated manifest for {wav_name}: {} segments",
         windows.len()
     );
     let _ = wav_path;
     Ok(())
+}
+
+fn postprocess_polyphony_wav_default() -> io::Result<()> {
+    rewrite_manifest_only_for_stem("self_organized_polyphony")
+}
+
+fn postprocess_polyphony_no_hill_wav_default() -> io::Result<()> {
+    rewrite_manifest_only_for_stem("self_organized_polyphony_no_hill")
 }
 
 fn run_audio_e2_jobs_parallel(
@@ -37342,12 +37395,13 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         (E2_SEEDS[10], E2Condition::NoHillClimb, "seed10_nohill"),
         (E2_SEEDS[10], E2Condition::NoCrowding, "seed10_norep"),
     ];
-    let e2_polyphony_segment_indices: &[usize] = &[0, 1, 3, 4];
+    let e2_local_search_segment_indices: &[usize] = &[0, 3];
+    let e2_no_hill_segment_indices: &[usize] = &[1, 4];
 
     eprintln!("  [audio-rhai] Running E2 simulations...");
     let e2_runs = run_audio_e2_jobs_parallel(e2_segments, &space, anchor_hz, phase_mode);
 
-    // ── 10_exp1_polyphony.rhai ──
+    // ── self_organized_polyphony.rhai ──
     {
         let polyphony_max_steps =
             ((AUDIO_E2_POLYPHONY_TARGET_SEGMENT_SEC - AUDIO_E2_AGENT_RELEASE_SEC) / AUDIO_STEP_SEC)
@@ -37358,10 +37412,9 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
              // Phase switch at step {} (dissonance -> consonance)\n\
              // audio replay downsampled to at most {} updates per segment (~{:.1}s each)\n\
              //\n\
-             // 4 segments: 2 conditions x 2 seeds\n\
-             //   local-search / no-hill for seed 0 and seed 10\n\
-             //   E2_SEEDS[0]  = 0x{:X} = {}\n\
-             //   E2_SEEDS[10] = 0x{:X} = {}",
+             // 2 segments: local-search, seed 0 and seed 10\n\
+             //   shared seed list index 0  = 0x{:X} = {}\n\
+             //   shared seed list index 10 = 0x{:X} = {}",
             AUDIO_N_SELECT_E2,
             E2_N_AGENTS,
             anchor_hz,
@@ -37376,29 +37429,88 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             E2_SEEDS[10],
         );
         let mut rhai = rhai_replay_header(
-            "10_exp1_polyphony.rhai -- E2: Baseline vs no-hill replay",
+            "self_organized_polyphony.rhai -- Self-organized polyphony replay",
             &detail,
         );
-        for (scene_idx, &seg_idx) in e2_polyphony_segment_indices.iter().enumerate() {
-            let (_, _, label) = e2_segments[seg_idx];
-            let scene = format!("s{}_replay_{label}", scene_idx + 1);
+        for (scene_idx, &seg_idx) in e2_local_search_segment_indices.iter().enumerate() {
+            let scene = match seg_idx {
+                0 => "local_search_seed0",
+                3 => "local_search_seed10",
+                _ => unreachable!("unexpected polyphony audio segment index"),
+            };
             let trajectory = downsample_e2_trajectory_for_audio(
                 &e2_runs[seg_idx].trajectory_semitones,
                 polyphony_max_steps,
             );
             rhai.push_str(&rhai_e2_segment(
-                &scene,
+                scene,
                 &trajectory,
                 anchor_hz,
                 &e2_selected,
                 Some(e2_runs[seg_idx].fixed_drone_hz),
                 AUDIO_STEP_SEC,
             ));
-            if scene_idx + 1 < e2_polyphony_segment_indices.len() {
+            if scene_idx + 1 < e2_local_search_segment_indices.len() {
                 rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
             }
         }
-        write_with_log(out_dir.join("10_exp1_polyphony.rhai"), rhai)?;
+        write_with_log(out_dir.join("self_organized_polyphony.rhai"), rhai)?;
+    }
+
+    // ── self_organized_polyphony_no_hill.rhai ──
+    {
+        let polyphony_max_steps =
+            ((AUDIO_E2_POLYPHONY_TARGET_SEGMENT_SEC - AUDIO_E2_AGENT_RELEASE_SEC) / AUDIO_STEP_SEC)
+                .floor()
+                .max(2.0) as usize;
+        let detail = format!(
+            "// {} adaptive agents (selected from {}) + 1 fixed drone at {:.1} Hz, {} sweeps, step={} st\n\
+             // Phase switch at step {} (dissonance -> consonance)\n\
+             // audio replay downsampled to at most {} updates per segment (~{:.1}s each)\n\
+             //\n\
+             // 2 segments: no-hill, seed 0 and seed 10\n\
+             //   shared seed list index 0  = 0x{:X} = {}\n\
+             //   shared seed list index 10 = 0x{:X} = {}",
+            AUDIO_N_SELECT_E2,
+            E2_N_AGENTS,
+            anchor_hz,
+            E2_SWEEPS,
+            E2_STEP_SEMITONES,
+            E2_PHASE_SWITCH_STEP,
+            polyphony_max_steps,
+            AUDIO_E2_POLYPHONY_TARGET_SEGMENT_SEC,
+            E2_SEEDS[0],
+            E2_SEEDS[0],
+            E2_SEEDS[10],
+            E2_SEEDS[10],
+        );
+        let mut rhai = rhai_replay_header(
+            "self_organized_polyphony_no_hill.rhai -- No-hill control replay",
+            &detail,
+        );
+        for (scene_idx, &seg_idx) in e2_no_hill_segment_indices.iter().enumerate() {
+            let scene = match seg_idx {
+                1 => "no_hill_seed0",
+                4 => "no_hill_seed10",
+                _ => unreachable!("unexpected no-hill audio segment index"),
+            };
+            let trajectory = downsample_e2_trajectory_for_audio(
+                &e2_runs[seg_idx].trajectory_semitones,
+                polyphony_max_steps,
+            );
+            rhai.push_str(&rhai_e2_segment(
+                scene,
+                &trajectory,
+                anchor_hz,
+                &e2_selected,
+                Some(e2_runs[seg_idx].fixed_drone_hz),
+                AUDIO_STEP_SEC,
+            ));
+            if scene_idx + 1 < e2_no_hill_segment_indices.len() {
+                rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
+            }
+        }
+        write_with_log(out_dir.join("self_organized_polyphony_no_hill.rhai"), rhai)?;
     }
 
     // ── E6b runs ──
@@ -37480,18 +37592,18 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
     }
     let e6b_results = run_audio_e6b_jobs_parallel(e6b_jobs);
 
-    // ── 40_e6b_polyphony.rhai ──
+    // ── hereditary_adaptation.rhai ──
     {
         let detail = format!(
-            "// per-life replay from the {}-agent E6b hereditary polyphony assay,\n\
+            "// per-life replay from the {}-agent hereditary adaptation assay,\n\
              // tail {} snapshots per segment, snapshot_interval={} steps, replay_step_sec={:.3}\n\
              // each life uses harmonic ADSR atk={:.2}s dec={:.2}s sus={:.2} rel={:.2}s\n\
              //\n\
-             // 8 segments: heredity/random x selection on/off, 2 seeds (index 0 and 10)\n\
-             // current E6b regime: adult pitch locked, juvenile settlement on,\n\
+             // 4 segments: heredity + selection and heredity only, seeds 0 and 10\n\
+             // current regime: adult pitch locked, juvenile settlement on,\n\
              // family-biased respawn with local azimuth search\n\
-             //   E6B_SEEDS[0]  = {}\n\
-             //   E6B_SEEDS[10] = {}",
+             //   shared seed list index 0  = {}\n\
+             //   shared seed list index 10 = {}",
             E6B_DEFAULT_POP_SIZE,
             AUDIO_E6_TAIL_SNAPSHOTS,
             E6B_SNAPSHOT_INTERVAL,
@@ -37504,16 +37616,82 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             e6b_seed_b,
         );
         let mut rhai = rhai_replay_header(
-            "40_e6b_polyphony.rhai -- E6b: Hereditary polyphony replay",
+            "hereditary_adaptation.rhai -- Hereditary adaptation replay",
             &detail,
         );
         let e6b_order = [
             "seed0_heredity_sel",
             "seed0_heredity_nosel",
-            "seed0_random_sel",
-            "seed0_random_nosel",
             "seed10_heredity_sel",
             "seed10_heredity_nosel",
+        ];
+        for (i, label) in e6b_order.iter().enumerate() {
+            let (_, result) = e6b_results
+                .iter()
+                .find(|(candidate, _)| candidate == label)
+                .unwrap_or_else(|| panic!("missing E6b audio result for label {label}"));
+            let snaps = &result.snapshots;
+            let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
+            let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
+            let scene = match *label {
+                "seed0_heredity_sel" => "heredity_selection_seed0",
+                "seed0_heredity_nosel" => "heredity_only_seed0",
+                "seed0_random_sel" => "selection_only_seed0",
+                "seed0_random_nosel" => "neither_seed0",
+                "seed10_heredity_sel" => "heredity_selection_seed10",
+                "seed10_heredity_nosel" => "heredity_only_seed10",
+                "seed10_random_sel" => "selection_only_seed10",
+                "seed10_random_nosel" => "neither_seed10",
+                _ => unreachable!("unexpected hereditary audio label"),
+            };
+            let amp_scale = if label.ends_with("heredity_sel") {
+                AUDIO_E6_HS_GAIN
+            } else {
+                1.0
+            };
+            rhai.push_str(&rhai_e6_segment_with_gain(
+                scene,
+                &tail,
+                AUDIO_E6_STEP_SEC,
+                None,
+                amp_scale,
+            ));
+            if i + 1 < e6b_order.len() {
+                rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
+            }
+        }
+        write_with_log(out_dir.join("hereditary_adaptation.rhai"), rhai)?;
+    }
+
+    // ── hereditary_adaptation_controls.rhai ──
+    {
+        let detail = format!(
+            "// per-life replay from the {}-agent hereditary adaptation assay,\n\
+             // tail {} snapshots per segment, snapshot_interval={} steps, replay_step_sec={:.3}\n\
+             // each life uses harmonic ADSR atk={:.2}s dec={:.2}s sus={:.2} rel={:.2}s\n\
+             //\n\
+             // 4 segments: selection only and neither, seeds 0 and 10\n\
+             // matched log-random respawn baseline\n\
+             //   shared seed list index 0  = {}\n\
+             //   shared seed list index 10 = {}",
+            E6B_DEFAULT_POP_SIZE,
+            AUDIO_E6_TAIL_SNAPSHOTS,
+            E6B_SNAPSHOT_INTERVAL,
+            AUDIO_E6_STEP_SEC,
+            AUDIO_E6_AGENT_ATTACK_SEC,
+            AUDIO_E6_AGENT_DECAY_SEC,
+            AUDIO_E6_AGENT_SUSTAIN_LEVEL,
+            AUDIO_E6_AGENT_RELEASE_SEC,
+            e6b_seed_a,
+            e6b_seed_b,
+        );
+        let mut rhai = rhai_replay_header(
+            "hereditary_adaptation_controls.rhai -- Hereditary adaptation controls",
+            &detail,
+        );
+        let e6b_order = [
+            "seed0_random_sel",
+            "seed0_random_nosel",
             "seed10_random_sel",
             "seed10_random_nosel",
         ];
@@ -37525,24 +37703,19 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             let snaps = &result.snapshots;
             let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
             let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
-            let scene = format!("s{}_{label}", i + 1);
-            let amp_scale = if label.ends_with("heredity_sel") {
-                AUDIO_E6_HS_GAIN
-            } else {
-                1.0
+            let scene = match *label {
+                "seed0_random_sel" => "selection_only_seed0",
+                "seed0_random_nosel" => "neither_seed0",
+                "seed10_random_sel" => "selection_only_seed10",
+                "seed10_random_nosel" => "neither_seed10",
+                _ => unreachable!("unexpected hereditary control label"),
             };
-            rhai.push_str(&rhai_e6_segment_with_gain(
-                &scene,
-                &tail,
-                AUDIO_E6_STEP_SEC,
-                None,
-                amp_scale,
-            ));
+            rhai.push_str(&rhai_e6_segment(scene, &tail, AUDIO_E6_STEP_SEC, None));
             if i + 1 < e6b_order.len() {
                 rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
             }
         }
-        write_with_log(out_dir.join("40_e6b_polyphony.rhai"), rhai)?;
+        write_with_log(out_dir.join("hereditary_adaptation_controls.rhai"), rhai)?;
     }
 
     let quicklisten_pre_steps =
@@ -37562,33 +37735,19 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         quicklisten_end,
     );
 
-    // ── 00_quicklisten_showcase.rhai ──
-    // 2 segments: Exp. 1 local-search and Exp. 4 H+S, seed 0
+    // ── showcase.rhai ──
+    // 2 segments: hereditary + selection and local search
     {
         let detail = format!(
-            "// 2 showcase segments; Exp. 1 is cropped to {:.1}s before and {:.1}s after the phase switch,\n\
-             // and Exp. 4 uses per-life harmonic ADSR voices plus a fixed 220 Hz sine anchor:\n\
-             //   1. Exp. 1 local-search (seed 0) -- hill-climbing + crowding around the phase switch\n\
-             //   2. Exp. 4 H+S         (seed 0) -- family-biased respawn + local azimuth search",
+            "// 2 showcase segments; self-organized polyphony is cropped to {:.1}s before and {:.1}s after the phase switch,\n\
+             // and hereditary adaptation uses per-life harmonic ADSR voices plus a fixed 220 Hz sine anchor:\n\
+             //   1. Heredity + selection (seed 0) -- family-biased respawn + local azimuth search\n\
+             //   2. Local search (seed 0) -- hill-climbing + crowding around the phase switch",
             AUDIO_QUICKLISTEN_E2_PRE_SWITCH_SEC, AUDIO_QUICKLISTEN_E2_POST_SWITCH_SEC,
         );
-        let mut rhai = rhai_replay_header(
-            "00_quicklisten_showcase.rhai -- Showcase montage (replay)",
-            &detail,
-        );
+        let mut rhai = rhai_replay_header("showcase.rhai -- Showcase montage", &detail);
 
-        // Segment 1: E2 baseline seed0 (index 0)
-        rhai.push_str(&rhai_e2_segment(
-            "qls1_exp1_local_search",
-            &e2_baseline_quicklisten,
-            anchor_hz,
-            &e2_selected,
-            Some(e2_runs[0].fixed_drone_hz),
-            AUDIO_STEP_SEC,
-        ));
-        rhai.push_str(&format!("wait({AUDIO_QUICKLISTEN_GAP_SEC:.1});\n\n"));
-
-        // Segment 2: E6b heredity + selection, seed 0
+        // Segment 1: hereditary + selection, seed 0
         let e6b_sel_hered_seed0 = &e6b_results
             .iter()
             .find(|(label, _)| label == "seed0_heredity_sel")
@@ -37598,42 +37757,39 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
         let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
         rhai.push_str(&rhai_e6_segment_with_gain(
-            "qls2_exp4_hs",
+            "showcase_heredity_selection",
             &tail,
             AUDIO_E6_STEP_SEC,
             None,
             AUDIO_E6_HS_GAIN,
         ));
-        write_with_log(out_dir.join("00_quicklisten_showcase.rhai"), rhai)?;
-    }
-
-    // ── 01_quicklisten_controls.rhai ──
-    // 2 segments: Exp. 1 no-hill and Exp. 4 neither, seed 0
-    {
-        let detail = format!(
-            "// 2 control segments; Exp. 1 is cropped to {:.1}s before and {:.1}s after the phase switch,\n\
-             // and Exp. 4 uses per-life harmonic ADSR voices plus a fixed 220 Hz sine anchor:\n\
-             //   1. Exp. 1 no-hill (seed 0) -- crowding only around the phase switch\n\
-             //   2. Exp. 4 neither (seed 0) -- matched random respawn, no selection",
-            AUDIO_QUICKLISTEN_E2_PRE_SWITCH_SEC, AUDIO_QUICKLISTEN_E2_POST_SWITCH_SEC,
-        );
-        let mut rhai = rhai_replay_header(
-            "01_quicklisten_controls.rhai -- Control montage (replay)",
-            &detail,
-        );
-
-        // Segment 3: E2 nohill seed0 (index 1)
-        rhai.push_str(&rhai_e2_segment(
-            "qlc1_exp1_nohill",
-            &e2_nohill_quicklisten,
-            anchor_hz,
-            &e2_selected,
-            Some(e2_runs[1].fixed_drone_hz),
-            AUDIO_STEP_SEC,
-        ));
         rhai.push_str(&format!("wait({AUDIO_QUICKLISTEN_GAP_SEC:.1});\n\n"));
 
-        // Segment 4: E6b random + no selection, seed 0
+        // Segment 2: local search, seed 0
+        rhai.push_str(&rhai_e2_segment(
+            "showcase_local_search",
+            &e2_baseline_quicklisten,
+            anchor_hz,
+            &e2_selected,
+            Some(e2_runs[0].fixed_drone_hz),
+            AUDIO_STEP_SEC,
+        ));
+        write_with_log(out_dir.join("showcase.rhai"), rhai)?;
+    }
+
+    // ── controls.rhai ──
+    // 2 segments: neither and no-hill
+    {
+        let detail = format!(
+            "// 2 control segments; self-organized polyphony is cropped to {:.1}s before and {:.1}s after the phase switch,\n\
+             // and hereditary adaptation uses per-life harmonic ADSR voices plus a fixed 220 Hz sine anchor:\n\
+             //   1. Neither (seed 0) -- matched random respawn, no selection\n\
+             //   2. No hill-climb (seed 0) -- crowding only around the phase switch",
+            AUDIO_QUICKLISTEN_E2_PRE_SWITCH_SEC, AUDIO_QUICKLISTEN_E2_POST_SWITCH_SEC,
+        );
+        let mut rhai = rhai_replay_header("controls.rhai -- Control montage", &detail);
+
+        // Segment 1: random + no selection, seed 0
         let e6b_random_nosel_seed0 = &e6b_results
             .iter()
             .find(|(label, _)| label == "seed0_random_nosel")
@@ -37643,13 +37799,102 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
         let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
         rhai.push_str(&rhai_e6_segment(
-            "qlc2_exp4_neither",
+            "controls_neither",
             &tail,
             AUDIO_E6_STEP_SEC,
             None,
         ));
+        rhai.push_str(&format!("wait({AUDIO_QUICKLISTEN_GAP_SEC:.1});\n\n"));
 
-        write_with_log(out_dir.join("01_quicklisten_controls.rhai"), rhai)?;
+        // Segment 2: no-hill, seed 0
+        rhai.push_str(&rhai_e2_segment(
+            "controls_no_hill",
+            &e2_nohill_quicklisten,
+            anchor_hz,
+            &e2_selected,
+            Some(e2_runs[1].fixed_drone_hz),
+            AUDIO_STEP_SEC,
+        ));
+
+        write_with_log(out_dir.join("controls.rhai"), rhai)?;
+    }
+
+    // ── hereditary_adaptation_candidates.rhai ──
+    // 4 candidate H+S seeds for listening-based showcase selection.
+    {
+        let candidate_seeds = [E6B_SEEDS[0], E6B_SEEDS[1], E6B_SEEDS[2], E6B_SEEDS[3]];
+        let mut jobs: Vec<(String, E6bRunConfig)> = Vec::new();
+        for (idx, &seed) in candidate_seeds.iter().enumerate() {
+            jobs.push((
+                format!("candidate_seed{}", idx),
+                E6bRunConfig {
+                    seed,
+                    steps_cap: E6B_STEPS_CAP,
+                    min_deaths: E6B_MIN_DEATHS,
+                    pop_size: E6B_DEFAULT_POP_SIZE,
+                    first_k: E6B_FIRST_K,
+                    condition: E6Condition::Heredity,
+                    snapshot_interval: E6B_SNAPSHOT_INTERVAL,
+                    selection_enabled: true,
+                    shuffle_landscape: false,
+                    polyphonic_crowding_weight_override: None,
+                    polyphonic_overcapacity_weight_override: None,
+                    polyphonic_capacity_radius_cents_override: None,
+                    polyphonic_capacity_free_voices_override: None,
+                    polyphonic_parent_share_weight_override: None,
+                    polyphonic_parent_energy_weight_override: None,
+                    juvenile_contextual_tuning_ticks_override: None,
+                    juvenile_contextual_settlement_enabled_override: None,
+                    survival_score_low_override: None,
+                    survival_score_high_override: None,
+                    survival_recharge_per_sec_override: None,
+                    background_death_rate_per_sec_override: None,
+                    respawn_parent_prior_mix_override: None,
+                    respawn_same_band_discount_override: None,
+                    respawn_octave_discount_override: None,
+                    parent_proposal_kind_override: None,
+                    parent_proposal_sigma_st_override: None,
+                    parent_proposal_unison_notch_gain_override: None,
+                    parent_proposal_unison_notch_sigma_st_override: None,
+                    parent_proposal_candidate_count_override: None,
+                    azimuth_mode_override: None,
+                    random_baseline_mode: E6bRandomBaselineMode::LogRandomFiltered,
+                },
+            ));
+        }
+        let candidate_results = run_audio_e6b_jobs_parallel(jobs);
+        let detail = format!(
+            "// 4 hereditary-adaptation seed candidates for showcase selection.\n\
+             // all segments are heredity + selection, rendered from the tail of the current assay.\n\
+             // shared seed list indices 0..3 = {}, {}, {}, {}",
+            candidate_seeds[0], candidate_seeds[1], candidate_seeds[2], candidate_seeds[3],
+        );
+        let mut rhai = rhai_replay_header(
+            "hereditary_adaptation_candidates.rhai -- Heredity + selection seed candidates",
+            &detail,
+        );
+        for idx in 0..candidate_seeds.len() {
+            let label = format!("candidate_seed{}", idx);
+            let (_, result) = candidate_results
+                .iter()
+                .find(|(candidate, _)| candidate == &label)
+                .unwrap_or_else(|| panic!("missing candidate result for label {label}"));
+            let snaps = &result.snapshots;
+            let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
+            let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
+            let scene = format!("candidate_seed{}", idx);
+            rhai.push_str(&rhai_e6_segment_with_gain(
+                &scene,
+                &tail,
+                AUDIO_E6_STEP_SEC,
+                None,
+                AUDIO_E6_HS_GAIN,
+            ));
+            if idx + 1 < candidate_seeds.len() {
+                rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
+            }
+        }
+        write_with_log(out_dir.join("hereditary_adaptation_candidates.rhai"), rhai)?;
     }
 
     eprintln!("Audio replay Rhai scripts written to supplementary_audio/scenarios/");
