@@ -10,7 +10,7 @@ Paper, generated data, audio supplement, and experiment code.
 
 ## Abstract
 
-Conchordal is a bio-acoustic instrument for generative composition whose sonic agents are governed by artificial life dynamics within a psychoacoustic fitness landscape defined in log-frequency space. Four experiments demonstrate self-organised polyphony, consonance-driven selection, consonance-gated entrainment, and hereditary pitch adaptation.
+Conchordal is a bio-acoustic instrument for generative composition whose sonic agents are governed by artificial life dynamics within a psychoacoustic fitness landscape defined in log-frequency space. Four experiments demonstrate consonance search, consonance-driven selection, hereditary adaptation, and temporal scaffolding.
 
 ## Repository structure
 
@@ -60,9 +60,10 @@ justfile                  Build recipes
 just all
 ```
 
-This runs all experiments (release build), converts SVG plots to PDF, and builds `main.pdf`.
-Generated figures, CSVs, and summary tables are written under `experiments/plots/`.
-Audio tracks are written under `supplementary_audio/audio/`.
+This runs the paper-facing experiments (release build), converts SVG plots to
+PDF, and builds `main.pdf`.
+Generated figures, CSVs, and summary tables are written under
+`experiments/plots/`.
 
 ### Step by step
 
@@ -77,10 +78,27 @@ just svg2pdf
 just latex
 ```
 
+Additional outputs:
+
+```bash
+# Build supplementary PDF
+pdflatex supplementary.tex
+
+# Regenerate the audio supplement
+target/release/paper --audio-rhai
+bash supplementary_audio/render.sh
+target/release/paper --e3-audio
+target/release/paper --postprocess-quicklisten
+target/release/paper --postprocess-e6b
+```
+
+For the audio pipeline and track inventory, see
+[supplementary_audio/README.md](supplementary_audio/README.md).
+
 ### Individual experiments
 
 ```bash
-just paper --exp e2          # Self-Organised Polyphony only
+just paper --exp e2          # Consonance Search only
 just paper --exp e1,e3       # Multiple experiments
 just paper --clean --exp e2  # Clean plots directory first
 ```

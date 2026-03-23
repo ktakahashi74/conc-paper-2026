@@ -36,7 +36,7 @@ There are two rendering paths.
 - Scenario-based renders:
   - `showcase.wav`
   - `controls.wav`
-  - `self_organized_polyphony*.wav`
+  - `self_organized_polyphony*.wav` (Consonance Search)
   - `hereditary_adaptation*.wav`
 - Direct renderer outputs:
   - `temporal_scaffold_*.wav`

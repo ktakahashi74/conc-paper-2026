@@ -19,7 +19,7 @@ let agent_spec = derive(harmonic)
     .modes(harmonic_modes().count(6))
     .brightness(0.200)
     .sustain_drive(0.001)
-    .pitch_smooth(0.01)
+    .pitch_smooth(0.12)
     .adsr(0.300, 0.350, 0.500, 0.800);
 
 scene("local_search_seed0", || {

@@ -1,4 +1,4 @@
-Consonance-Only vs Curriculum Control (Experiment 1, baseline condition)
+Consonance-Only vs Curriculum Control (Consonance Search, baseline condition)
 ======================================================================
 n_seeds = 20
 

@@ -1,4 +1,4 @@
-Terrain Controls: Baseline vs H/R Misalignment (Experiment 1, E2)
+Terrain Controls: Baseline vs H/R Misalignment (Consonance Search)
 =================================================================
 n_seeds = 20
 bins_per_cent = 0.3333

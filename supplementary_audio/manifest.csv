@@ -1,12 +1,12 @@
 file,segment_index,segment_label,condition,seed,start_sec,end_sec,assay,track_group
-showcase.wav,1,heredity_selection,heredity+selection,3870294017,0.0,12.0,Hereditary Adaptation,quicklisten
-showcase.wav,2,local_search_excerpt,local-search,12648430,14.0,22.0,Self-Organized Polyphony,quicklisten
-controls.wav,1,neither,neither,3870294017,0.0,12.0,Hereditary Adaptation,quicklisten
-controls.wav,2,no_hill_excerpt,no-hill,12648430,14.0,22.0,Self-Organized Polyphony,quicklisten
-self_organized_polyphony.wav,1,local_search_seed0,local-search,12648430,0.0,8.0,Self-Organized Polyphony,main
-self_organized_polyphony.wav,2,local_search_seed10,local-search,252645135,8.2,16.2,Self-Organized Polyphony,main
-self_organized_polyphony_no_hill.wav,1,no_hill_seed0,no-hill,12648430,0.0,8.0,Self-Organized Polyphony,main
-self_organized_polyphony_no_hill.wav,2,no_hill_seed10,no-hill,252645135,8.2,16.2,Self-Organized Polyphony,main
+showcase.wav,1,heredity_selection_seed1,heredity+selection,3870294018,0.0,12.0,Hereditary Adaptation,quicklisten
+showcase.wav,2,heredity_selection_seed2,heredity+selection,3870294019,13.4,25.4,Hereditary Adaptation,quicklisten
+controls.wav,1,neither_seed1,neither,3870294018,0.0,12.0,Hereditary Adaptation,quicklisten
+controls.wav,2,neither_seed2,neither,3870294019,13.4,25.4,Hereditary Adaptation,quicklisten
+self_organized_polyphony.wav,1,local_search_seed0,local-search,12648430,0.0,8.0,Consonance Search,main
+self_organized_polyphony.wav,2,local_search_seed10,local-search,252645135,8.2,16.2,Consonance Search,main
+self_organized_polyphony_no_hill.wav,1,no_search_seed0,no-search,12648430,0.0,8.0,Consonance Search,main
+self_organized_polyphony_no_hill.wav,2,no_search_seed10,no-search,252645135,8.2,16.2,Consonance Search,main
 hereditary_adaptation.wav,1,heredity_selection_seed0,heredity+selection,3870294017,0.0,12.0,Hereditary Adaptation,main
 hereditary_adaptation.wav,2,heredity_only_seed0,heredity-only,3870294017,13.4,25.4,Hereditary Adaptation,main
 hereditary_adaptation.wav,3,heredity_selection_seed10,heredity+selection,3870294027,26.9,38.9,Hereditary Adaptation,main

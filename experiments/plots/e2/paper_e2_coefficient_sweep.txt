@@ -1,4 +1,4 @@
-Coefficient Sweep (b × c) — Experiment 1, E2
+Coefficient Sweep (b × c) — Consonance Search
 =============================================
 a=1.0, d=0.0 fixed. Default: b=-1.35, c=1.0
 

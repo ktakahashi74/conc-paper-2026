@@ -1,4 +1,4 @@
-Shuffled-Landscape vs Baseline Control (Experiment 1, E2 condition)
+Shuffled-Landscape vs Baseline Control (Consonance Search)
 ===================================================================
 n_seeds = 20
 

@@ -1,4 +1,4 @@
-// temporal_scaffold_off.rhai — Temporal scaffold assay
+// 30_e3_off.rhai — Temporal scaffold assay
 // AUTO-GENERATED — DO NOT EDIT
 // 48 agents, 2.0 Hz canonical beat, condition=off
 // shared: continuous common scaffold
@@ -56,7 +56,7 @@ let s45 = derive(sine).brain("seq").pitch_mode("lock").amp(0.040).adsr(0.001, 0.
 let s46 = derive(sine).brain("seq").pitch_mode("lock").amp(0.040).adsr(0.001, 0.024, 0.0, 0.002);
 let s47 = derive(sine).brain("seq").pitch_mode("lock").amp(0.040).adsr(0.001, 0.024, 0.0, 0.002);
 
-scene("temporal_scaffold_off", || {
+scene("e3_off", || {
     let g0 = create(s16, 1).freq(293.44); flush();
     wait(0.0080);
     let g1 = create(s11, 1).freq(766.61); flush();

@@ -41,7 +41,7 @@
 
 <h1>Audio Supplement — Conchordal</h1>
 <p class="subtitle">Qualitative audio demonstrations accompanying<br>
-"Conchordal: A Bio-Acoustic Artificial Life Instrument"</p>
+"Conchordal: Emergent Harmony via Direct Cognitive Coupling in a Psychoacoustic Landscape"</p>
 <p class="nav">
   <a href="https://github.com/ktakahashi74/conc-paper-2026/blob/main/supplementary_audio/README.md">Rendering README</a>
   <a href="https://github.com/ktakahashi74/conc-paper-2026/blob/main/experiments/README.md">Experiments README</a>
@@ -51,7 +51,7 @@
 </p>
 
 <section class="notes" style="margin-top:0; margin-bottom:1.5rem">
-  <p>The paper uses audio examples for <strong>Self-Organized Polyphony</strong>,
+  <p>The paper uses audio examples for <strong>Consonance Search</strong>,
      <strong>Hereditary Adaptation</strong>, and <strong>Temporal Scaffold</strong>.
      There is no standalone audio track for the selection-pressure assay, because that
      result is primarily about lifetime statistics rather than a stable replayable scene.</p>
@@ -60,41 +60,42 @@
 <div class="track">
   <h2>Quick Listen</h2>
   <p class="meta">two short orientation tracks &middot; strongest examples and matched controls</p>
-  <p><strong>Showcase</strong> pairs the clearest current hereditary example with a local-search excerpt
-     cropped to 2 s before and 6 s after the phase switch.</p>
+  <p><strong>Showcase</strong> contains two hereditary-adaptation replays under
+     heredity + selection, using seed 1 and seed 2.</p>
   <ol class="segments">
-    <li><strong>Heredity + selection</strong> &mdash; family-biased respawn plus local azimuth search</li>
-    <li><strong>Local search</strong> &mdash; hill-climbing plus crowding around the phase switch</li>
+    <li><strong>Heredity + selection</strong> &mdash; seed 1</li>
+    <li><strong>Heredity + selection</strong> &mdash; seed 2</li>
   </ol>
   <audio controls preload="none">
-    <source src="audio/showcase.wav?v=20260323-16" type="audio/wav">
+    <source src="audio/showcase.wav?v=20260323-17" type="audio/wav">
   </audio>
-  <p style="margin-top:0.9rem"><strong>Controls</strong> mirrors the same two assays with matched ablations:</p>
+  <p style="margin-top:0.9rem"><strong>Controls</strong> contains the matched random, no-selection
+     condition for the same two seeds.</p>
   <ol class="segments">
-    <li><strong>Neither</strong> &mdash; matched random respawn, no selection</li>
-    <li><strong>No hill-climb</strong> &mdash; crowding only, no local hill-climb</li>
+    <li><strong>Neither</strong> &mdash; seed 1</li>
+    <li><strong>Neither</strong> &mdash; seed 2</li>
   </ol>
   <audio controls preload="none">
-    <source src="audio/controls.wav?v=20260323-16" type="audio/wav">
+    <source src="audio/controls.wav?v=20260323-17" type="audio/wav">
   </audio>
 </div>
 
 <div class="track">
-  <h2>Self-Organized Polyphony</h2>
-  <p class="meta">two companion tracks &middot; local-search seeds and no-hill controls</p>
+  <h2>Consonance Search</h2>
+  <p class="meta">two companion tracks &middot; local-search seeds and no-search controls</p>
   <p>Each track contains two seeds (0 and 10). Each segment is about 8 s.</p>
   <table>
     <tr><th>Condition</th><th>landscape_weight</th><th>repulsion</th></tr>
     <tr><td>local-search</td><td>1.0</td><td>0.15 @ 72 cents</td></tr>
-    <tr><td>no-hill</td><td>0.0</td><td>0.15 @ 72 cents</td></tr>
+    <tr><td>no-search</td><td>0.0</td><td>0.15 @ 72 cents</td></tr>
   </table>
-  <p>Local search preserves the hill-climb plus crowding regime; no-hill removes
+  <p>Local search preserves the hill-climb plus crowding regime; no-search removes
      local search while keeping the same crowding field and seed schedule.</p>
   <p><strong>Adaptive condition</strong> &mdash; local-search across seed 0 and seed 10:</p>
   <audio controls preload="none">
     <source src="audio/self_organized_polyphony.wav?v=20260323-16" type="audio/wav">
   </audio>
-  <p style="margin-top:0.75rem"><strong>Control</strong> &mdash; no-hill across seed 0 and seed 10:</p>
+  <p style="margin-top:0.75rem"><strong>Control</strong> &mdash; no-search across seed 0 and seed 10:</p>
   <audio controls preload="none">
     <source src="audio/self_organized_polyphony_no_hill.wav?v=20260323-16" type="audio/wav">
   </audio>
@@ -154,7 +155,7 @@
 <section class="notes">
   <h2>Methodology</h2>
   <p>Seeds are taken by ordinal index from the paper's shared seed lists &mdash; no cherry-picking.
-     The orientation clips and the self-organized polyphony / hereditary adaptation replays are
+     The orientation clips and the consonance-search / hereditary-adaptation replays are
      rendered from generated scenario scripts; the temporal scaffold monitor is rendered directly
      by the paper tool. All outputs are mono WAV at 48 kHz with no added reverb or mastering.</p>
   <p>These audio demonstrations are <strong>qualitative support only</strong>. Quantitative claims

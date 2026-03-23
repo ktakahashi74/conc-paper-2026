@@ -32,7 +32,7 @@ IDs (`E1`...`E7`) for continuity.
 
 | Paper-facing assay | Main figure | Internal ID(s) | Notes |
 |--------------------|-------------|----------------|-------|
-| Self-Organized Polyphony | Fig. 2 | `E1`, `E2` | landscape attractors and local-search polyphony |
+| Consonance Search | Fig. 2 | `E1`, `E2` | landscape attractors and local-search pitch organization |
 | Consonance as Selection Pressure | Fig. 3 | `E3` | metabolic selection assay |
 | Hereditary Adaptation | Fig. 4 | `E6b` | current paper-facing hereditary assay |
 | Temporal Scaffold | Fig. 5 | `E7` | timing scaffold assay |
@@ -75,9 +75,9 @@ The current paper-facing figure mapping is:
 
 | Figure | Assay name | Output directory | Files to inspect first |
 |--------|------------|------------------|------------------------|
-| Fig. 2 | Self-Organized Polyphony | `plots/e2/` | `paper_e2_figure_e2_1.pdf`, `paper_e2_figure_e2_2.pdf`, `paper_e2_summary.csv` |
-| Fig. 3 | Consonance as Selection Pressure | `plots/e3/` | `paper_e3_figure4.pdf`, `paper_e3_lifetimes.csv` |
-| Fig. 4 | Hereditary Adaptation | `plots/e6b/` | `paper_e6b_figure.pdf`, `paper_e6b_summary.txt`, `paper_e6b_endpoint_metrics.csv` |
+| Fig. 2 | Consonance Search | `plots/e2/` | `paper_e2_figure_e2_1.pdf`, `paper_e2_figure_e2_2.pdf`, `paper_e2_summary.csv` |
+| Fig. 3 | Consonance as Selection Pressure | `plots/e3/` | `paper_e3_figure4.pdf`, `paper_e3_summary_by_seed.csv`, `paper_e3_seed_level_stats.txt` |
+| Fig. 4 | Hereditary Adaptation | `plots/e6b/` | `paper_e6b_figure.pdf`, `paper_e6b_endpoint_metrics.csv`, `paper_e6b_timeseries.csv` |
 | Fig. 5 | Temporal Scaffold | `plots/e7/` | `paper_e7_figure.pdf`, `paper_e7_summary.csv` |
 
 Common file types:
