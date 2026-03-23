@@ -5,8 +5,8 @@ Paper, generated data, audio supplement, and experiment code.
 ## Quick Start
 
 - **[Supplementary PDF](supplementary.pdf)** — extended methods, ablations, and tables
-- **[Audio Supplement](supplementary_audio/index.html)** — browser-based listening examples with track notes and links back to the paper and data
-- **[Experiments](experiments/README.md)** — experiment-code overview, data layout, and reproduction commands
+- **[Audio Supplement](https://ktakahashi74.github.io/conc-paper/supplementary_audio/)** — browser-based listening examples with track notes and links back to the paper and data
+- **[Experiments and Code](experiments/README.md)** — experiment-code overview, data layout, and reproduction commands
 
 ## Abstract
 
@@ -36,7 +36,7 @@ justfile                  Build recipes
 ## Navigation
 
 - For paper-facing methods and ablations, start from [supplementary.pdf](supplementary.pdf).
-- For listening, start from [supplementary_audio/index.html](supplementary_audio/index.html).
+- For listening, start from [the Audio Supplement page](https://ktakahashi74.github.io/conc-paper/supplementary_audio/).
 - For code, generated data, and exact run commands, start from [experiments/README.md](experiments/README.md).
 
 ## Dependencies

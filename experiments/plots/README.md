@@ -9,7 +9,7 @@ Quick links:
 - [Top-level README](../../README.md)
 - [Experiments README](../README.md)
 - [Supplementary PDF](../../supplementary.pdf)
-- [Audio Supplement Page](../../supplementary_audio/index.html)
+- [Audio Supplement Page](https://ktakahashi74.github.io/conc-paper/supplementary_audio/)
 
 Use this page as a file index. For the overall code layout, run commands, and
 paper-facing assay mapping, start from [../README.md](../README.md).
