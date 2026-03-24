@@ -3,7 +3,7 @@
 This README is for regenerating the audio supplement. If you want to listen
 first, start from the public-facing page:
 
-- [Audio Supplement Page](https://ktakahashi74.github.io/conc-paper-2026/supplementary_audio/)
+- [Audio Supplement Page](./)
 - [Supplementary PDF](../supplementary.pdf)
 - [Experiments README](../experiments/README.md)
 - [Top-level README](../README.md)
