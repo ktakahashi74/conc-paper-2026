@@ -187,12 +187,35 @@
 
 <section class="notes">
   <h2>Methodology</h2>
-  <p>Rendering uses Conchordal 0.3.0 for the final audio generation, while landscape scoring and part of the agent mechanics are also implemented from the parent Conchordal codebase. The experiment-specific logic for this paper is implemented in this repository, and related findings will be fed back into subsequent Conchordal releases.</p>
+  <p>Rendering provenance for this page:</p>
+  <table>
+    <tr><th>Track</th><th>Method</th><th>Command path</th></tr>
+    <tr>
+      <td>showcase.wav<br>controls.wav</td>
+      <td>conchordal-render</td>
+      <td><code>paper --audio-rhai</code> + generated Rhai + <code>conchordal-render</code></td>
+    </tr>
+    <tr>
+      <td>self_organized_polyphony.wav<br>self_organized_polyphony_no_hill.wav</td>
+      <td>conchordal-render</td>
+      <td><code>paper --audio-rhai</code> + generated Rhai + <code>conchordal-render</code></td>
+    </tr>
+    <tr>
+      <td>hereditary_adaptation.wav<br>hereditary_adaptation_controls.wav</td>
+      <td>conchordal-render</td>
+      <td><code>paper --audio-rhai</code> + generated Rhai + <code>conchordal-render</code></td>
+    </tr>
+    <tr>
+      <td>temporal_scaffold_shared.wav<br>temporal_scaffold_scrambled.wav<br>temporal_scaffold_off.wav</td>
+      <td>Paper internal synthesis</td>
+      <td><code>paper --e3-audio</code> &rarr; <code>sim::render_e3_audio</code> (direct)</td>
+    </tr>
+  </table>
+  <p>In short: all public listening tracks are renderer-based except the three temporal-scaffold files above, which are rendered directly through the paper binary for reproducibility with the E3 monitor implementation.</p>
+  <p>Landscape scoring and part of the agent mechanics come from the parent Conchordal codebase; the assay-specific experiment logic is implemented in this repository, and its findings will be fed back into later Conchordal releases.</p>
   <p>Post-process behavior is track-specific: quicklistening and hereditary tracks use fixed segment fades (1.0 s and 0.2 s respectively), while polyphony tracks only rewrite metadata for segmentation and are rendered without segment-level fades.</p>
   <p>Seeds are taken by ordinal index from the paper's shared seed lists &mdash; no cherry-picking.
-     The orientation clips and the Consonance Search / Hereditary Adaptation evidence tracks are
-     rendered from generated scenario scripts; the Temporal Scaffold monitor is rendered directly
-     by the paper tool. All outputs are mono WAV at 48 kHz with no added reverb or mastering.</p>
+     All outputs are mono WAV at 48 kHz with no added reverb or mastering.</p>
   <p>Timbral settings differ by assay. Orientation, Consonance Search, and Hereditary Adaptation use the same harmonic timbre
      (6 partials, per-note ADSR 0.080/0.450/0.500/0.450, matching brightness and pitch-smooth settings). Temporal Scaffold
      uses sine one-shot pulses (48 independent voices, per-note ADSR 0.001/0.024/0.000/0.002).</p>
