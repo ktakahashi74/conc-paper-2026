@@ -9,6 +9,7 @@ Quick links:
 - [Experiments, Code, and Data](../README.md)
 - [Supplementary PDF](../../supplementary.pdf)
 - [Audio Supplement Page](https://ktakahashi74.github.io/conc-paper-2026/supplementary_audio/)
+- [Supplementary Audio README](../../supplementary_audio/README.md)
 
 ## Current paper-facing directories
 

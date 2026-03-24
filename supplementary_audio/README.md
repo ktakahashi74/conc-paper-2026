@@ -6,6 +6,7 @@ first, start from the public-facing page:
 - [Audio Supplement Page](https://ktakahashi74.github.io/conc-paper-2026/supplementary_audio/)
 - [Supplementary PDF](../supplementary.pdf)
 - [Experiments README](../experiments/README.md)
+- [Top-level README](../README.md)
 
 ## What lives here
 
