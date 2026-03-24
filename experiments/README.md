@@ -8,7 +8,7 @@ Quick links:
 - [Top-level README](../README.md)
 - [Generated Data README](plots/README.md)
 - [Supplementary PDF](../supplementary.pdf)
-- [Audio Supplement Page](../supplementary_audio/)
+- [Audio Supplement Page](../supplementary_audio/index.html)
 - [Supplementary Audio README](../supplementary_audio/README.md)
 
 ## What this directory contains

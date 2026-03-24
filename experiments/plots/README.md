@@ -8,7 +8,7 @@ Quick links:
 - [Top-level README](../../README.md)
 - [Experiments, Code, and Data](../README.md)
 - [Supplementary PDF](../../supplementary.pdf)
-- [Audio Supplement Page](../../supplementary_audio/)
+- [Audio Supplement Page](../../supplementary_audio/index.html)
 - [Supplementary Audio README](../../supplementary_audio/README.md)
 
 ## Current paper-facing directories
