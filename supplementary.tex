@@ -73,12 +73,15 @@
 
 \subsection{S1.4 Hereditary Adaptation}
 
-\noindent\textbf{Key parameters:} $N\!=\!16$, range $\pm 2$\,oct, candidate count $K\!=\!16$, slot-local settling $=2$ ticks, family-local azimuth search radius $0.5$\,st.
+\noindent\textbf{Key parameters:} $N\!=\!16$, range $\pm 2$\,oct, candidate count $K\!=\!16$, slot-local settling $=2$ ticks, family-local azimuth search radius $0.5$\,st, survival thresholds $(0.30, 0.80)$.
 
 \smallskip
 \noindent\texttt{for} each time step:\\
 \hspace*{1em}Advance metabolism using the polyphonic leave-one-out score ($C_{\text{score}}$ with crowding/capacity penalties)\\
-\hspace*{1em}\texttt{if} selection = on: recharge and parent-choice weights depend on current score\\
+\hspace*{1em}\texttt{if} selection = on:\\
+\hspace*{2em}$s_i \gets \mathrm{clamp}\!\bigl((C_{\text{score},i} - 0.30)/(0.80 - 0.30),\,0,\,1\bigr)$\\
+\hspace*{2em}$E_i \gets E_i - c_b \Delta t + r_E\, s_i\, \Delta t$\\
+\hspace*{2em}Parent-choice weights depend on current score and energy\\
 \hspace*{1em}\texttt{if} selection = off: use neutral turnover with a small background-death floor\\
 \hspace*{1em}\texttt{if} agent $a_i$ dies:\\
 \hspace*{2em}\texttt{if} respawn = heredity:\\
@@ -144,7 +147,7 @@ Roughness saturation & $k$ & 1.0 & 1.0 & 1.0 & 1.0 \\
 \multicolumn{6}{@{}l}{\emph{Consonance core}} \\
 $C_{\text{field}}$ coefficients & $(a,b,c,d)$ & $(1,-1.35,1,0)$ & $(1,-1.35,1,0)$ & $(1,-1.35,1,0)$ & $(1,-1.35,1,0)$ \\
 $C_{\text{density}}$ coefficients$^\ddagger$ & $(a,b,c,d)$ & $(1,0,-1,0)$ & --- & --- & --- \\
-Sigmoid $(\beta,\theta)$ & & --- & $(2,0)$ & --- & $(2,0)$ \\
+Auxiliary bounded map$^\S$ & & --- & $(2,0)$ & --- & --- \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{Pitch adaptation}} \\
 Step size & $\lambda$ & 0.25\,st & --- & --- & --- \\
@@ -159,6 +162,7 @@ Burn-in discarded & & 2 sweeps & --- & --- & --- \\
 \multicolumn{6}{@{}l}{\emph{Metabolism}} \\
 Basal cost & $c_b$ & --- & 0.5/s & --- & 0.12/s \\
 Recharge coefficient & $r_E$ & --- & 0.4/s & --- & 0.20/s (selection-on) \\
+Recharge signal$^\P$ & & --- & $\max(0, C_{\text{score}})$ & --- & $\mathrm{ramp}_{[0.30,0.80]}(C_{\text{score}})$ \\
 Energy cap & $E_{\text{cap}}$ & --- & 1.0 & --- & 1.0 \\
 Time step & $\Delta t$ & --- & 512/48k\,s & 0.02\,s & 512/48k\,s \\
 Background death & & --- & --- & --- & 0.03/s (selection-off only) \\
@@ -183,7 +187,9 @@ Proximity kernel & $\alpha$ & --- & --- & --- & $4.0 \times 10^{-4}\,\text{ct}^{
 Ratio limit & $p,q$ & --- & --- & --- & $\leq 8$ \\
 Ratio weight & & --- & --- & --- & $1/(pq)$ \\
 \bottomrule
-\multicolumn{6}{@{}l}{\footnotesize $^\ddagger$ Visualization only (Figure~1D); not used in experiment algorithms.}
+\multicolumn{6}{@{}l}{\footnotesize $^\ddagger$ Visualization only (Figure~1D); not used in experiment algorithms.}\\
+\multicolumn{6}{@{}l}{\footnotesize $^\S$ Bounded auxiliary signal used for reporting / bridge variants; not the hereditary recharge law.}\\
+\multicolumn{6}{@{}l}{\footnotesize $^\P$ $\mathrm{ramp}_{[l,h]}(x)=\mathrm{clamp}((x-l)/(h-l),0,1)$.}
 \end{tabular}
 \end{table*}
 
