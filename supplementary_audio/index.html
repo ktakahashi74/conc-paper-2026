@@ -51,82 +51,85 @@
 </p>
 
 <section class="notes" style="margin-top:0; margin-bottom:1.5rem">
-  <p>The paper uses audio examples for <strong>Consonance Search</strong>,
-     <strong>Hereditary Adaptation</strong>, and <strong>Temporal Scaffold</strong>.
-     There is no standalone audio track for the selection-pressure assay, because that
-     result is primarily about lifetime statistics rather than a stable replayable scene.</p>
+  <p><strong>Audio supplement provides qualitative corroboration of the reported quantitative results; it is not a behavioural listening study.</strong></p>
+  <p>The listening page is organized as a short orientation followed by evidence clips for
+     <strong>Consonance Search</strong>, <strong>Hereditary Adaptation</strong>, and
+     <strong>Temporal Scaffold</strong>. There is no standalone audio track for the
+     selection-pressure assay because that result is primarily about lifetime statistics
+     rather than a stable replayable scene.</p>
 </section>
 
 <div class="track">
-  <h2>Quick Listen</h2>
-  <p class="meta">two short orientation tracks &middot; strongest examples and matched controls</p>
-  <p><strong>Showcase</strong> contains two hereditary-adaptation replays under
-     heredity + selection, using seed 1 and seed 2.</p>
+  <h2>Orientation</h2>
+  <p class="meta">two short orientation tracks &middot; a high-structure hereditary replay and its low-structure control</p>
+  <p><strong>What to listen for:</strong> the showcase clips should sound less diffuse and more stably organized in pitch space than the matched control clips below. This is only a fast orientation to the paper-wide contrast, not the primary evidence track.</p>
+  <p><strong>Showcase</strong> contains two <em>heredity + selection</em> replays from the hereditary-adaptation assay.</p>
   <ol class="segments">
     <li><strong>Heredity + selection</strong> &mdash; seed 1</li>
     <li><strong>Heredity + selection</strong> &mdash; seed 2</li>
   </ol>
   <audio controls preload="none">
-    <source src="audio/showcase.wav?v=20260323-17" type="audio/wav">
+    <source src="audio/showcase.wav?v=20260324-1" type="audio/wav">
   </audio>
-  <p style="margin-top:0.9rem"><strong>Controls</strong> contains the matched random, no-selection
-     condition for the same two seeds.</p>
+  <p style="margin-top:0.9rem"><strong>Controls</strong> contains the <em>neither</em> condition for the same two seeds.</p>
   <ol class="segments">
     <li><strong>Neither</strong> &mdash; seed 1</li>
     <li><strong>Neither</strong> &mdash; seed 2</li>
   </ol>
   <audio controls preload="none">
-    <source src="audio/controls.wav?v=20260323-17" type="audio/wav">
+    <source src="audio/controls.wav?v=20260324-1" type="audio/wav">
   </audio>
 </div>
 
 <div class="track">
-  <h2>Consonance Search</h2>
-  <p class="meta">two companion tracks &middot; local-search seeds and no-search controls</p>
-  <p>Each track contains two seeds (0 and 10). Each segment is about 8 s.</p>
+  <h2>Consonance Search Evidence</h2>
+  <p class="meta">paired evidence clips &middot; adaptive local search against the matched no-search control</p>
+  <p><strong>What to listen for:</strong> lower interval entropy, more repeated simple-ratio intervals around the drone, and less diffuse occupation of the pitch field in the adaptive track than in the control track.</p>
+  <p>Each file contains the same two seeds (0 and 10), so the intended comparison is segment 1 versus segment 1, then segment 2 versus segment 2.</p>
   <table>
     <tr><th>Condition</th><th>landscape_weight</th><th>repulsion</th></tr>
     <tr><td>local-search</td><td>1.0</td><td>0.15 @ 72 cents</td></tr>
     <tr><td>no-search</td><td>0.0</td><td>0.15 @ 72 cents</td></tr>
   </table>
-  <p>Local search preserves the hill-climb plus crowding regime; no-search removes
-     local search while keeping the same crowding field and seed schedule.</p>
-  <p><strong>Adaptive condition</strong> &mdash; local-search across seed 0 and seed 10:</p>
+  <p>The adaptive track preserves the paper's local hill-climb plus crowding regime; the control removes local search while keeping the same crowding field and seed schedule.</p>
+  <p><strong>Adaptive track</strong> &mdash; local-search across seed 0 and seed 10:</p>
   <audio controls preload="none">
-    <source src="audio/self_organized_polyphony.wav?v=20260323-16" type="audio/wav">
+    <source src="audio/self_organized_polyphony.wav?v=20260324-1" type="audio/wav">
   </audio>
-  <p style="margin-top:0.75rem"><strong>Control</strong> &mdash; no-search across seed 0 and seed 10:</p>
+  <p style="margin-top:0.75rem"><strong>Control track</strong> &mdash; no-search across seed 0 and seed 10:</p>
   <audio controls preload="none">
-    <source src="audio/self_organized_polyphony_no_hill.wav?v=20260323-16" type="audio/wav">
+    <source src="audio/self_organized_polyphony_no_hill.wav?v=20260324-1" type="audio/wav">
   </audio>
 </div>
 
 <div class="track">
-  <h2>Hereditary Adaptation</h2>
-  <p class="meta">two companion tracks &middot; hereditary conditions and matched controls</p>
+  <h2>Hereditary Adaptation Evidence</h2>
+  <p class="meta">main evidence track plus auxiliary ablation track</p>
+  <p><strong>What to listen for:</strong> compared with the matched random baseline, heredity + selection should sound less diffuse, with more stable occupation of a smaller number of consonant pitch bands. This corresponds to lower interval entropy and stronger occupancy concentration in the paper's metrics.</p>
   <p>This replay tracks the current hereditary assay. The population is 16 agents,
      adult pitch remains locked, respawn is family-biased, the final azimuth is
      chosen by local search, and only newborns receive a brief slot-local settling phase.</p>
   <table>
     <tr><th>Condition</th><th>respawn</th><th>selection</th></tr>
     <tr><td>heredity + selection</td><td>family-biased respawn + local azimuth search</td><td>on</td></tr>
-    <tr><td>heredity only</td><td>family-biased respawn + local azimuth search</td><td>off</td></tr>
     <tr><td>selection only</td><td>matched log-random candidates</td><td>on</td></tr>
+    <tr><td>heredity only</td><td>family-biased respawn + local azimuth search</td><td>off</td></tr>
     <tr><td>neither</td><td>matched log-random candidates</td><td>off</td></tr>
   </table>
-  <p><strong>Hereditary conditions</strong> &mdash; heredity + selection and heredity only across seed 0 and seed 10:</p>
+  <p><strong>Main evidence track</strong> &mdash; heredity + selection and matched-random + selection across seed 0 and seed 10:</p>
   <audio controls preload="none">
-    <source src="audio/hereditary_adaptation.wav?v=20260323-16" type="audio/wav">
+    <source src="audio/hereditary_adaptation.wav?v=20260324-1" type="audio/wav">
   </audio>
-  <p style="margin-top:0.75rem"><strong>Matched controls</strong> &mdash; selection only and neither across seed 0 and seed 10:</p>
+  <p style="margin-top:0.75rem"><strong>Auxiliary ablation track</strong> &mdash; heredity only and neither across the same two seeds:</p>
   <audio controls preload="none">
-    <source src="audio/hereditary_adaptation_controls.wav?v=20260323-16" type="audio/wav">
+    <source src="audio/hereditary_adaptation_controls.wav?v=20260324-1" type="audio/wav">
   </audio>
 </div>
 
 <div class="track">
-  <h2>Temporal Scaffold</h2>
+  <h2>Temporal Scaffold Evidence</h2>
   <p class="meta">~8 s each &middot; shared vs. scrambled vs. off at 2 Hz</p>
+  <p><strong>What to listen for:</strong> clearer phase concentration and a more stable pulse in <strong>shared</strong>, weaker cycle-to-cycle stability in <strong>scrambled</strong>, and diffuse timing in <strong>off</strong>.</p>
   <p>These renders track the temporal-scaffold assay. All agents share the same
      pitch inventory and intrinsic-frequency jitter; only the temporal drive changes
      across conditions. No external drone or metronome is mixed into these examples.</p>
@@ -140,27 +143,27 @@
      weakening in <strong>scrambled</strong>, and the diffuse timing of <strong>off</strong>.</p>
   <p><strong>Shared</strong> &mdash; common scaffold, strongest beat alignment:</p>
   <audio controls preload="none">
-    <source src="audio/temporal_scaffold_shared.wav?v=20260323-16" type="audio/wav">
+    <source src="audio/temporal_scaffold_shared.wav?v=20260324-1" type="audio/wav">
   </audio>
   <p style="margin-top:0.75rem"><strong>Scrambled</strong> &mdash; cycle-wise phase resets weaken stability:</p>
   <audio controls preload="none">
-    <source src="audio/temporal_scaffold_scrambled.wav?v=20260323-16" type="audio/wav">
+    <source src="audio/temporal_scaffold_scrambled.wav?v=20260324-1" type="audio/wav">
   </audio>
   <p style="margin-top:0.75rem"><strong>Off</strong> &mdash; no scaffold, phases remain diffuse:</p>
   <audio controls preload="none">
-    <source src="audio/temporal_scaffold_off.wav?v=20260323-16" type="audio/wav">
+    <source src="audio/temporal_scaffold_off.wav?v=20260324-1" type="audio/wav">
   </audio>
 </div>
 
 <section class="notes">
   <h2>Methodology</h2>
   <p>Seeds are taken by ordinal index from the paper's shared seed lists &mdash; no cherry-picking.
-     The orientation clips and the consonance-search / hereditary-adaptation replays are
-     rendered from generated scenario scripts; the temporal scaffold monitor is rendered directly
+     The orientation clips and the Consonance Search / Hereditary Adaptation evidence tracks are
+     rendered from generated scenario scripts; the Temporal Scaffold monitor is rendered directly
      by the paper tool. All outputs are mono WAV at 48 kHz with no added reverb or mastering.</p>
-  <p>These audio demonstrations are <strong>qualitative support only</strong>. Quantitative claims
-     rest on the paper's simulation statistics. They are listening aids derived from the same
-     experimental settings, not the source of the paper's quantitative analyses.</p>
+  <p>These audio demonstrations are <strong>qualitative corroboration only</strong>. Quantitative claims
+     rest on the paper's simulation statistics, not on listener ratings collected for these tracks.</p>
+  <p>No separate public track is provided for the spectral-to-temporal bridge check, because that result is treated in the paper as an implementation-level mechanism check rather than a primary behavioural assay.</p>
 </section>
 
 <footer>

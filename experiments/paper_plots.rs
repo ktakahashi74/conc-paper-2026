@@ -1736,13 +1736,6 @@ pub(crate) fn main() -> Result<(), Box<dyn Error>> {
         postprocess_hereditary_controls_wav_default()?;
         return Ok(());
     }
-    if args
-        .iter()
-        .any(|arg| arg == "--postprocess-hereditary-candidates")
-    {
-        postprocess_hereditary_candidates_wav_default()?;
-        return Ok(());
-    }
     if args.iter().any(|arg| arg == "--postprocess-polyphony") {
         postprocess_polyphony_wav_default()?;
         return Ok(());
@@ -36653,8 +36646,6 @@ const AUDIO_STEP_SEC: f32 = 0.12;
 const AUDIO_GAP_SEC: f32 = 1.0;
 const AUDIO_QUICKLISTEN_GAP_SEC: f32 = AUDIO_GAP_SEC;
 const AUDIO_QUICKLISTEN_FADE_SEC: f32 = 1.0;
-const AUDIO_QUICKLISTEN_E2_PRE_SWITCH_SEC: f32 = 2.0;
-const AUDIO_QUICKLISTEN_E2_POST_SWITCH_SEC: f32 = 6.0;
 const AUDIO_INTEGRATION_FADE_SEC: f32 = 0.2;
 const AUDIO_E2_POLYPHONY_TARGET_SEGMENT_SEC: f32 = 8.0;
 const AUDIO_N_SELECT_E2: usize = 8;
@@ -37350,13 +37341,6 @@ fn postprocess_hereditary_controls_wav_default() -> io::Result<()> {
     postprocess_e6b_named_wav_default("hereditary_adaptation_controls")
 }
 
-fn postprocess_hereditary_candidates_wav_default() -> io::Result<()> {
-    postprocess_named_wav_default(
-        "hereditary_adaptation_candidates",
-        AUDIO_INTEGRATION_FADE_SEC,
-    )
-}
-
 fn rewrite_manifest_only_for_stem(wav_stem: &str) -> io::Result<()> {
     let (wav_path, rhai_path, manifest_path) = resolve_audio_postprocess_paths(wav_stem);
     let windows = parse_rhai_scene_windows(&rhai_path)?;
@@ -37521,7 +37505,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             E2_SEEDS[10],
         );
         let mut rhai = rhai_replay_header(
-            "self_organized_polyphony.rhai -- Self-organized polyphony replay",
+            "self_organized_polyphony.rhai -- Consonance Search evidence",
             &detail,
         );
         for (scene_idx, &seg_idx) in e2_local_search_segment_indices.iter().enumerate() {
@@ -37701,9 +37685,9 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
              // tail {} snapshots per segment, snapshot_interval={} steps, replay_step_sec={:.3}\n\
              // each life uses harmonic ADSR atk={:.2}s dec={:.2}s sus={:.2} rel={:.2}s\n\
              //\n\
-             // 4 segments: heredity + selection and heredity only, seeds 0 and 10\n\
-             // current regime: adult pitch locked, juvenile settlement on,\n\
-             // family-biased respawn with local azimuth search\n\
+             // 4 segments: heredity + selection and matched-random + selection, seeds 0 and 10\n\
+             // main evidence contrast: lineage-biased respawn versus matched random baseline\n\
+             // under the same metabolic selection regime\n\
              //   shared seed list index 0  = {}\n\
              //   shared seed list index 10 = {}",
             E6B_DEFAULT_POP_SIZE,
@@ -37723,9 +37707,9 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         );
         let e6b_order = [
             "seed0_heredity_sel",
-            "seed0_heredity_nosel",
+            "seed0_random_sel",
             "seed10_heredity_sel",
-            "seed10_heredity_nosel",
+            "seed10_random_sel",
         ];
         for (i, label) in e6b_order.iter().enumerate() {
             let (_, result) = e6b_results
@@ -37737,13 +37721,9 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
             let scene = match *label {
                 "seed0_heredity_sel" => "heredity_selection_seed0",
-                "seed0_heredity_nosel" => "heredity_only_seed0",
                 "seed0_random_sel" => "selection_only_seed0",
-                "seed0_random_nosel" => "neither_seed0",
                 "seed10_heredity_sel" => "heredity_selection_seed10",
-                "seed10_heredity_nosel" => "heredity_only_seed10",
                 "seed10_random_sel" => "selection_only_seed10",
-                "seed10_random_nosel" => "neither_seed10",
                 _ => unreachable!("unexpected hereditary audio label"),
             };
             let amp_scale = if label.ends_with("heredity_sel") {
@@ -37772,8 +37752,8 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
              // tail {} snapshots per segment, snapshot_interval={} steps, replay_step_sec={:.3}\n\
              // each life uses harmonic ADSR atk={:.2}s dec={:.2}s sus={:.2} rel={:.2}s\n\
              //\n\
-             // 4 segments: selection only and neither, seeds 0 and 10\n\
-             // matched log-random respawn baseline\n\
+             // 4 auxiliary segments: heredity only and neither, seeds 0 and 10\n\
+             // this isolates lineage bias without selection, and matched random without selection\n\
              //   shared seed list index 0  = {}\n\
              //   shared seed list index 10 = {}",
             E6B_DEFAULT_POP_SIZE,
@@ -37792,9 +37772,9 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             &detail,
         );
         let e6b_order = [
-            "seed0_random_sel",
+            "seed0_heredity_nosel",
             "seed0_random_nosel",
-            "seed10_random_sel",
+            "seed10_heredity_nosel",
             "seed10_random_nosel",
         ];
         for (i, label) in e6b_order.iter().enumerate() {
@@ -37806,9 +37786,9 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
             let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
             let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
             let scene = match *label {
-                "seed0_random_sel" => "selection_only_seed0",
+                "seed0_heredity_nosel" => "heredity_only_seed0",
                 "seed0_random_nosel" => "neither_seed0",
-                "seed10_random_sel" => "selection_only_seed10",
+                "seed10_heredity_nosel" => "heredity_only_seed10",
                 "seed10_random_nosel" => "neither_seed10",
                 _ => unreachable!("unexpected hereditary control label"),
             };
@@ -37820,17 +37800,6 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         write_with_log(out_dir.join("hereditary_adaptation_controls.rhai"), rhai)?;
     }
 
-    let quicklisten_pre_steps =
-        (AUDIO_QUICKLISTEN_E2_PRE_SWITCH_SEC / AUDIO_STEP_SEC).round() as usize;
-    let quicklisten_post_steps =
-        (AUDIO_QUICKLISTEN_E2_POST_SWITCH_SEC / AUDIO_STEP_SEC).round() as usize;
-    let quicklisten_phase_switch = e2_trajectory_phase_switch_step(
-        phase_mode,
-        e2_runs[0].trajectory_semitones.len(),
-    )
-    .unwrap_or(E2_PHASE_SWITCH_STEP);
-    let quicklisten_start = quicklisten_phase_switch.saturating_sub(quicklisten_pre_steps);
-    let quicklisten_end = quicklisten_phase_switch + quicklisten_post_steps + 1;
     // ── showcase.rhai ──
     // 2 segments: hereditary + selection and local search
     {
@@ -37839,7 +37808,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
              //   1. Heredity + selection (seed 1) -- family-biased respawn + local azimuth search\n\
              //   2. Heredity + selection (seed 2) -- family-biased respawn + local azimuth search",
         );
-        let mut rhai = rhai_replay_header("showcase.rhai -- Showcase montage", &detail);
+        let mut rhai = rhai_replay_header("showcase.rhai -- Orientation showcase", &detail);
 
         // Segment 1: hereditary + selection, seed 1
         let e6b_sel_hered_seed1 = &e6b_results
@@ -37886,7 +37855,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
              //   1. Neither (seed 1) -- matched random respawn, no selection\n\
              //   2. Neither (seed 2) -- matched random respawn, no selection",
         );
-        let mut rhai = rhai_replay_header("controls.rhai -- Control montage", &detail);
+        let mut rhai = rhai_replay_header("controls.rhai -- Orientation controls", &detail);
 
         // Segment 1: random + no selection, seed 1
         let e6b_random_nosel_seed1 = &e6b_results
@@ -37922,84 +37891,6 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
         ));
 
         write_with_log(out_dir.join("controls.rhai"), rhai)?;
-    }
-
-    // ── hereditary_adaptation_candidates.rhai ──
-    // 4 candidate H+S seeds for listening-based showcase selection.
-    {
-        let candidate_seeds = [E6B_SEEDS[0], E6B_SEEDS[1], E6B_SEEDS[2], E6B_SEEDS[3]];
-        let mut jobs: Vec<(String, E6bRunConfig)> = Vec::new();
-        for (idx, &seed) in candidate_seeds.iter().enumerate() {
-            jobs.push((
-                format!("candidate_seed{}", idx),
-                E6bRunConfig {
-                    seed,
-                    steps_cap: E6B_STEPS_CAP,
-                    min_deaths: E6B_MIN_DEATHS,
-                    pop_size: E6B_DEFAULT_POP_SIZE,
-                    first_k: E6B_FIRST_K,
-                    condition: E6Condition::Heredity,
-                    snapshot_interval: E6B_SNAPSHOT_INTERVAL,
-                    selection_enabled: true,
-                    shuffle_landscape: false,
-                    polyphonic_crowding_weight_override: None,
-                    polyphonic_overcapacity_weight_override: None,
-                    polyphonic_capacity_radius_cents_override: None,
-                    polyphonic_capacity_free_voices_override: None,
-                    polyphonic_parent_share_weight_override: None,
-                    polyphonic_parent_energy_weight_override: None,
-                    juvenile_contextual_tuning_ticks_override: None,
-                    juvenile_contextual_settlement_enabled_override: None,
-                    survival_score_low_override: None,
-                    survival_score_high_override: None,
-                    survival_recharge_per_sec_override: None,
-                    background_death_rate_per_sec_override: None,
-                    respawn_parent_prior_mix_override: None,
-                    respawn_same_band_discount_override: None,
-                    respawn_octave_discount_override: None,
-                    parent_proposal_kind_override: None,
-                    parent_proposal_sigma_st_override: None,
-                    parent_proposal_unison_notch_gain_override: None,
-                    parent_proposal_unison_notch_sigma_st_override: None,
-                    parent_proposal_candidate_count_override: None,
-                    azimuth_mode_override: None,
-                    random_baseline_mode: E6bRandomBaselineMode::LogRandomFiltered,
-                },
-            ));
-        }
-        let candidate_results = run_audio_e6b_jobs_parallel(jobs);
-        let detail = format!(
-            "// 4 hereditary-adaptation seed candidates for showcase selection.\n\
-             // all segments are heredity + selection, rendered from the tail of the current assay.\n\
-             // shared seed list indices 0..3 = {}, {}, {}, {}",
-            candidate_seeds[0], candidate_seeds[1], candidate_seeds[2], candidate_seeds[3],
-        );
-        let mut rhai = rhai_replay_header(
-            "hereditary_adaptation_candidates.rhai -- Heredity + selection seed candidates",
-            &detail,
-        );
-        for idx in 0..candidate_seeds.len() {
-            let label = format!("candidate_seed{}", idx);
-            let (_, result) = candidate_results
-                .iter()
-                .find(|(candidate, _)| candidate == &label)
-                .unwrap_or_else(|| panic!("missing candidate result for label {label}"));
-            let snaps = &result.snapshots;
-            let tail_start = snaps.len().saturating_sub(AUDIO_E6_TAIL_SNAPSHOTS);
-            let tail: Vec<&E6PitchSnapshot> = snaps[tail_start..].iter().collect();
-            let scene = format!("candidate_seed{}", idx);
-            rhai.push_str(&rhai_e6_segment_with_gain(
-                &scene,
-                &tail,
-                AUDIO_E6_STEP_SEC,
-                None,
-                AUDIO_E6_HS_GAIN,
-            ));
-            if idx + 1 < candidate_seeds.len() {
-                rhai.push_str(&format!("wait({AUDIO_GAP_SEC:.1});\n\n"));
-            }
-        }
-        write_with_log(out_dir.join("hereditary_adaptation_candidates.rhai"), rhai)?;
     }
 
     eprintln!("Audio replay Rhai scripts written to supplementary_audio/scenarios/");

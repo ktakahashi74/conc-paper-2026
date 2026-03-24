@@ -15,6 +15,11 @@ first, start from the public-facing page:
 - `scenarios/`: generated Rhai scenarios for the scenario-based tracks
 - `render.sh`: convenience wrapper for the scenario-based renders
 
+## Interpretation boundary
+
+Audio supplement provides qualitative corroboration of the reported quantitative
+results; it is not a behavioural listening study.
+
 ## Public track set
 
 The listening page serves these files:
@@ -28,6 +33,14 @@ The listening page serves these files:
 - `temporal_scaffold_shared.wav`
 - `temporal_scaffold_scrambled.wav`
 - `temporal_scaffold_off.wav`
+
+Reviewer-facing interpretation lives on `index.html`, where the public track set
+is organized as:
+
+- orientation
+- Consonance Search evidence
+- Hereditary Adaptation evidence
+- Temporal Scaffold evidence
 
 ## Rendering paths
 
@@ -102,3 +115,5 @@ target/release/paper --e3-audio
 - `manifest.csv` remains available as auxiliary metadata for segment boundaries and labels.
 - The audio supplement is qualitative support; the quantitative results live in
   the experiment outputs under [../experiments/plots/README.md](../experiments/plots/README.md).
+- There is no separate public track for the supplementary spectral-to-temporal
+  bridge check.

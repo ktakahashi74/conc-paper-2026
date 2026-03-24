@@ -35,8 +35,6 @@ for rhai in scenarios/*.rhai; do
     (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-e6b)
   elif [ "$name" = "hereditary_adaptation_controls" ]; then
     (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-hereditary-controls)
-  elif [ "$name" = "hereditary_adaptation_candidates" ]; then
-    (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-hereditary-candidates)
   fi
   echo "  → audio/${name}.wav"
 done
