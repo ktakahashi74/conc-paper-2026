@@ -1,7 +1,9 @@
-# Audio Supplement Reproduction
+# Audio Supplement Reproduction Guide
 
-This README is for regenerating the audio supplement. If you want to listen
-first, start from the public-facing page:
+This file is for **reproducing / re-rendering the audio files used in the
+supplement**. It is not the listening page itself.
+
+If you want to listen first, start from the public-facing page:
 
 - [Audio Supplement Page](./index.html)
 - [Supplementary PDF](../supplementary.pdf)
