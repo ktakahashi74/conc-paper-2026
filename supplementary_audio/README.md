@@ -5,7 +5,7 @@ supplement**. It is not the listening page itself.
 
 If you want to listen first, start from the public-facing page:
 
-- [Audio Supplement Page](./index.html)
+- [Audio Supplement Page](https://ktakahashi74.github.io/conc-paper-2026/supplementary_audio/)
 - [Supplementary PDF](../supplementary.pdf)
 - [Experiments README](../experiments/README.md)
 - [Top-level README](../README.md)

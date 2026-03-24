@@ -8,7 +8,7 @@ Quick links:
 - [Top-level README](../README.md)
 - [Generated Data README](plots/README.md)
 - [Supplementary PDF](../supplementary.pdf)
-- [Audio Supplement Page](../supplementary_audio/index.html)
+- [Audio Supplement Page](https://ktakahashi74.github.io/conc-paper-2026/supplementary_audio/)
 - [Supplementary Audio README](../supplementary_audio/README.md)
 
 ## What this directory contains
