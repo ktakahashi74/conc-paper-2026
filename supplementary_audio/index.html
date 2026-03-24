@@ -54,7 +54,7 @@
   <p><strong>Audio supplement provides qualitative corroboration of the reported quantitative results; it is not a behavioural listening study.</strong></p>
   <p><strong>Processing note:</strong> most scenario tracks apply segment fade-in/out in post-processing; segment boundaries are also muted briefly to reduce overlap clicks. Specifically, <code>showcase</code>, <code>controls</code>, <code>hereditary_adaptation</code>, and <code>hereditary_adaptation_controls</code> are fade-processed; <code>self_organized_polyphony</code> and <code>self_organized_polyphony_no_hill</code> are not.</p>
   <p>The listening page is organized as a short orientation followed by evidence clips for
-     <strong>Consonance Search</strong>, <strong>Hereditary Adaptation</strong>, and
+     <strong>Search</strong>, <strong>Hereditary Adaptation</strong>, and
      <strong>Temporal Scaffold</strong>. There is no standalone audio track for the
      selection-pressure assay because that result is primarily about lifetime statistics
      rather than a stable replayable scene.</p>
@@ -70,7 +70,7 @@
     <li><strong>Segment 2:</strong> heredity + selection, seed 2 (13.4–25.4 s)</li>
   </ol>
   <audio controls preload="none">
-    <source src="audio/showcase.wav?v=20260324-1" type="audio/wav">
+    <source src="audio/showcase.wav?v=20260324-3" type="audio/wav">
   </audio>
   <p style="margin-top:0.9rem"><strong>Controls</strong> contains the <em>neither</em> condition (no heredity, no selection, only matched-log-random respawn candidates) for the same two seeds.</p>
   <ol class="segments">
@@ -78,36 +78,36 @@
     <li><strong>Segment 2:</strong> neither, seed 2 (13.4–25.4 s)</li>
   </ol>
   <audio controls preload="none">
-    <source src="audio/controls.wav?v=20260324-1" type="audio/wav">
+    <source src="audio/controls.wav?v=20260324-3" type="audio/wav">
   </audio>
 </div>
 
 <div class="track">
   <h2>Consonance Search Evidence</h2>
-  <p class="meta">paired evidence clips &middot; adaptive local search against the matched no-search control</p>
+  <p class="meta">paired evidence clips &middot; adaptive local search against the matched control control</p>
   <p><strong>What to listen for:</strong> lower interval entropy, more repeated simple-ratio intervals around the drone, and less diffuse occupation of the pitch field in the adaptive track than in the control track.</p>
   <p>Each file contains two segments in the same order: segment 1 then segment 2.</p>
   <table>
     <tr><th>Condition</th><th>landscape_weight</th><th>repulsion</th></tr>
-    <tr><td>local-search</td><td>1.0</td><td>0.15 @ 72 cents</td></tr>
-    <tr><td>no-search</td><td>0.0</td><td>0.15 @ 72 cents</td></tr>
+    <tr><td>search</td><td>1.0</td><td>0.15 @ 72 cents</td></tr>
+    <tr><td>control</td><td>0.0</td><td>0.15 @ 72 cents</td></tr>
   </table>
   <p>The adaptive track preserves the paper's local hill-climb plus crowding regime; the control removes local search while keeping the same crowding field and seed schedule.</p>
   <p><strong>Adaptive track</strong> &mdash; local-search across seed 0 and seed 10:</p>
   <ol class="segments">
-    <li><strong>Segment 1:</strong> local-search, seed 0 (0.0–8.0 s)</li>
-    <li><strong>Segment 2:</strong> local-search, seed 10 (8.2–16.2 s)</li>
+    <li><strong>Segment 1:</strong> search, seed 0 (0.0–8.0 s)</li>
+    <li><strong>Segment 2:</strong> search, seed 10 (8.2–16.2 s)</li>
   </ol>
   <audio controls preload="none">
-    <source src="audio/self_organized_polyphony.wav?v=20260324-1" type="audio/wav">
+    <source src="audio/self_organized_polyphony.wav?v=20260324-3" type="audio/wav">
   </audio>
   <p style="margin-top:0.75rem"><strong>Control track</strong> &mdash; no-search across seed 0 and seed 10:</p>
   <ol class="segments">
-    <li><strong>Segment 1:</strong> no-search, seed 0 (0.0–8.0 s)</li>
-    <li><strong>Segment 2:</strong> no-search, seed 10 (8.2–16.2 s)</li>
+    <li><strong>Segment 1:</strong> control, seed 0 (0.0–8.0 s)</li>
+    <li><strong>Segment 2:</strong> control, seed 10 (8.2–16.2 s)</li>
   </ol>
   <audio controls preload="none">
-    <source src="audio/self_organized_polyphony_no_hill.wav?v=20260324-1" type="audio/wav">
+    <source src="audio/self_organized_polyphony_no_hill.wav?v=20260324-3" type="audio/wav">
   </audio>
 </div>
 
@@ -133,7 +133,7 @@
     <li><strong>Segment 4:</strong> selection only, seed 10 (40.4–52.4 s)</li>
   </ol>
   <audio controls preload="none">
-    <source src="audio/hereditary_adaptation.wav?v=20260324-1" type="audio/wav">
+    <source src="audio/hereditary_adaptation.wav?v=20260324-3" type="audio/wav">
   </audio>
   <p style="margin-top:0.75rem"><strong>Auxiliary ablation track</strong> &mdash; heredity only and neither across the same two seeds:</p>
   <ol class="segments">
@@ -143,7 +143,7 @@
     <li><strong>Segment 4:</strong> neither, seed 10 (40.4–52.4 s)</li>
   </ol>
   <audio controls preload="none">
-    <source src="audio/hereditary_adaptation_controls.wav?v=20260324-1" type="audio/wav">
+    <source src="audio/hereditary_adaptation_controls.wav?v=20260324-3" type="audio/wav">
   </audio>
 </div>
 
@@ -167,21 +167,21 @@
     <li><strong>Single segment:</strong> shared (0.0–8.0 s)</li>
   </ol>
   <audio controls preload="none">
-    <source src="audio/temporal_scaffold_shared.wav?v=20260324-1" type="audio/wav">
+    <source src="audio/temporal_scaffold_shared.wav?v=20260324-3" type="audio/wav">
   </audio>
   <p style="margin-top:0.75rem"><strong>Scrambled</strong> &mdash; cycle-wise phase resets weaken stability:</p>
   <ol class="segments">
     <li><strong>Single segment:</strong> scrambled (0.0–8.0 s)</li>
   </ol>
   <audio controls preload="none">
-    <source src="audio/temporal_scaffold_scrambled.wav?v=20260324-1" type="audio/wav">
+    <source src="audio/temporal_scaffold_scrambled.wav?v=20260324-3" type="audio/wav">
   </audio>
   <p style="margin-top:0.75rem"><strong>Off</strong> &mdash; no scaffold, phases remain diffuse:</p>
   <ol class="segments">
     <li><strong>Single segment:</strong> off (0.0–8.0 s)</li>
   </ol>
   <audio controls preload="none">
-    <source src="audio/temporal_scaffold_off.wav?v=20260324-1" type="audio/wav">
+    <source src="audio/temporal_scaffold_off.wav?v=20260324-3" type="audio/wav">
   </audio>
 </div>
 
@@ -207,18 +207,18 @@
     </tr>
     <tr>
       <td>temporal_scaffold_shared.wav<br>temporal_scaffold_scrambled.wav<br>temporal_scaffold_off.wav</td>
-      <td>Paper internal synthesis</td>
-      <td><code>paper --e3-audio</code> &rarr; <code>sim::render_e3_audio</code> (direct)</td>
+      <td>conchordal-render</td>
+      <td><code>paper --audio-rhai</code> + generated Rhai + <code>conchordal-render</code></td>
     </tr>
   </table>
-  <p>In short: all public listening tracks are renderer-based except the three temporal-scaffold files above, which are rendered directly through the paper binary for reproducibility with the E3 monitor implementation.</p>
+  <p>All public listening tracks are rendered with <code>conchordal-render</code> for parity across assays.</p>
   <p>Landscape scoring and part of the agent mechanics come from the parent Conchordal codebase; the assay-specific experiment logic is implemented in this repository, and its findings will be fed back into later Conchordal releases.</p>
   <p>Post-process behavior is track-specific: quicklistening and hereditary tracks use fixed segment fades (1.0 s and 0.2 s respectively), while polyphony tracks only rewrite metadata for segmentation and are rendered without segment-level fades.</p>
   <p>Seeds are taken by ordinal index from the paper's shared seed lists &mdash; no cherry-picking.
      All outputs are mono WAV at 48 kHz with no added reverb or mastering.</p>
-  <p>Timbral settings differ by assay. Orientation, Consonance Search, and Hereditary Adaptation use the same harmonic timbre
+     <p>Timbral settings differ by assay. Orientation, Consonance Search, and Hereditary Adaptation use the same harmonic timbre
      (6 partials, per-note ADSR 0.080/0.450/0.500/0.450, matching brightness and pitch-smooth settings). Temporal Scaffold
-     uses sine one-shot pulses (48 independent voices, per-note ADSR 0.001/0.024/0.000/0.002).</p>
+     uses sine one-shot pulses (48 independent voices, per-note ADSR 0.0030/0.420/0.080/0.200). Notes are released 0.035s after each attack.</p>
   <p>These audio demonstrations are <strong>qualitative corroboration only</strong>. Quantitative claims
      rest on the paper's simulation statistics, not on listener ratings collected for these tracks.</p>
   <p>No separate public track is provided for the spectral-to-temporal bridge check, because that result is treated in the paper as an implementation-level mechanism check rather than a primary behavioural assay.</p>

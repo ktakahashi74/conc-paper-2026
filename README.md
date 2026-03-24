@@ -87,7 +87,6 @@ pdflatex supplementary.tex
 # Regenerate the audio supplement
 target/release/paper --audio-rhai
 bash supplementary_audio/render.sh
-target/release/paper --e3-audio
 target/release/paper --postprocess-quicklisten
 target/release/paper --postprocess-e6b
 ```

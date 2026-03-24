@@ -47,16 +47,12 @@ is organized as:
 
 ## Rendering paths
 
-There are two rendering paths.
-
-There are two rendering paths for the public track set:
+The public track set is now rendered uniformly with `conchordal-render`:
 
 | Track(s) | Render method | How to reproduce |
 | --- | --- | --- |
 | `showcase.wav`<br/>`controls.wav`<br/>`self_organized_polyphony*.wav`<br/>`hereditary_adaptation*.wav` | `conchordal-render` (Conchordal 0.3.0) | `target/release/paper --audio-rhai` then `bash supplementary_audio/render.sh` |
-| `temporal_scaffold_shared.wav`<br/>`temporal_scaffold_scrambled.wav`<br/>`temporal_scaffold_off.wav` | Paper internal direct synthesis (`render_e3_audio`) | `target/release/paper --e3-audio` |
-
-The three temporal-scaffold tracks are generated from Rhai scene descriptions for consistency, but rendered by the paper binary directly rather than by `conchordal-render`.
+| `temporal_scaffold_shared.wav`<br/>`temporal_scaffold_scrambled.wav`<br/>`temporal_scaffold_off.wav` | `conchordal-render` (Conchordal 0.3.0) | `target/release/paper --audio-rhai` then `bash supplementary_audio/render.sh` |
 
 ## Prerequisites
 
@@ -77,7 +73,6 @@ From the repository root:
 ```bash
 target/release/paper --audio-rhai
 bash supplementary_audio/render.sh
-target/release/paper --e3-audio
 target/release/paper --postprocess-quicklisten
 target/release/paper --postprocess-e6b
 ```
@@ -86,7 +81,7 @@ This sequence:
 
 - regenerates the Rhai scenarios
 - renders the scenario-based WAV files
-- regenerates the temporal scaffold WAV files
+- renders the temporal scaffold WAV files (via renderer)
 - applies the post-processing used by the public tracks
 
 ## Regenerate a subset
@@ -106,7 +101,8 @@ bash supplementary_audio/render.sh
 Temporal scaffold only:
 
 ```bash
-target/release/paper --e3-audio
+target/release/paper --audio-rhai
+bash supplementary_audio/render.sh
 ```
 
 ## Notes

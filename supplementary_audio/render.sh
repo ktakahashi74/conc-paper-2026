@@ -6,23 +6,31 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT_DIR=$(cd "${SCRIPT_DIR}/.." && pwd)
 CONCHORDAL_MANIFEST="${ROOT_DIR}/../conchordal/Cargo.toml"
+CONCHORDAL_RENDER_BIN="${ROOT_DIR}/../conchordal/target/release/conchordal-render"
 PAPER_MANIFEST="${ROOT_DIR}/Cargo.toml"
-RENDER="cargo run --release --manifest-path ${CONCHORDAL_MANIFEST} --bin conchordal-render --"
+
+render_with_conchordal() {
+  local script="$1"
+  local output="$2"
+
+  if [[ -x "${CONCHORDAL_RENDER_BIN}" ]]; then
+    "${CONCHORDAL_RENDER_BIN}" "$script" --output "$output"
+  elif command -v conchordal-render >/dev/null 2>&1; then
+    conchordal-render "$script" --output "$output"
+  else
+    cargo run --release --manifest-path "${CONCHORDAL_MANIFEST}" --bin conchordal-render -- "$script" --output "$output"
+  fi
+}
 
 cd "${SCRIPT_DIR}"
 
 echo "Regenerating Rhai scenarios..."
 (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --audio-rhai)
-(cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --e3-audio)
 
 for rhai in scenarios/*.rhai; do
   name=$(basename "$rhai" .rhai)
-  if [[ "$name" == temporal_scaffold_* ]]; then
-    echo "Skipping ${name}; temporal scaffold WAVs are rendered directly by paper --e3-audio"
-    continue
-  fi
   echo "Rendering ${name}..."
-  $RENDER "$rhai" --output "audio/${name}.wav"
+  render_with_conchordal "$rhai" "audio/${name}.wav"
   if [ "$name" = "showcase" ]; then
     (cd "${ROOT_DIR}" && cargo run --release --manifest-path "${PAPER_MANIFEST}" --bin paper -- --postprocess-quicklisten-showcase)
   elif [ "$name" = "controls" ]; then

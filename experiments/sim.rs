@@ -7407,14 +7407,16 @@ impl E3AudioConfig {
     }
 }
 
-// Keep the temporal-scaffold render as a short one-shot pulse. Around 30 ms is
-// long enough to hear the beat but short enough to avoid smearing the dense
-// shared/scrambled conditions into a continuous texture.
-const E3_AUDIO_NOTE_DUR_SEC: f32 = 0.030;
-const E3_AUDIO_NOTE_ATTACK_SEC: f32 = 0.0005;
+// Keep the temporal-scaffold render percussive: the note-off happens quickly,
+// and the audible tail comes from the release rather than a held tone.
+// Use the neutral drone render modulator for replay so Conchordal's SeqGate
+// does not hard-gate the release tail after its fixed internal duration.
+const E3_AUDIO_NOTE_DUR_SEC: f32 = 0.035;
+const E3_AUDIO_NOTE_ATTACK_SEC: f32 = 0.0030;
 const E3_AUDIO_NOTE_AMP: f32 = 0.04;
-const E3_AUDIO_RHAI_DECAY_SEC: f32 = 0.024;
-const E3_AUDIO_RHAI_RELEASE_SEC: f32 = 0.002;
+const E3_AUDIO_RHAI_DECAY_SEC: f32 = 0.420;
+const E3_AUDIO_RHAI_SUSTAIN_LEVEL: f32 = 0.08;
+const E3_AUDIO_RHAI_RELEASE_SEC: f32 = 0.200;
 
 #[derive(Clone, Copy, Debug)]
 struct E3AudioAttack {
@@ -7653,11 +7655,12 @@ pub fn generate_e3_rhai(cfg: &E3AudioConfig, output_path: &std::path::Path) -> s
 
     for i in 0..cfg.pop_size {
         rhai.push_str(&format!(
-            "let s{i} = derive(sine).brain(\"seq\").pitch_mode(\"lock\")\
-             .amp({:.3}).adsr({:.3}, {:.3}, 0.0, {:.3});\n",
+            "let s{i} = derive(sine).brain(\"drone\").pitch_mode(\"lock\")\
+             .amp({:.3}).adsr({:.4}, {:.3}, {:.3}, {:.3});\n",
             E3_AUDIO_NOTE_AMP,
             E3_AUDIO_NOTE_ATTACK_SEC,
             E3_AUDIO_RHAI_DECAY_SEC,
+            E3_AUDIO_RHAI_SUSTAIN_LEVEL,
             E3_AUDIO_RHAI_RELEASE_SEC
         ));
     }

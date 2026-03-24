@@ -37456,6 +37456,19 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
     let out_dir = Path::new("supplementary_audio/scenarios");
     create_dir_all(out_dir)?;
 
+    // Temporal scaffold uses the same public regeneration path as the other
+    // audio supplement scenarios: emit Rhai here, then render it uniformly
+    // through conchordal-render in supplementary_audio/render.sh.
+    let cfg_shared = crate::sim::E3AudioConfig::default_shared();
+    let cfg_scrambled = crate::sim::E3AudioConfig::default_scrambled();
+    let cfg_off = crate::sim::E3AudioConfig::default_off();
+    crate::sim::generate_e3_rhai(&cfg_shared, &out_dir.join("temporal_scaffold_shared.rhai"))?;
+    crate::sim::generate_e3_rhai(
+        &cfg_scrambled,
+        &out_dir.join("temporal_scaffold_scrambled.rhai"),
+    )?;
+    crate::sim::generate_e3_rhai(&cfg_off, &out_dir.join("temporal_scaffold_off.rhai"))?;
+
     // Select 8 agents evenly from 24
     let e2_selected: Vec<usize> = (0..AUDIO_N_SELECT_E2)
         .map(|k| k * E2_N_AGENTS / AUDIO_N_SELECT_E2)
