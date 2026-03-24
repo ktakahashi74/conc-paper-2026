@@ -5,35 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Audio Supplement — Conchordal</title>
 <style>
-  :root { --bg: #fafafa; --fg: #222; --muted: #666; --border: #ddd; --accent: #1a5276; }
+  :root { --bg: #ffffff; --fg: #1f1f1f; --muted: #777777; --border: #d6d6d6; --accent: #1a5276; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #1a1a1a; --fg: #e0e0e0; --muted: #999; --border: #333; --accent: #5dade2; }
+    :root { --bg: #151515; --fg: #efefef; --muted: #c0c0c0; --border: #2f2f2f; --accent: #5dade2; }
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: "Palatino Linotype", Palatino, Georgia, serif;
          background: var(--bg); color: var(--fg);
-         max-width: 720px; margin: 0 auto; padding: 2rem 1.5rem; line-height: 1.6; }
-  h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
-  .subtitle { color: var(--muted); font-style: italic; margin-bottom: 2rem; font-size: 0.95rem; }
-  .nav { margin: 0 0 1.5rem; font-size: 0.9rem; color: var(--muted); }
+         max-width: 800px; margin: 0 auto; padding: 2rem 1.5rem; line-height: 1.72; font-size: 1.06rem; }
+  h1 { font-size: 1.9rem; margin-bottom: 0.25rem; }
+  .subtitle { color: var(--fg); font-style: italic; margin-bottom: 2rem; font-size: 1.05rem; }
+  .nav { margin: 0 0 1.5rem; font-size: 1rem; color: var(--muted); }
   .nav a { margin-right: 0.9rem; white-space: nowrap; }
   .track { border: 1px solid var(--border); border-radius: 6px;
            padding: 1.25rem; margin-bottom: 1.5rem; }
-  .track h2 { font-size: 1.1rem; margin-bottom: 0.15rem; color: var(--accent); }
-  .track .meta { font-size: 0.85rem; color: var(--muted); margin-bottom: 0.6rem; }
-  .track p { font-size: 0.9rem; margin-bottom: 0.75rem; }
+  .track h2 { font-size: 1.3rem; margin-bottom: 0.15rem; color: var(--accent); }
+  .track .meta { font-size: 0.98rem; color: var(--muted); margin-bottom: 0.6rem; }
+  .track p { font-size: 1.0rem; margin-bottom: 0.75rem; }
   .track audio { width: 100%; margin-top: 0.25rem; }
-  .track table { font-size: 0.82rem; border-collapse: collapse; margin: 0.5rem 0; }
+  .track table { font-size: 0.95rem; border-collapse: collapse; margin: 0.5rem 0; }
   .track th, .track td { text-align: left; padding: 0.2rem 0.75rem 0.2rem 0;
                           border-bottom: 1px solid var(--border); }
   .track th { color: var(--muted); font-weight: 600; }
-  .segments { font-size: 0.85rem; margin: 0.4rem 0 0.6rem 1.2rem; }
+  .segments { font-size: 0.95rem; margin: 0.4rem 0 0.6rem 1.2rem; }
   .segments li { margin-bottom: 0.15rem; }
-  section.notes { margin-top: 2rem; font-size: 0.85rem; color: var(--muted); }
-  section.notes h2 { font-size: 1rem; color: var(--fg); margin-bottom: 0.5rem; }
+  section.notes { margin-top: 2rem; font-size: 0.95rem; color: var(--fg); }
+  section.notes h2 { font-size: 1.1rem; color: var(--fg); margin-bottom: 0.5rem; }
   section.notes p { margin-bottom: 0.5rem; }
   a { color: var(--accent); }
-  footer { margin-top: 2.5rem; font-size: 0.8rem; color: var(--muted);
+  footer { margin-top: 2.5rem; font-size: 0.9rem; color: var(--fg);
            border-top: 1px solid var(--border); padding-top: 1rem; }
 </style>
 </head>
@@ -52,6 +52,7 @@
 
 <section class="notes" style="margin-top:0; margin-bottom:1.5rem">
   <p><strong>Audio supplement provides qualitative corroboration of the reported quantitative results; it is not a behavioural listening study.</strong></p>
+  <p><strong>Processing note:</strong> most scenario tracks apply segment fade-in/out in post-processing; segment boundaries are also muted briefly to reduce overlap clicks. Specifically, <code>showcase</code>, <code>controls</code>, <code>hereditary_adaptation</code>, and <code>hereditary_adaptation_controls</code> are fade-processed; <code>self_organized_polyphony</code> and <code>self_organized_polyphony_no_hill</code> are not.</p>
   <p>The listening page is organized as a short orientation followed by evidence clips for
      <strong>Consonance Search</strong>, <strong>Hereditary Adaptation</strong>, and
      <strong>Temporal Scaffold</strong>. There is no standalone audio track for the
@@ -61,20 +62,20 @@
 
 <div class="track">
   <h2>Orientation</h2>
-  <p class="meta">two short orientation tracks &middot; a high-structure hereditary replay and its low-structure control</p>
+  <p class="meta">two short orientation pairs &middot; a high-structure hereditary replay and its low-structure control.</p>
   <p><strong>What to listen for:</strong> the showcase clips should sound less diffuse and more stably organized in pitch space than the matched control clips below. This is only a fast orientation to the paper-wide contrast, not the primary evidence track.</p>
   <p><strong>Showcase</strong> contains two <em>heredity + selection</em> replays from the hereditary-adaptation assay.</p>
   <ol class="segments">
-    <li><strong>Heredity + selection</strong> &mdash; seed 1</li>
-    <li><strong>Heredity + selection</strong> &mdash; seed 2</li>
+    <li><strong>Segment 1:</strong> heredity + selection, seed 1 (0.0–12.0 s)</li>
+    <li><strong>Segment 2:</strong> heredity + selection, seed 2 (13.4–25.4 s)</li>
   </ol>
   <audio controls preload="none">
     <source src="audio/showcase.wav?v=20260324-1" type="audio/wav">
   </audio>
-  <p style="margin-top:0.9rem"><strong>Controls</strong> contains the <em>neither</em> condition for the same two seeds.</p>
+  <p style="margin-top:0.9rem"><strong>Controls</strong> contains the <em>neither</em> condition (no heredity, no selection, only matched-log-random respawn candidates) for the same two seeds.</p>
   <ol class="segments">
-    <li><strong>Neither</strong> &mdash; seed 1</li>
-    <li><strong>Neither</strong> &mdash; seed 2</li>
+    <li><strong>Segment 1:</strong> neither, seed 1 (0.0–12.0 s)</li>
+    <li><strong>Segment 2:</strong> neither, seed 2 (13.4–25.4 s)</li>
   </ol>
   <audio controls preload="none">
     <source src="audio/controls.wav?v=20260324-1" type="audio/wav">
@@ -85,7 +86,7 @@
   <h2>Consonance Search Evidence</h2>
   <p class="meta">paired evidence clips &middot; adaptive local search against the matched no-search control</p>
   <p><strong>What to listen for:</strong> lower interval entropy, more repeated simple-ratio intervals around the drone, and less diffuse occupation of the pitch field in the adaptive track than in the control track.</p>
-  <p>Each file contains the same two seeds (0 and 10), so the intended comparison is segment 1 versus segment 1, then segment 2 versus segment 2.</p>
+  <p>Each file contains two segments in the same order: segment 1 then segment 2.</p>
   <table>
     <tr><th>Condition</th><th>landscape_weight</th><th>repulsion</th></tr>
     <tr><td>local-search</td><td>1.0</td><td>0.15 @ 72 cents</td></tr>
@@ -93,10 +94,18 @@
   </table>
   <p>The adaptive track preserves the paper's local hill-climb plus crowding regime; the control removes local search while keeping the same crowding field and seed schedule.</p>
   <p><strong>Adaptive track</strong> &mdash; local-search across seed 0 and seed 10:</p>
+  <ol class="segments">
+    <li><strong>Segment 1:</strong> local-search, seed 0 (0.0–8.0 s)</li>
+    <li><strong>Segment 2:</strong> local-search, seed 10 (8.2–16.2 s)</li>
+  </ol>
   <audio controls preload="none">
     <source src="audio/self_organized_polyphony.wav?v=20260324-1" type="audio/wav">
   </audio>
   <p style="margin-top:0.75rem"><strong>Control track</strong> &mdash; no-search across seed 0 and seed 10:</p>
+  <ol class="segments">
+    <li><strong>Segment 1:</strong> no-search, seed 0 (0.0–8.0 s)</li>
+    <li><strong>Segment 2:</strong> no-search, seed 10 (8.2–16.2 s)</li>
+  </ol>
   <audio controls preload="none">
     <source src="audio/self_organized_polyphony_no_hill.wav?v=20260324-1" type="audio/wav">
   </audio>
@@ -116,11 +125,23 @@
     <tr><td>heredity only</td><td>family-biased respawn + local azimuth search</td><td>off</td></tr>
     <tr><td>neither</td><td>matched log-random candidates</td><td>off</td></tr>
   </table>
-  <p><strong>Main evidence track</strong> &mdash; heredity + selection and matched-random + selection across seed 0 and seed 10:</p>
+  <p><strong>Main evidence track</strong> &mdash; heredity + selection and matched-random + selection across seed 0 and seed 10 in the order below:</p>
+  <ol class="segments">
+    <li><strong>Segment 1:</strong> heredity + selection, seed 0 (0.0–12.0 s)</li>
+    <li><strong>Segment 2:</strong> selection only, seed 0 (13.4–25.4 s)</li>
+    <li><strong>Segment 3:</strong> heredity + selection, seed 10 (26.9–38.9 s)</li>
+    <li><strong>Segment 4:</strong> selection only, seed 10 (40.4–52.4 s)</li>
+  </ol>
   <audio controls preload="none">
     <source src="audio/hereditary_adaptation.wav?v=20260324-1" type="audio/wav">
   </audio>
   <p style="margin-top:0.75rem"><strong>Auxiliary ablation track</strong> &mdash; heredity only and neither across the same two seeds:</p>
+  <ol class="segments">
+    <li><strong>Segment 1:</strong> heredity only, seed 0 (0.0–12.0 s)</li>
+    <li><strong>Segment 2:</strong> neither, seed 0 (13.4–25.4 s)</li>
+    <li><strong>Segment 3:</strong> heredity only, seed 10 (26.9–38.9 s)</li>
+    <li><strong>Segment 4:</strong> neither, seed 10 (40.4–52.4 s)</li>
+  </ol>
   <audio controls preload="none">
     <source src="audio/hereditary_adaptation_controls.wav?v=20260324-1" type="audio/wav">
   </audio>
@@ -142,14 +163,23 @@
   <p>Listen for the emergence of a stable pulse in <strong>shared</strong>, its
      weakening in <strong>scrambled</strong>, and the diffuse timing of <strong>off</strong>.</p>
   <p><strong>Shared</strong> &mdash; common scaffold, strongest beat alignment:</p>
+  <ol class="segments">
+    <li><strong>Single segment:</strong> shared (0.0–8.0 s)</li>
+  </ol>
   <audio controls preload="none">
     <source src="audio/temporal_scaffold_shared.wav?v=20260324-1" type="audio/wav">
   </audio>
   <p style="margin-top:0.75rem"><strong>Scrambled</strong> &mdash; cycle-wise phase resets weaken stability:</p>
+  <ol class="segments">
+    <li><strong>Single segment:</strong> scrambled (0.0–8.0 s)</li>
+  </ol>
   <audio controls preload="none">
     <source src="audio/temporal_scaffold_scrambled.wav?v=20260324-1" type="audio/wav">
   </audio>
   <p style="margin-top:0.75rem"><strong>Off</strong> &mdash; no scaffold, phases remain diffuse:</p>
+  <ol class="segments">
+    <li><strong>Single segment:</strong> off (0.0–8.0 s)</li>
+  </ol>
   <audio controls preload="none">
     <source src="audio/temporal_scaffold_off.wav?v=20260324-1" type="audio/wav">
   </audio>
@@ -157,10 +187,15 @@
 
 <section class="notes">
   <h2>Methodology</h2>
+  <p>Rendered with Conchordal v0.3.0 using the scenario scripts tracked in this repository.</p>
+  <p>Post-process behavior is track-specific: quicklistening and hereditary tracks use fixed segment fades (1.0 s and 0.2 s respectively), while polyphony tracks only rewrite metadata for segmentation and are rendered without segment-level fades.</p>
   <p>Seeds are taken by ordinal index from the paper's shared seed lists &mdash; no cherry-picking.
      The orientation clips and the Consonance Search / Hereditary Adaptation evidence tracks are
      rendered from generated scenario scripts; the Temporal Scaffold monitor is rendered directly
      by the paper tool. All outputs are mono WAV at 48 kHz with no added reverb or mastering.</p>
+  <p>Timbral settings differ by assay. Orientation, Consonance Search, and Hereditary Adaptation use the same harmonic timbre
+     (6 partials, per-note ADSR 0.080/0.450/0.500/0.450, matching brightness and pitch-smooth settings). Temporal Scaffold
+     uses sine one-shot pulses (48 independent voices, per-note ADSR 0.001/0.024/0.000/0.002).</p>
   <p>These audio demonstrations are <strong>qualitative corroboration only</strong>. Quantitative claims
      rest on the paper's simulation statistics, not on listener ratings collected for these tracks.</p>
   <p>No separate public track is provided for the spectral-to-temporal bridge check, because that result is treated in the paper as an implementation-level mechanism check rather than a primary behavioural assay.</p>
