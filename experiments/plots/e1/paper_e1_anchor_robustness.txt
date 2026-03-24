@@ -3,40 +3,40 @@
 Reference: 220 Hz (10 peaks found)
 Peaks (log2 ratio, c_field):
   ratio=0.0006 (0.7 cents), c=1.0000
-  ratio=-0.9994 (-1199.3 cents), c=0.8904
-  ratio=0.5856 (702.7 cents), c=0.4778
-  ratio=-0.5844 (-701.3 cents), c=0.4727
-  ratio=0.4156 (498.7 cents), c=0.3237
-  ratio=-0.4144 (-497.3 cents), c=0.3080
-  ratio=0.7381 (885.7 cents), c=0.2442
-  ratio=-0.7369 (-884.3 cents), c=0.2421
-  ratio=0.8081 (969.7 cents), c=0.1664
-  ratio=-0.8069 (-968.3 cents), c=0.1650
+  ratio=-0.9994 (-1199.3 cents), c=0.9023
+  ratio=0.5856 (702.7 cents), c=0.4622
+  ratio=-0.5844 (-701.3 cents), c=0.4570
+  ratio=0.4156 (498.7 cents), c=0.2978
+  ratio=-0.4144 (-497.3 cents), c=0.2816
+  ratio=0.7381 (885.7 cents), c=0.2280
+  ratio=-0.7369 (-884.3 cents), c=0.2257
+  ratio=0.8081 (969.7 cents), c=0.1518
+  ratio=-0.8069 (-968.3 cents), c=0.1504
 
 Anchor 110 Hz (10 peaks):
   ratio=0.0006 (0.7 cents), c=1.0000
-  ratio=-0.9994 (-1199.3 cents), c=0.8867
-  ratio=0.5856 (702.7 cents), c=0.4613
-  ratio=-0.5844 (-701.3 cents), c=0.4282
-  ratio=0.4156 (498.7 cents), c=0.2496
-  ratio=0.7381 (885.7 cents), c=0.2392
-  ratio=-0.7369 (-884.3 cents), c=0.2137
-  ratio=-0.4144 (-497.3 cents), c=0.2028
-  ratio=0.8081 (969.7 cents), c=0.1637
-  ratio=-0.8069 (-968.3 cents), c=0.1428
+  ratio=-0.9994 (-1199.3 cents), c=0.8986
+  ratio=0.5856 (702.7 cents), c=0.4455
+  ratio=-0.5844 (-701.3 cents), c=0.4117
+  ratio=0.7381 (885.7 cents), c=0.2228
+  ratio=0.4156 (498.7 cents), c=0.2217
+  ratio=-0.7369 (-884.3 cents), c=0.1970
+  ratio=-0.4144 (-497.3 cents), c=0.1738
+  ratio=0.8081 (969.7 cents), c=0.1491
+  ratio=-0.8069 (-968.3 cents), c=0.1280
   max peak shift vs 220 Hz: 0.0 cents
 
 Anchor 440 Hz (10 peaks):
   ratio=0.0006 (0.7 cents), c=1.0000
-  ratio=-0.9994 (-1199.3 cents), c=0.8906
-  ratio=0.5856 (702.7 cents), c=0.4795
-  ratio=-0.5844 (-701.3 cents), c=0.4790
-  ratio=0.4156 (498.7 cents), c=0.3398
-  ratio=-0.4144 (-497.3 cents), c=0.3365
-  ratio=0.7381 (885.7 cents), c=0.2445
-  ratio=-0.7369 (-884.3 cents), c=0.2444
-  ratio=0.3231 (387.7 cents), c=0.2026
-  ratio=-0.3219 (-386.3 cents), c=0.1955
+  ratio=-0.9994 (-1199.3 cents), c=0.9024
+  ratio=0.5856 (702.7 cents), c=0.4639
+  ratio=-0.5844 (-701.3 cents), c=0.4634
+  ratio=0.4156 (498.7 cents), c=0.3143
+  ratio=-0.4144 (-497.3 cents), c=0.3109
+  ratio=0.7381 (885.7 cents), c=0.2283
+  ratio=-0.7369 (-884.3 cents), c=0.2281
+  ratio=0.3231 (387.7 cents), c=0.1815
+  ratio=-0.3219 (-386.3 cents), c=0.1743
   max peak shift vs 220 Hz: 84.0 cents
 
 Overall max peak shift: 84.0 cents

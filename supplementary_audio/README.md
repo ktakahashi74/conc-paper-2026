@@ -47,12 +47,9 @@ is organized as:
 
 ## Rendering paths
 
-The public track set is now rendered uniformly with `conchordal-render`:
-
-| Track(s) | Render method | How to reproduce |
-| --- | --- | --- |
-| `showcase.wav`<br/>`controls.wav`<br/>`self_organized_polyphony*.wav`<br/>`hereditary_adaptation*.wav` | `conchordal-render` (Conchordal 0.3.0) | `target/release/paper --audio-rhai` then `bash supplementary_audio/render.sh` |
-| `temporal_scaffold_shared.wav`<br/>`temporal_scaffold_scrambled.wav`<br/>`temporal_scaffold_off.wav` | `conchordal-render` (Conchordal 0.3.0) | `target/release/paper --audio-rhai` then `bash supplementary_audio/render.sh` |
+All listening tracks are rendered with Conchordal version 0.3.0.
+Use `bash supplementary_audio/render.sh` from the repository root to regenerate
+the full listening page payload.
 
 ## Prerequisites
 
@@ -66,44 +63,39 @@ Build the paper binary first:
 cargo build --release --bin paper
 ```
 
-## Regenerate everything
+## Regenerate the public track set
 
 From the repository root:
 
 ```bash
-target/release/paper --audio-rhai
 bash supplementary_audio/render.sh
-target/release/paper --postprocess-quicklisten
-target/release/paper --postprocess-e6b
 ```
 
 This sequence:
 
 - regenerates the Rhai scenarios
-- renders the scenario-based WAV files
-- renders the temporal scaffold WAV files (via renderer)
-- applies the post-processing used by the public tracks
+- renders all public WAV files with `conchordal-render`
+- applies the post-processing used by the orientation and hereditary comparison tracks
 
 ## Regenerate a subset
 
-Scenario files:
+Scenario files only:
 
 ```bash
 target/release/paper --audio-rhai
 ```
 
-Scenario-based WAV files:
+Full public track set:
 
 ```bash
 bash supplementary_audio/render.sh
 ```
 
-Temporal scaffold only:
+Notes:
 
-```bash
-target/release/paper --audio-rhai
-bash supplementary_audio/render.sh
-```
+- `render.sh` is the canonical reproduction entrypoint for the public listening page.
+- It regenerates the Rhai inputs before rendering, so a separate `--audio-rhai` step is only needed when you want to inspect or diff the generated scenarios without rebuilding the WAVs.
+- Temporal Scaffold is rendered through the same renderer pipeline as the other public tracks.
 
 ## Notes
 

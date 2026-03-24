@@ -288,5 +288,5 @@ step
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="1189,650 1189,655 "/>
 <polyline fill="none" opacity="0.2" stroke="#000000" stroke-width="1" points="389,649 389,36 "/>
 <polyline fill="none" opacity="0.2" stroke="#000000" stroke-width="1" points="709,649 709,36 "/>
-<polyline fill="none" opacity="1" stroke="#3A6A78" stroke-width="1" points="70,250 229,459 389,575 549,598 709,88 869,529 1029,598 1189,598 "/>
+<polyline fill="none" opacity="1" stroke="#3A6A78" stroke-width="1" points="70,180 229,552 389,575 549,598 709,88 869,598 1029,598 1189,598 "/>
 </svg>

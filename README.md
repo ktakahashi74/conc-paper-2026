@@ -84,11 +84,8 @@ Additional outputs:
 # Build supplementary PDF
 pdflatex supplementary.tex
 
-# Regenerate the audio supplement
-target/release/paper --audio-rhai
+# Regenerate the public audio supplement
 bash supplementary_audio/render.sh
-target/release/paper --postprocess-quicklisten
-target/release/paper --postprocess-e6b
 ```
 
 For the audio pipeline and track inventory, see

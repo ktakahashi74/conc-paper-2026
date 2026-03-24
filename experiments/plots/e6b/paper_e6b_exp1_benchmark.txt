@@ -1,4 +1,17 @@
 Hereditary Adaptation benchmark against Consonance Search
 --------------------------------
-skipped: --e6b-skip-benchmark
-seeds used in this run: 20
+H+S endpoint means (E6b):
+LOO C_score      = 0.5357
+interval entropy = 3.2808
+JI score         = 0.3232
+unique bins      = 12.300
+
+Exp1 reference means:
+local-search: C=0.6747  entropy=2.0128  JI=0.3655  bins=11.950
+random-walk : C=0.1697  entropy=4.9607  JI=0.1146  bins=22.600
+
+Gap closed toward Exp1 local-search (1.0 = match local-search, 0.0 = random-walk):
+C_score      = 0.7247
+entropy      = 0.5699
+JI score     = 0.8312
+unique bins  = 0.9671

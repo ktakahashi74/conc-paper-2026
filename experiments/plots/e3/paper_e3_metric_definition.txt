@@ -1,8 +1,8 @@
 E3 metric definitions
-C is the 0-1 score passed into ArticulationCore::process as `consonance` (agent.last_consonance_level01()).
+Plots report C_level01 (agent.last_consonance_level01()), while the continuous recharge term uses positive raw C_score from the reference landscape.
 C_firstK definition: mean over first K=20 ticks after birth (0..1).
 Metabolism update (conceptual):
-  E <- E - basal_cost_per_sec * dt + continuous_recharge_per_sec * C * dt
-C is clamped to [0,1] before applying recharge. NoRecharge sets continuous_recharge_per_sec=0, so the C-dependent recharge term is removed.
+  E <- E - basal_cost_per_sec * dt + continuous_recharge_per_sec * max(0, C_score) * dt
+Only positive raw C_score contributes to recharge. NoRecharge sets continuous_recharge_per_sec=0, so the C-dependent recharge term is removed.
 Representative seed is chosen by the median Pearson r of baseline C_firstK vs lifetime; pooled plots concatenate all seeds.
 c_level01_birth=first tick value; c_level01_firstk=mean of first K ticks; avg_c_level01_tick=mean over life; c_level01_std_over_life=std over life; avg_c_level01_attack=mean over attack ticks (reported descriptively only; recharge is no longer attack-coupled).

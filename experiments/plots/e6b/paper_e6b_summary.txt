@@ -1,5 +1,5 @@
-Hereditary Adaptation summary
------------------------------
+E6b summary
+----------
 Tuning: crowding=0.0050, capacity_weight=0.0700, capacity_radius_cents=35.0, free_voices=3, parent_share_weight=1.00, parent_energy_weight=0.25, proposal_kind=contextual_c, proposal_sigma_st=9.00, proposal_candidates=16, azimuth_mode=search, juvenile_mode=on, juvenile_ticks=2, survival_low=0.30, survival_high=0.80, survival_recharge=0.200, background_death=0.0000, respawn_parent_prior_mix=0.15, same_band_discount=0.08, octave_discount=0.20
 
 Final LOO C_score:

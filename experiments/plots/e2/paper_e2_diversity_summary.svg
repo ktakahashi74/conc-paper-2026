@@ -40,9 +40,9 @@ nohill
 nocrowd
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="500,410 500,415 "/>
-<rect x="95" y="234" width="106" height="175" opacity="1" fill="#3A6A78" stroke="none"/>
+<rect x="95" y="229" width="106" height="180" opacity="1" fill="#3A6A78" stroke="none"/>
 <rect x="271" y="69" width="106" height="340" opacity="1" fill="#8B2252" stroke="none"/>
-<rect x="447" y="270" width="106" height="139" opacity="1" fill="#3E6FB6" stroke="none"/>
+<rect x="447" y="278" width="106" height="131" opacity="1" fill="#3E6FB6" stroke="none"/>
 <text x="900" y="15" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="14.516129032258064" opacity="1" fill="#000000">
 Diversity: NN Distance
 </text>
@@ -87,9 +87,9 @@ nohill
 nocrowd
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="1100,410 1100,415 "/>
-<rect x="695" y="222" width="106" height="187" opacity="1" fill="#3A6A78" stroke="none"/>
+<rect x="695" y="214" width="106" height="195" opacity="1" fill="#3A6A78" stroke="none"/>
 <rect x="871" y="69" width="106" height="340" opacity="1" fill="#8B2252" stroke="none"/>
-<rect x="1047" y="260" width="106" height="149" opacity="1" fill="#3E6FB6" stroke="none"/>
+<rect x="1047" y="306" width="106" height="103" opacity="1" fill="#3E6FB6" stroke="none"/>
 <text x="300" y="465" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="14.516129032258064" opacity="1" fill="#000000">
 Diversity: Variance
 </text>
@@ -130,9 +130,9 @@ nohill
 nocrowd
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="500,860 500,865 "/>
-<rect x="95" y="527" width="106" height="332" opacity="1" fill="#3A6A78" stroke="none"/>
+<rect x="95" y="525" width="106" height="334" opacity="1" fill="#3A6A78" stroke="none"/>
 <rect x="271" y="519" width="106" height="340" opacity="1" fill="#8B2252" stroke="none"/>
-<rect x="447" y="523" width="106" height="336" opacity="1" fill="#3E6FB6" stroke="none"/>
+<rect x="447" y="524" width="106" height="335" opacity="1" fill="#3E6FB6" stroke="none"/>
 <text x="900" y="465" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="14.516129032258064" opacity="1" fill="#000000">
 Diversity: MAD
 </text>
@@ -144,30 +144,30 @@ MAD (st)
 0.0
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="654,859 659,859 "/>
-<text x="650" y="800" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
+<text x="650" y="801" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
 2.0
 </text>
-<polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="654,800 659,800 "/>
-<text x="650" y="741" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
+<polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="654,801 659,801 "/>
+<text x="650" y="742" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
 4.0
 </text>
-<polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="654,741 659,741 "/>
-<text x="650" y="682" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
+<polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="654,742 659,742 "/>
+<text x="650" y="684" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
 6.0
 </text>
-<polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="654,682 659,682 "/>
-<text x="650" y="623" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
+<polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="654,684 659,684 "/>
+<text x="650" y="625" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
 8.0
 </text>
-<polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="654,623 659,623 "/>
-<text x="650" y="563" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
+<polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="654,625 659,625 "/>
+<text x="650" y="567" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
 10.0
 </text>
-<polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="654,563 659,563 "/>
-<text x="650" y="504" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
+<polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="654,567 659,567 "/>
+<text x="650" y="508" dy="0.5ex" text-anchor="end" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
 12.0
 </text>
-<polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="654,504 659,504 "/>
+<polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="654,508 659,508 "/>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="660,860 1189,860 "/>
 <text x="748" y="870" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="9.67741935483871" opacity="1" fill="#000000">
 baseline
@@ -181,7 +181,7 @@ nohill
 nocrowd
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="1100,860 1100,865 "/>
-<rect x="695" y="533" width="106" height="326" opacity="1" fill="#3A6A78" stroke="none"/>
-<rect x="871" y="530" width="106" height="329" opacity="1" fill="#8B2252" stroke="none"/>
+<rect x="695" y="539" width="106" height="320" opacity="1" fill="#3A6A78" stroke="none"/>
+<rect x="871" y="534" width="106" height="325" opacity="1" fill="#8B2252" stroke="none"/>
 <rect x="1047" y="519" width="106" height="340" opacity="1" fill="#3E6FB6" stroke="none"/>
 </svg>

@@ -742,6 +742,7 @@ fn usage() -> String {
         "  paper --e2-render-baseline 5 4 2",
         "  paper --e2-render-nohill 5 4 2",
         "  paper --e2-render-proposal 5 4 2",
+        "  paper --exp e2 --e2-diagnostics",
         "  paper --e6-debug-sampler",
         "  paper --exp e6b",
         "  paper --exp e6b --e6b-quick",
@@ -788,6 +789,7 @@ fn usage() -> String {
         "--e2-render-baseline N P [OCT] writes seed-0 baseline replay WAVs for N agents, P render partials, and optional OCT total range.",
         "--e2-render-nohill N P [OCT] writes seed-0 no-hill replay WAVs for N agents, P render partials, and optional OCT total range.",
         "--e2-render-proposal N P [OCT] writes a proposal-based replay using step + local/global peak + ratio candidates.",
+        "--e2-diagnostics enables the full Fig. 2 supplementary control/terrain dump set (S7/S8 outputs).",
         "--e2-dense-sweep writes dense-regime baseline vs no-crowding diagnostics into experiments/plots/e2/.",
         "--e2-candidate-search writes 2oct/3oct/4oct baseline-vs-nohill candidate summaries and shortlist renders.",
         "Outputs are written to experiments/plots/<exp>/ (e.g. experiments/plots/e2).",
@@ -948,6 +950,7 @@ fn parse_experiments(args: &[String]) -> Result<Vec<Experiment>, String> {
         }
         if arg == "--e2-replay"
             || arg == "--e2-quick"
+            || arg == "--e2-diagnostics"
             || arg == "--e2-dense-sweep"
             || arg == "--e2-candidate-search"
             || arg == "--e6b-quick"

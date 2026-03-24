@@ -44,12 +44,12 @@ random
 no-crowd
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="211,232 211,237 "/>
-<rect x="74" y="145" width="36" height="86" opacity="0.7" fill="#3A6A78" stroke="none"/>
-<polyline fill="none" opacity="0.7" stroke="#000000" stroke-width="1" points="92,149 92,141 "/>
+<rect x="74" y="143" width="36" height="88" opacity="0.7" fill="#3A6A78" stroke="none"/>
+<polyline fill="none" opacity="0.7" stroke="#000000" stroke-width="1" points="92,147 92,138 "/>
 <rect x="134" y="64" width="35" height="167" opacity="0.7" fill="#8B2252" stroke="none"/>
 <polyline fill="none" opacity="0.7" stroke="#000000" stroke-width="1" points="152,66 152,61 "/>
-<rect x="193" y="163" width="36" height="68" opacity="0.7" fill="#3E6FB6" stroke="none"/>
-<polyline fill="none" opacity="0.7" stroke="#000000" stroke-width="1" points="211,167 211,158 "/>
+<rect x="193" y="167" width="36" height="64" opacity="0.7" fill="#3E6FB6" stroke="none"/>
+<polyline fill="none" opacity="0.7" stroke="#000000" stroke-width="1" points="211,170 211,164 "/>
 <text x="375" y="13" dy="0.76em" text-anchor="middle" font-family="sans-serif" font-size="17.741935483870968" opacity="1" fill="#000000">
 NN Distance (st)
 </text>
@@ -98,10 +98,10 @@ random
 no-crowd
 </text>
 <polyline fill="none" opacity="1" stroke="#000000" stroke-width="1" points="461,232 461,237 "/>
-<rect x="324" y="144" width="36" height="87" opacity="0.7" fill="#3A6A78" stroke="none"/>
-<polyline fill="none" opacity="0.7" stroke="#000000" stroke-width="1" points="342,161 342,128 "/>
+<rect x="324" y="140" width="36" height="91" opacity="0.7" fill="#3A6A78" stroke="none"/>
+<polyline fill="none" opacity="0.7" stroke="#000000" stroke-width="1" points="342,157 342,123 "/>
 <rect x="384" y="72" width="35" height="159" opacity="0.7" fill="#8B2252" stroke="none"/>
 <polyline fill="none" opacity="0.7" stroke="#000000" stroke-width="1" points="402,84 402,61 "/>
-<rect x="443" y="162" width="36" height="69" opacity="0.7" fill="#3E6FB6" stroke="none"/>
-<polyline fill="none" opacity="0.7" stroke="#000000" stroke-width="1" points="461,178 461,146 "/>
+<rect x="443" y="183" width="36" height="48" opacity="0.7" fill="#3E6FB6" stroke="none"/>
+<polyline fill="none" opacity="0.7" stroke="#000000" stroke-width="1" points="461,198 461,169 "/>
 </svg>
