@@ -61,7 +61,7 @@ just all
 ```
 
 This runs the paper-facing experiments (release build), converts SVG plots to
-PDF, and builds `main.pdf`.
+PDF, and builds both `main.pdf` and `supplementary.pdf`.
 Generated figures, CSVs, and summary tables are written under
 `experiments/plots/`.
 
@@ -74,16 +74,17 @@ just paper
 # Convert SVG to PDF
 just svg2pdf
 
-# Build paper PDF
+# Build both paper PDFs
 just latex
+
+# Or build them separately
+just latex-main
+just supplementary
 ```
 
 Additional outputs:
 
 ```bash
-# Build supplementary PDF
-pdflatex supplementary.tex
-
 # Regenerate the public audio supplement
 bash supplementary_audio/render.sh
 ```

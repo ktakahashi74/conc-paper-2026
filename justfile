@@ -34,20 +34,34 @@ svg2pdf dir="experiments/plots":
 		exit 1; \
 	fi
 	# Enforce paper rebuild whenever figures are regenerated.
-	just latex
+	just latex-main
 
 # Run experiments + convert SVGs to PDF + rebuild paper PDF
 paper-pdf *args:
 	just paper {{args}}
 	just svg2pdf
 
-# Build main.pdf with pdflatex
-latex:
+# Build main.pdf with bibtex + reruns
+latex-main:
+	pdflatex -interaction=nonstopmode main.tex
+	bibtex main
+	pdflatex -interaction=nonstopmode main.tex
 	pdflatex -interaction=nonstopmode main.tex
 
-# Full pipeline: experiments → SVG→PDF → pdflatex
+# Build supplementary.pdf
+supplementary:
+	pdflatex -interaction=nonstopmode supplementary.tex
+	pdflatex -interaction=nonstopmode supplementary.tex
+
+# Build both paper PDFs
+latex:
+	just latex-main
+	just supplementary
+
+# Full pipeline: experiments → SVG→PDF → manuscript PDFs
 all *args:
 	just paper-pdf {{args}}
+	just supplementary
 
 # Archive plots directory
 tar out="experiments/plots.tar" dir="experiments/plots":

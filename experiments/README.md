@@ -41,7 +41,7 @@ IDs (`E1`...`E7`) for continuity.
 ## Quick start
 
 ```bash
-# Run all paper-facing experiments, convert SVG→PDF, and build the paper
+# Run all paper-facing experiments, convert SVG→PDF, and build both PDFs
 just all
 
 # Run experiments only (release build)
@@ -65,6 +65,13 @@ current paper pipeline are intentionally not runnable through `--exp`.
 cargo run --release --bin paper -- --exp e2
 cargo run --release --bin paper -- --exp e6b,e7
 cargo run --release --bin paper -- --clean --exp e2
+```
+
+Manuscript rebuilds are handled through the top-level `justfile`:
+
+```bash
+just latex-main
+just supplementary
 ```
 
 ## Generated data overview

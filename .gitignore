@@ -35,3 +35,16 @@ Thumbs.db
 experiments/.paper_plots.lock
 experiments/*.tar
 experiments/*.tar.gz
+
+# Generated experiment PDFs: keep only the paper-facing figure PDFs tracked.
+experiments/plots/**/*.pdf
+!experiments/plots/e1/paper_e1_landscape_scan_anchor220.pdf
+!experiments/plots/e2/paper_e2_figure_e2_1.pdf
+!experiments/plots/e2/paper_e2_figure_e2_2.pdf
+!experiments/plots/e3/paper_e3_figure4.pdf
+!experiments/plots/e5/paper_e5_figure.pdf
+!experiments/plots/e6b/paper_e6b_figure.pdf
+!experiments/plots/e7/paper_e7_figure.pdf
+
+# Local renderer overrides
+supplementary_audio/config.toml

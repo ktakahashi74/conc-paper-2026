@@ -71,7 +71,7 @@
 \hspace*{2em}$\phi_i \gets \phi_i + \dot{\phi}_i \cdot dt$\\
 \hspace*{1em}Record PLV and onset phase relative to the canonical beat $\theta(t)$
 
-\subsection{S1.4 Hereditary Adaptation}
+\subsection{S1.4 Minimal Hereditary Adaptation}
 
 \noindent\textbf{Key parameters:} $N\!=\!16$, range $\pm 2$\,oct, candidate count $K\!=\!16$, slot-local settling $=2$ ticks, family-local azimuth search radius $0.5$\,st, survival thresholds $(0.30, 0.80)$.
 
@@ -206,7 +206,7 @@ The relation between Conchordal's spectral and temporal axes is not treated as a
 \label{fig:supp-e5-bridge}
 \end{figure*}
 
-\section{S4. Hereditary Adaptation: Current Supplementary Baselines}
+\section{S4. Minimal Hereditary Adaptation: Current Supplementary Baselines}
 
 The current paper-facing hereditary assay is no longer the legacy parameter sweep reported in earlier drafts. The main text uses one fixed design and compares heredity against a \emph{matched log-random} baseline that shares the same scene filter and short slot-local settling phase. Table~S2 reports the current selection-on comparisons for the paper assay and two stronger supplementary random baselines. These additional baselines are useful diagnostically, but they are not equivalent controls for musical polyphony: the unrestricted hard-random restart can maximize raw $C_{\text{score}}$ by collapsing into very few occupied bands.
 
@@ -274,13 +274,13 @@ The consonance-search assay uses a two-phase curriculum: an exploration / anti-c
 $C_{\text{score}}$ (post) & $0.676 \pm 0.041$ & $0.745 \pm 0.032$ & $5.98^{***}$ \\
 Unique pitch bins & $11.9 \pm 1.4$ & $8.4 \pm 1.0$ & $-9.19^{***}$ \\
 NN distance (st) & $0.576 \pm 0.245$ & $0.250 \pm 0.141$ & $-5.15^{***}$ \\
-Interval entropy & $1.950 \pm 0.263$ & $2.055 \pm 0.240$ & $1.33$ \\
+Interval entropy & $2.013 \pm 0.257$ & $2.045 \pm 0.261$ & $0.39$ \\
 \bottomrule
 \end{tabular}
 }
 \end{table}
 
-Both conditions converge to high-consonance states, but they are not interchangeable. The consonance-only control ends slightly higher on raw $C_{\text{score}}$ ($0.745$ vs.\ $0.676$; $p < 0.001$), while the curriculum produces a more spacious endpoint: more unique bins ($11.9$ vs.\ $8.4$; $p < 0.001$) and wider nearest-neighbour spacing ($0.576$ vs.\ $0.250$\,st; $p < 0.001$). The interval-entropy difference trends in the same direction ($1.950$ vs.\ $2.055$\,nats) but is not significant in the current rerun ($p = 0.192$). In the current 8-sweep assay, the pre-switch phase therefore acts less as a route to higher final consonance than as a route to broader basin coverage and better polyphonic spacing.
+Both conditions converge to high-consonance states, but they are not interchangeable. The consonance-only control ends slightly higher on raw $C_{\text{score}}$ ($0.745$ vs.\ $0.676$; $p < 0.001$), while the curriculum produces a more spacious endpoint: more unique bins ($11.9$ vs.\ $8.4$; $p < 0.001$) and wider nearest-neighbour spacing ($0.576$ vs.\ $0.250$\,st; $p < 0.001$). Under the same primary endpoint metric used in the main text, interval entropy is nearly unchanged ($2.013$ vs.\ $2.045$\,nats; $p = 0.696$). In the current 8-sweep assay, the pre-switch phase therefore acts less as a route to higher final consonance than as a route to broader basin coverage and better polyphonic spacing.
 
 \section{S7.1 Derived Metrics: LOO Score and Scene Consonance}
 
@@ -331,7 +331,7 @@ Table~\ref{tab:shuffled} compares the shuffled condition with the standard \emph
 \midrule
 Unique pitch bins & $11.9 \pm 1.4$ & $17.0 \pm 1.3$ & $11.83^{***}$ \\
 NN distance (st)  & $0.576 \pm 0.245$ & $0.928 \pm 0.161$ & $5.38^{***}$ \\
-Interval entropy  & $1.950 \pm 0.263$ & $4.422 \pm 0.160$ & $35.91^{***}$ \\
+Interval entropy  & $2.013 \pm 0.257$ & $4.416 \pm 0.168$ & $35.00^{***}$ \\
 $C_{\text{score}}$ (ref) & $0.676 \pm 0.041$ & $0.623 \pm 0.046$ & $-3.80^{***}$ \\
 \bottomrule
 \end{tabular}
@@ -339,7 +339,7 @@ $C_{\text{score}}$ (ref) & $0.676 \pm 0.041$ & $0.623 \pm 0.046$ & $-3.80^{***}$
 \end{table}
 
 $C_{\text{score}}$ (ref) denotes the consonance score of each final configuration evaluated on the \emph{original} (unshuffled) landscape, enabling a fair cross-condition comparison.
-Without coherent spatial gradients, crowding alone over-disperses the population: unique bins rise from $11.9$ to $17.0$ and nearest-neighbour spacing widens from $0.576$ to $0.928$\,st (both $p < 0.001$), but interval structure degrades sharply: entropy rises from $1.950$ to $4.422$\,nats and $C_{\text{score}}$ falls from $0.676$ to $0.623$ ($p \le 0.001$).
+Without coherent spatial gradients, crowding alone over-disperses the population: unique bins rise from $11.9$ to $17.0$ and nearest-neighbour spacing widens from $0.576$ to $0.928$\,st (both $p < 0.001$), but interval structure degrades sharply: entropy rises from $2.013$ to $4.416$\,nats and $C_{\text{score}}$ falls from $0.676$ to $0.623$ ($p \le 0.001$).
 The coherent psychoacoustic landscape is therefore necessary for agents to self-organise into musically structured pitch configurations.
 
 \subsection{S8.2 Harmonicity--Roughness Misalignment Control}
@@ -359,20 +359,20 @@ Table~\ref{tab:misaligned} reports the results ($n=20$ seeds per shift, 80 runs 
 \toprule
 Condition & Unique bins & NN dist.\ (st) & Entropy \\
 \midrule
-Local-search        & $11.9 \pm 1.4$ & $0.576 \pm 0.245$ & $1.950 \pm 0.263$ \\
-$\Delta = 137$\,¢   & $9.7 \pm 1.1$ & $0.292 \pm 0.132$ & $2.207 \pm 0.238$ \\
-$\Delta = 271$\,¢   & $9.1 \pm 0.9$ & $0.272 \pm 0.136$ & $2.224 \pm 0.160$ \\
-$\Delta = 389$\,¢   & $9.3 \pm 1.1$ & $0.276 \pm 0.141$ & $2.269 \pm 0.209$ \\
-$\Delta = 523$\,¢   & $9.1 \pm 0.9$ & $0.241 \pm 0.143$ & $2.177 \pm 0.236$ \\
+Local-search        & $11.9 \pm 1.4$ & $0.576 \pm 0.245$ & $2.013 \pm 0.257$ \\
+$\Delta = 137$\,¢   & $9.7 \pm 1.1$ & $0.292 \pm 0.132$ & $2.207 \pm 0.244$ \\
+$\Delta = 271$\,¢   & $9.1 \pm 0.9$ & $0.272 \pm 0.136$ & $2.229 \pm 0.175$ \\
+$\Delta = 389$\,¢   & $9.3 \pm 1.1$ & $0.276 \pm 0.141$ & $2.264 \pm 0.229$ \\
+$\Delta = 523$\,¢   & $9.1 \pm 0.9$ & $0.241 \pm 0.143$ & $2.180 \pm 0.210$ \\
 \midrule
-Misaligned (avg)    & $9.3 \pm 1.0$ & $0.270 \pm 0.139$ & $2.219 \pm 0.216$ \\
+Misaligned (avg)    & $9.3 \pm 1.0$ & $0.270 \pm 0.139$ & $2.220 \pm 0.218$ \\
 \bottomrule
 \end{tabular}
 }
 \end{table}
 
 All four misaligned conditions produce significantly fewer unique pitch bins than the local-search baseline (all $p \le 0.0025$, Welch $t$), dropping from $11.9$ to about $9$ bins.
-Nearest-neighbour distances also decrease significantly (all $p \le 0.0001$), and entropy rises to $2.18$--$2.27$\,nats.
+Nearest-neighbour distances also decrease significantly (all $p \le 0.0001$), and entropy rises from the baseline $2.013$ to $2.18$--$2.26$\,nats.
 Misalignment leaves the final reference-evaluated $C_{\text{score}}$ broadly intact ($0.681$--$0.701$ vs.\ $0.676$ baseline) while degrading spacing and interval structure.
 The alignment between harmonicity and roughness therefore matters less for raw endpoint consonance than for the formation of a differentiated, well-spaced polyphonic distribution.
 
@@ -391,39 +391,39 @@ Table~\ref{tab:coeff} reports the results; because the sweep varies the kernel w
 \toprule
 $b$ & $c$ & Unique bins & Entropy & $C_{\text{score}}$ \\
 \midrule
-$-2.00$ & $0.00$ & $8.1 \pm 0.9$ & $2.061 \pm 0.196$ & $0.687 \pm 0.047$ \\
-$-2.00$ & $0.50$ & $7.8 \pm 0.8$ & $1.992 \pm 0.173$ & $0.712 \pm 0.038$ \\
-$-2.00$ & $1.00$ & $8.1 \pm 1.0$ & $2.047 \pm 0.191$ & $0.705 \pm 0.043$ \\
-$-2.00$ & $1.50$ & $8.2 \pm 0.9$ & $2.061 \pm 0.214$ & $0.717 \pm 0.035$ \\
-$-1.35$ & $0.00$ & $8.6 \pm 0.8$ & $2.119 \pm 0.181$ & $0.701 \pm 0.041$ \\
-$-1.35$ & $0.50$ & $8.6 \pm 1.2$ & $2.094 \pm 0.255$ & $0.721 \pm 0.042$ \\
-$-1.35$ & $1.00$ & $8.6 \pm 1.0$ & $2.136 \pm 0.253$ & $0.722 \pm 0.032$ \\
-$-1.35$ & $1.50$ & $8.4 \pm 1.0$ & $2.040 \pm 0.238$ & $0.743 \pm 0.033$ \\
-$-0.70$ & $0.00$ & $9.4 \pm 1.2$ & $2.276 \pm 0.198$ & $0.705 \pm 0.031$ \\
-$-0.70$ & $0.50$ & $9.2 \pm 1.0$ & $2.241 \pm 0.189$ & $0.718 \pm 0.028$ \\
-$-0.70$ & $1.00$ & $9.1 \pm 1.1$ & $2.225 \pm 0.214$ & $0.741 \pm 0.032$ \\
-$-0.70$ & $1.50$ & $9.1 \pm 1.2$ & $2.173 \pm 0.245$ & $0.763 \pm 0.047$ \\
-$0.00$  & $0.00$ & $9.6 \pm 1.0$ & $2.290 \pm 0.188$ & $0.733 \pm 0.038$ \\
-$0.00$  & $0.50$ & $9.6 \pm 1.0$ & $2.262 \pm 0.175$ & $0.746 \pm 0.029$ \\
-$0.00$  & $1.00$ & $9.4 \pm 1.0$ & $2.166 \pm 0.216$ & $0.774 \pm 0.026$ \\
-$0.00$  & $1.50$ & $9.4 \pm 0.9$ & $2.246 \pm 0.197$ & $0.786 \pm 0.028$ \\
+$-2.00$ & $0.00$ & $8.1 \pm 0.9$ & $2.069 \pm 0.202$ & $0.687 \pm 0.047$ \\
+$-2.00$ & $0.50$ & $7.8 \pm 0.8$ & $1.981 \pm 0.204$ & $0.712 \pm 0.038$ \\
+$-2.00$ & $1.00$ & $8.1 \pm 1.0$ & $2.033 \pm 0.200$ & $0.705 \pm 0.043$ \\
+$-2.00$ & $1.50$ & $8.2 \pm 0.9$ & $2.048 \pm 0.223$ & $0.717 \pm 0.035$ \\
+$-1.35$ & $0.00$ & $8.6 \pm 0.8$ & $2.098 \pm 0.185$ & $0.701 \pm 0.041$ \\
+$-1.35$ & $0.50$ & $8.6 \pm 1.2$ & $2.057 \pm 0.250$ & $0.721 \pm 0.042$ \\
+$-1.35$ & $1.00$ & $8.6 \pm 1.0$ & $2.125 \pm 0.243$ & $0.722 \pm 0.032$ \\
+$-1.35$ & $1.50$ & $8.4 \pm 1.0$ & $2.054 \pm 0.230$ & $0.743 \pm 0.033$ \\
+$-0.70$ & $0.00$ & $9.4 \pm 1.2$ & $2.239 \pm 0.193$ & $0.705 \pm 0.031$ \\
+$-0.70$ & $0.50$ & $9.2 \pm 1.0$ & $2.222 \pm 0.183$ & $0.718 \pm 0.028$ \\
+$-0.70$ & $1.00$ & $9.1 \pm 1.1$ & $2.193 \pm 0.219$ & $0.741 \pm 0.032$ \\
+$-0.70$ & $1.50$ & $9.1 \pm 1.2$ & $2.142 \pm 0.245$ & $0.763 \pm 0.047$ \\
+$0.00$  & $0.00$ & $9.6 \pm 1.0$ & $2.297 \pm 0.202$ & $0.733 \pm 0.038$ \\
+$0.00$  & $0.50$ & $9.6 \pm 1.0$ & $2.264 \pm 0.178$ & $0.746 \pm 0.029$ \\
+$0.00$  & $1.00$ & $9.4 \pm 1.0$ & $2.168 \pm 0.235$ & $0.774 \pm 0.026$ \\
+$0.00$  & $1.50$ & $9.4 \pm 0.9$ & $2.234 \pm 0.220$ & $0.786 \pm 0.028$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Unique-bin counts ($7.8$--$9.6$) and entropy ($1.99$--$2.29$\,nats) remain within a fairly narrow band across the entire $(b,c)$ grid, showing that the emergent pitch structure is not fragile to kernel parameterisation.
+Unique-bin counts ($7.8$--$9.6$) and entropy ($1.98$--$2.30$\,nats) remain within a fairly narrow band across the entire $(b,c)$ grid, showing that the emergent pitch structure is not fragile to kernel parameterisation.
 $C_{\text{score}}$ increases when the roughness penalty $|b|$ decreases or the interaction weight $c$ increases ($0.687$--$0.786$), which is expected from the kernel definition.
 However, none of the coefficient settings reproduce the full curriculum baseline's $11.9$ unique bins, confirming that the curriculum and landscape coherence---not coefficient fine-tuning alone---are responsible for the broader, better-spaced polyphony of the main consonance-search condition.
 
-\subsection{S8.4 Terrain Control (Hereditary Adaptation)}
+\subsection{S8.4 Terrain Control (Minimal Hereditary Adaptation)}
 
 The updated hereditary assay has \emph{not} yet been rerun on shuffled terrain. The corresponding legacy table was removed because it described an earlier design that no longer matches the current paper-facing hereditary mechanism. The present hereditary claim should therefore be read as mechanism-level evidence within one well-characterized psychoacoustic terrain, exactly as stated in the main text.
 
-\subsection{S8.5 Topology Generalization (Hereditary Adaptation)}
+\subsection{S8.5 Topology Generalization (Minimal Hereditary Adaptation)}
 
 Likewise, the updated hereditary assay has not yet been rerun across the partial-count topology battery used for the consonance-search assay. No topology-generalization table is therefore reported here. When this battery is rerun, it will use the current paper-facing hereditary mechanism: family-biased respawn, local azimuth search, metabolic selection, and the matched log-random baseline.
 
-\subsection{S8.6 Phase Coherence (Hereditary Adaptation)}
+\subsection{S8.6 Phase Coherence (Minimal Hereditary Adaptation)}
 
 Phase-coherence readouts from earlier hereditary builds are not carried forward into the present paper-facing assay. The current hereditary claim is intentionally spectral and lineage-based: it concerns where offspring are placed in pitch space and how that placement accumulates across generations. Any future reintroduction of rhythmic-order statistics for the hereditary assay should be treated as a separate supplementary extension rather than as part of the current main claim.
 

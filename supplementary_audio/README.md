@@ -8,6 +8,7 @@ If you want to listen first, start from the public-facing page:
 - [Audio Supplement Page](https://ktakahashi74.github.io/conc-paper-2026/supplementary_audio/)
 - [Supplementary PDF](../supplementary.pdf)
 - [Experiments README](../experiments/README.md)
+- [Generated Data Guide](../experiments/plots/README.md)
 - [Top-level README](../README.md)
 
 ## What lives here
@@ -61,6 +62,13 @@ Build the paper binary first:
 
 ```bash
 cargo build --release --bin paper
+```
+
+If you also need the PDFs from a clean checkout, use the top-level recipes:
+
+```bash
+just latex-main
+just supplementary
 ```
 
 ## Regenerate the public track set
