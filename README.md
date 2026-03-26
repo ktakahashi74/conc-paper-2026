@@ -5,7 +5,7 @@ Paper, generated data, audio supplement, and experiment code.
 ## Quick Start
 
 - **[Supplementary PDF](supplementary.pdf)** — extended methods, ablations, and tables
-- **[Audio Supplement](https://ktakahashi74.github.io/conc-paper-2026/supplementary_audio/)** — browser-based listening examples with track notes and links back to the paper and data
+- **[Audio Supplement](https://ktakahashi74.github.io/conc-paper-2026/supplementary_audio/)** — listening examples with track notes
 - **[Experiments and Code](experiments/README.md)** — experiment-code overview, data layout, and reproduction commands
 
 ## Abstract
