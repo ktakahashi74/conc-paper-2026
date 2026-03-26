@@ -12,6 +12,7 @@ use plotters::coord::types::RangedCoordf32;
 use plotters::coord::{CoordTranslate, Shift};
 use plotters::element::DashedPathElement;
 use plotters::prelude::*;
+use plotters::style::text_anchor::{HPos, Pos, VPos};
 
 use crate::sim::{
     E3_BINS_PER_OCT, E3_FMAX, E3_FMIN, E3Condition, E3DeathRecord, E3RunConfig, E4_ANCHOR_HZ,
@@ -7333,9 +7334,9 @@ fn render_e6b_figure(
         0.0,
         Some(1.0),
         64,
-        48,
-        50,
-        126,
+        54,
+        58,
+        146,
     )?;
     draw_e6_factorial_metric_panel(
         &right_panels[1],
@@ -7347,10 +7348,10 @@ fn render_e6b_figure(
         final_ji_random,
         0.0,
         Some(0.8),
-        62,
-        46,
-        50,
-        126,
+        64,
+        52,
+        58,
+        146,
     )?;
 
     root.present()?;
@@ -7384,8 +7385,8 @@ where
     let mut chart = ChartBuilder::on(area)
         .caption(caption, ("sans-serif", 64))
         .margin(20)
-        .x_label_area_size(90)
-        .y_label_area_size(120)
+        .x_label_area_size(104)
+        .y_label_area_size(138)
         .build_cartesian_2d(0.0f32..x_max, y_lo..y_hi)?;
 
     chart
@@ -7394,8 +7395,8 @@ where
         .y_desc(y_desc)
         .x_labels(11)
         .x_label_formatter(&|v| format!("{}", *v as i64))
-        .label_style(("sans-serif", 48).into_font())
-        .axis_desc_style(("sans-serif", 50).into_font())
+        .label_style(("sans-serif", 56).into_font())
+        .axis_desc_style(("sans-serif", 58).into_font())
         .draw()?;
 
     for spec in series_specs {
@@ -7449,14 +7450,9 @@ where
         .position(SeriesLabelPosition::UpperRight)
         .background_style(WHITE.mix(0.85))
         .border_style(BLACK)
-        .label_font(("sans-serif", 48).into_font())
+        .label_font(("sans-serif", 56).into_font())
         .draw()?;
 
-    chart.draw_series(std::iter::once(Text::new(
-        "light: no selection; dark: selection",
-        (x_max * 0.03, y_hi - (y_hi - y_lo) * 0.06),
-        ("sans-serif", 32).into_font(),
-    )))?;
     Ok(())
 }
 
@@ -7501,10 +7497,18 @@ where
             * 1.15
     });
 
-    let mut chart = ChartBuilder::on(area)
-        .caption(caption, ("sans-serif", caption_size))
-        .margin(22)
-        .x_label_area_size(90)
+    let (title_area, plot_area) = area.split_vertically(61);
+    let title_screen = title_area.strip_coord_spec();
+    let (title_w, _) = title_screen.dim_in_pixel();
+    title_screen.draw(&Text::new(
+        caption.to_string(),
+        ((title_w / 2) as i32, 8),
+        TextStyle::from(("sans-serif", caption_size).into_font())
+            .pos(Pos::new(HPos::Center, VPos::Top)),
+    ))?;
+    let mut chart = ChartBuilder::on(&plot_area)
+        .margin(20)
+        .x_label_area_size(104)
         .y_label_area_size(y_label_area_size)
         .build_cartesian_2d(-0.5f32..1.5f32, y_lo..y_hi)?;
 
@@ -7550,12 +7554,6 @@ where
             BLACK.stroke_width(2),
         )))?;
     }
-
-    chart.draw_series(std::iter::once(Text::new(
-        "teal: heredity; rose: random",
-        (-0.42f32, y_hi * 0.95),
-        ("sans-serif", 32).into_font(),
-    )))?;
 
     Ok(())
 }
@@ -15511,7 +15509,7 @@ fn draw_polyphony_panel_for_conditions(
     draw_condition_bar_panel(
         area,
         caption,
-        "distinct pitch pos. (25 ct)",
+        "# occupied pitch bins (25 ct)",
         conditions,
         &means,
         &ci95,

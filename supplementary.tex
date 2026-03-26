@@ -65,15 +65,15 @@
 \hspace*{1em}Advance canonical beat phase $\theta(t)$ at 2\,Hz\\
 \hspace*{1em}\texttt{if} condition = scrambled \texttt{and} cycle boundary crossed: sample new offset $\psi \sim \mathrm{Uniform}(0,2\pi)$\\
 \hspace*{1em}\texttt{for} each agent $a_i$:\\
-\hspace*{2em}Set drive phase $\theta_i^{\ast} \gets \theta(t)$ (shared), $\theta(t)+\psi$ (scrambled), or none (off)\\
+\hspace*{2em}Set drive phase $\theta_i^{\ast} \gets \theta(t)$ (shared), $\theta(t)+\psi$ (scrambled), or $\theta(t)$ with coupling disabled (off)\\
 \hspace*{2em}$k_{\text{eff},i} \gets k_{\text{time}}$ (shared/scrambled) or $0$ (off)\\
-\hspace*{2em}$\dot{\phi}_i \gets \omega_i + (k_{\text{eff},i}/N)\sum_j \sin(\phi_j - \phi_i) + F(\theta_i^{\ast})$\\
+\hspace*{2em}$\dot{\phi}_i \gets \omega_i + k_{\text{eff},i}\sin(\theta_i^{\ast} - \phi_i)$\\
 \hspace*{2em}$\phi_i \gets \phi_i + \dot{\phi}_i \cdot dt$\\
 \hspace*{1em}Record PLV and onset phase relative to the canonical beat $\theta(t)$
 
 \subsection{S1.4 Minimal Hereditary Adaptation}
 
-\noindent\textbf{Key parameters:} $N\!=\!16$, range $\pm 2$\,oct, candidate count $K\!=\!16$, slot-local settling $=2$ ticks, family-local azimuth search radius $0.5$\,ct, survival thresholds $(0.30, 0.80)$.
+\noindent\textbf{Key parameters:} $N\!=\!16$, range $\pm 2$\,oct, candidate count $K\!=\!16$, slot-local settling $=2$ ticks, family-local azimuth search radius $50$\,ct, survival thresholds $(0.30, 0.80)$.
 
 \smallskip
 \noindent\texttt{for} each time step:\\
@@ -151,7 +151,7 @@ $C_{\text{density}}$ coefficients$^\ddagger$ & $(a,b,c,d)$ & $(1,0,-1,0)$ & --- 
 Auxiliary bounded map$^\S$ & & --- & $(2,0)$ & --- & --- \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{Pitch adaptation}} \\
-Step size & $\lambda$ & 0.25\,ct & --- & --- & --- \\
+Step size & $\lambda$ & 25\,ct & --- & --- & --- \\
 Crowding weight & $\lambda_C$ & 0.15 & --- & --- & 0.005 \\
 Capacity penalty & & --- & --- & --- & radius 35\,ct; 3 free voices; weight 0.07 \\
 Initial temperature & $T_0$ & 0.05 & --- & --- & --- \\
@@ -180,8 +180,8 @@ Frequency jitter & & --- & --- & $\pm 2\%$ & --- \\
 Respawn candidates & & --- & --- & --- & matched $K=16$ in both arms \\
 Parent proposal & & --- & --- & --- & contextual-$C$ family peaks \\
 Parent selection & & --- & --- & --- & score/energy-weighted (sel.\ on), uniform (sel.\ off) \\
-Juvenile settling & & --- & --- & --- & 2 ticks, 0.20\,ct radius \\
-Azimuth policy & & --- & --- & --- & local search $\pm 0.5$\,ct at 0.05\,ct grid \\
+Juvenile settling & & --- & --- & --- & 2 ticks, 20\,ct radius \\
+Azimuth policy & & --- & --- & --- & local search $\pm 50$\,ct at 5\,ct grid \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{JI cross-validation}} \\
 Proximity kernel & $\alpha$ & --- & --- & --- & $4.0 \times 10^{-4}\,\text{ct}^{-2}$ \\
