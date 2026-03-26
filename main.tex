@@ -226,33 +226,33 @@ The Conchordal instrument is designed around an extensible agent architecture th
 \subsection{Pitch Adaptation}
 \label{sec:pitch-adapt}
 
-In the reported consonance-search assay, each agent proposes local pitch perturbations of magnitude $\lambda=25$\,ct sampled within a bounded neighborhood in log-frequency space. A hill-climbing acceptance rule evaluates candidate positions via $C_{\text{field}}$ and a crowding penalty computed in ERB space. The crowding kernel $K_{\text{crowd}}(\Delta_{\text{erb}})$ is derived analytically as the complement of the roughness kernel: $K_{\text{crowd}}(d) = \max\!\bigl(0,\; 1 - R(d/\kappa) / R_{\text{peak}}\bigr)$, where $R$ is the full Plomp--Levelt roughness kernel and $\kappa$ is a reach factor ($\kappa=2.1$). This construction repels agents that are too close in pitch---preventing collapse to unison---while yielding to landscape-mediated repulsion at wider separations where roughness peaks. The combined score is $S = C_{\text{field}} - \lambda_C \sum_{j \neq i} K_{\text{crowd}}(\Delta_{ij})$. Proposals are accepted with probability $\min\!\bigl(1,\,\exp\bigl(\Delta S/T\bigr)\bigr)$ where $\Delta S = S_{\text{new}} - S_{\text{old}}$ and $T$ decays exponentially from $T_0=0.05$ with $\tau=4.8$ sweeps, resetting at the phase switch.
+In the reported consonance-search assay, each agent proposes local pitch perturbations of magnitude $\lambda=25$\,ct sampled within a bounded neighborhood in log-frequency space. A hill-climbing acceptance rule evaluates candidate positions via $C_{\text{field}}$ and a crowding penalty computed in ERB space. The crowding kernel $K_{\text{crowd}}(\Delta_{\text{erb}})$ is derived analytically as the complement of the roughness kernel: $K_{\text{crowd}}(d) = \max\!\bigl(0,\; 1 - R(d/\kappa) / R_{\text{peak}}\bigr)$, where $R$ is the full Plomp--Levelt roughness kernel and $\kappa$ is a reach factor ($\kappa=2.1$). This construction repels agents that are too close in pitch---preventing collapse to unison---while yielding to landscape-mediated repulsion at wider separations where roughness peaks. The combined score is $S = C_{\text{field}} - \lambda_C \sum_{j \neq i} K_{\text{crowd}}(\Delta_{ij}) - \lambda_M |\Delta x|$, where $\lambda_M$ is a move-cost coefficient in log-frequency space. Proposals are accepted with probability $\min\!\bigl(1,\,\exp\bigl(\Delta S/T\bigr)\bigr)$ where $\Delta S = S_{\text{new}} - S_{\text{old}}$ and $T$ decays exponentially from $T_0=0.05$ with $\tau=4.8$ sweeps, resetting at the phase switch.
 
 \subsection{Metabolic Policy}
 
-Agents possess energy $E$. Dynamics follow:
+Agents possess energy $E$. In the selection-pressure assay, dynamics follow:
 
 \begin{equation}
 E \leftarrow E - c_b \Delta t + r_E \cdot \max(0, C_{\text{score}}) \cdot \Delta t,
 \end{equation}
 
-where $c_b$ is basal cost and $r_E$ is a consonance-dependent recharge rate. In the selection-pressure assay, only positive raw $C_{\text{score}}$ from the reference landscape contributes directly to recharge; the bounded statistic $C_{\text{level01}}$ is recorded for analysis but is not itself the recharge law. Agents start with $E=1.0$ and perish when $E\leq 0$. We set $c_b=0.5$/s and $r_E=0.4$/s; time advances in hops of $512$ samples at $48\,$kHz ($\Delta t\approx 10.7\,$ms). In the baseline condition, recharge scales continuously with positive consonance ($r_E=0.4$/s); in the ablation condition, $r_E=0$. In the hereditary assay, the same contextual score is first mapped to a bounded survival signal,
+where $c_b$ is basal cost and $r_E$ is a consonance-dependent recharge rate. Only positive raw $C_{\text{score}}$ from the reference landscape contributes directly to recharge; the bounded statistic $C_{\text{level01}}$ is recorded for analysis but is not itself the recharge law. Agents start with $E=1.0$ and perish when $E\leq 0$. We set $c_b=0.5$/s and $r_E=0.4$/s; time advances in hops of $512$ samples at $48\,$kHz ($\Delta t\approx 10.7\,$ms). In the baseline condition, recharge scales continuously with positive consonance ($r_E=0.4$/s); in the ablation condition, $r_E=0$. In the hereditary assay, the lifecycle is reset to a lower initial energy and slower basal drain ($E_0=0.05$, $c_b=0.12$/s), and the contextual score is first mapped to a bounded survival signal,
 \[
 s_i = \mathrm{clamp}\!\bigl((C_{\text{score},i}-0.30)/(0.80-0.30),\,0,\,1\bigr),
 \]
-and recharge then uses $s_i$ rather than raw $C_{\text{score}}$. An agent's \emph{vitality} $v = \sqrt{E/E_{\text{cap}}}$ (where $E_{\text{cap}}=1.0$) provides a normalised vigour signal available to downstream dynamics such as phase coupling.
+and recharge then uses $s_i$ rather than raw $C_{\text{score}}$, with $r_E=0.20$/s in the selection-on hereditary runs. An agent's \emph{vitality} $v = \sqrt{E/E_{\text{cap}}}$ (where $E_{\text{cap}}=1.0$) provides a normalised vigour signal available to downstream dynamics such as phase coupling.
 
 \subsection{Temporal Oscillation}
 
 Neural oscillations in auditory cortex entrain to periodic acoustic stimuli across multiple frequency bands \citep{lakatos2008,doelling2015}, and computational models of beat tracking posit coupled-oscillator dynamics as the underlying mechanism \citep{large1999}. Conchordal's full implementation realises this temporal axis of DCC through a multi-band modulation bank spanning delta through beta frequencies ($\approx$0.5--30\,Hz), mirroring layered temporal processing in cortical auditory networks. Agents couple to this shared oscillatory field rather than directly to one another (mean-field approximation), and the interaction is bidirectional: the field entrains agent timing while agent onsets excite the field.
 
-The experiments extract the core coupling law as a single Kuramoto phase oscillator per agent:
+The simplified experiments isolate the core coupling law as a single phase oscillator per agent driven toward a shared phase reference:
 %
 \begin{equation}
-\dot{\phi}_i = \omega_i + \frac{K}{N}\sum_j \sin(\phi_j - \phi_i) + F(t),
+\dot{\phi}_i = \omega_i + K\sin\!\bigl(\theta_i^{\ast}(t) - \phi_i\bigr),
 \end{equation}
 %
-where $K$ is coupling strength and $F(t)$ an external forcing term. Neural entrainment motivates the temporal axis itself, but current neuroscience does not uniquely determine how spectral state should modulate temporal coupling: harmonicity, attention, predictive context, and higher-order control all provide plausible links. Conchordal therefore treats spectral-to-temporal bridge mappings as composer-configurable design choices rather than fixed neurocognitive laws. The temporal scaffold assay below tests the shared oscillatory field directly; one vitality-gated bridge used in the current implementation is documented separately as a supplementary mechanism check. Phase locking is quantified via the Kuramoto order parameter $R(t)$ \citep{kuramoto1984,strogatz2000} and phase-locking value (PLV) \citep{lachaux1999}.
+where $K$ is coupling strength and $\theta_i^{\ast}(t)$ is the condition-specific drive phase: shared in the baseline scaffold, cycle-reset in the scrambled condition, and effectively disabled when the scaffold is off. Neural entrainment motivates the temporal axis itself, but current neuroscience does not uniquely determine how spectral state should modulate temporal coupling: harmonicity, attention, predictive context, and higher-order control all provide plausible links. Conchordal therefore treats spectral-to-temporal bridge mappings as composer-configurable design choices rather than fixed neurocognitive laws. The temporal scaffold assay below tests the shared oscillatory field directly; one vitality-gated bridge used in the current implementation is documented separately as a supplementary mechanism check. Phase locking is quantified via the Kuramoto order parameter $R(t)$ \citep{kuramoto1984,strogatz2000} and phase-locking value (PLV) \citep{lachaux1999}.
 
 
 \section{Results}
