@@ -14,6 +14,7 @@
 
 # Rust build
 target/
+dist/
 
 # Profiling
 perf.data

@@ -87,10 +87,15 @@ Additional outputs:
 ```bash
 # Regenerate the public audio supplement
 bash supplementary_audio/render.sh
+
+# Build an arXiv source bundle
+just arxiv
 ```
 
 For the audio pipeline and track inventory, see
 [supplementary_audio/README.md](supplementary_audio/README.md).
+The arXiv recipe writes `dist/conc-paper-2026-arxiv.tar.gz` and verifies that the
+staged source bundle compiles with `pdflatex` before packaging.
 
 ### Individual experiments
 

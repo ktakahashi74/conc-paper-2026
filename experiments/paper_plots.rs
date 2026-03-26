@@ -2167,7 +2167,7 @@ fn plot_e2_emergent_harmony(
         )?;
 
         let hist_path = out_dir.join("paper_e2_interval_histogram.svg");
-        let hist_caption = format!("Interval Histogram ({post_label}, bin=0.50st)");
+        let hist_caption = format!("Interval Histogram ({post_label}, bin=50 ct)");
         render_interval_histogram(
             &hist_path,
             &hist_caption,
@@ -2570,7 +2570,7 @@ fn plot_e2_emergent_harmony(
         let hist_plot_05 = out_dir.join("paper_e2_interval_hist_post_seed_sweep_bw0p50.svg");
         render_hist_mean_std(
             &hist_plot_05,
-            &format!("{post_label_title} Interval Histogram (seed sweep, mean frac, bin=0.50st)"),
+            &format!("{post_label_title} Interval Histogram (seed sweep, mean frac, bin=50 ct)"),
             &hist_stats_05.centers,
             &hist_stats_05.mean_frac,
             &hist_stats_05.std_frac,
@@ -2586,7 +2586,7 @@ fn plot_e2_emergent_harmony(
         let hist_plot_025 = out_dir.join("paper_e2_interval_hist_post_seed_sweep_bw0p25.svg");
         render_hist_mean_std(
             &hist_plot_025,
-            &format!("{post_label_title} Interval Histogram (seed sweep, mean frac, bin=0.25st)"),
+            &format!("{post_label_title} Interval Histogram (seed sweep, mean frac, bin=25 ct)"),
             &hist_stats_025.centers,
             &hist_stats_025.mean_frac,
             &hist_stats_025.std_frac,
@@ -2597,7 +2597,7 @@ fn plot_e2_emergent_harmony(
             out_dir.join("paper_e2_interval_hist_post_seed_sweep_bw0p25_paper.svg");
         render_hist_mean_std_fraction_auto_y(
             &hist_plot_025_paper,
-            &format!("{post_label_title} Interval Histogram (paper, bin=0.25st)"),
+            &format!("{post_label_title} Interval Histogram (paper, bin=25 ct)"),
             &hist_stats_025.centers,
             &hist_stats_025.mean_frac,
             &hist_stats_025.std_frac,
@@ -2652,7 +2652,7 @@ fn plot_e2_emergent_harmony(
         render_hist_mean_std(
             &pairwise_hist_plot,
             &format!(
-                "Pairwise Interval Histogram (final snapshot, seed sweep, mean frac, bin={:.2}st)",
+                "Pairwise Interval Histogram (final snapshot, seed sweep, mean frac, bin={:.2} ct)",
                 E2_PAIRWISE_BIN_ST
             ),
             &pairwise_hist_stats.centers,
@@ -2780,7 +2780,7 @@ fn plot_e2_emergent_harmony(
         out_dir.join("paper_e2_interval_hist_post_controls_seed_sweep_bw0p50.svg");
     render_hist_controls_fraction(
         &control_hist_plot,
-        &format!("{post_label_title} Interval Histogram (controls, mean frac, bin=0.50st)"),
+        &format!("{post_label_title} Interval Histogram (controls, mean frac, bin=50 ct)"),
         &hist_stats_05.centers,
         &[
             ("baseline", &hist_stats_05.mean_frac, PAL_H),
@@ -3103,7 +3103,7 @@ fn plot_e2_emergent_harmony(
              ---------------------   ----------------   ----------------   --------   ------\n\
              C_score (post)          {:.3} ± {:.3}      {:.3} ± {:.3}      {:.2}      {:.4}\n\
              Unique pitch bins       {:.1} ± {:.1}      {:.1} ± {:.1}      {:.2}      {:.4}\n\
-             NN distance (st)        {:.3} ± {:.3}      {:.3} ± {:.3}      {:.2}      {:.4}\n\
+             NN distance (ct)        {:.3} ± {:.3}      {:.3} ± {:.3}      {:.2}      {:.4}\n\
              Interval entropy        {:.3} ± {:.3}      {:.3} ± {:.3}      {:.2}      {:.4}\n",
             E2_SEEDS.len(),
             cur_c_m,
@@ -3355,7 +3355,7 @@ fn plot_e2_emergent_harmony(
              ---------------------   ----------------   ----------------   --------   ------\n\
              C_score (post)          {:.3} ± {:.3}      {:.3} ± {:.3}      {:.2}      {:.4}\n\
              Unique pitch bins       {:.1} ± {:.1}      {:.1} ± {:.1}      {:.2}      {:.4}\n\
-             NN distance (st)        {:.3} ± {:.3}      {:.3} ± {:.3}      {:.2}      {:.4}\n\
+             NN distance (ct)        {:.3} ± {:.3}      {:.3} ± {:.3}      {:.2}      {:.4}\n\
              Interval entropy        {:.3} ± {:.3}      {:.3} ± {:.3}      {:.2}      {:.4}\n",
             E2_SEEDS.len(),
             base_c_m,
@@ -13332,7 +13332,7 @@ fn render_diversity_summary_plot(
     draw_diversity_panel(
         &panels[1],
         "Diversity: NN Distance",
-        "nn mean (st)",
+        "nn mean (ct)",
         &mean_nn,
         &conds,
         &colors,
@@ -13340,7 +13340,7 @@ fn render_diversity_summary_plot(
     draw_diversity_panel(
         &panels[2],
         "Diversity: Variance",
-        "var (st^2)",
+        "var (ct^2)",
         &mean_var,
         &conds,
         &colors,
@@ -13348,7 +13348,7 @@ fn render_diversity_summary_plot(
     draw_diversity_panel(
         &panels[3],
         "Diversity: MAD",
-        "MAD (st)",
+        "MAD (ct)",
         &mean_mad,
         &conds,
         &colors,
@@ -13370,8 +13370,8 @@ fn render_diversity_summary_ci95_plot(
     })?;
     draw_diversity_metric_panel(
         &panels[1],
-        "NN Distance (st)",
-        "nn mean (st)",
+        "NN Distance (ct)",
+        "nn mean (ct)",
         rows,
         |metrics| metrics.nn_mean,
     )?;
@@ -16500,7 +16500,7 @@ fn render_e2_histogram_sweep(out_dir: &Path, run: &E2Run) -> Result<(), Box<dyn 
                 label
             };
             let caption = format!(
-                "Interval Histogram ({phase_label}, steps {start}-{end}, bin={bin_width:.2}st)"
+                "Interval Histogram ({phase_label}, steps {start}-{end}, bin={bin_width:.2} ct)"
             );
             let out_path = out_dir.join(fname);
             render_interval_histogram(
@@ -16544,7 +16544,7 @@ fn render_e2_control_histograms(
     let post_label = e2_post_label();
     let mut chart = ChartBuilder::on(&root)
         .caption(
-            format!("Interval Histogram ({post_label}, controls, bin=0.50st)"),
+            format!("Interval Histogram ({post_label}, controls, bin=50 ct)"),
             ("sans-serif", 20),
         )
         .margin(10)
@@ -19549,7 +19549,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
                 .floor()
                 .max(2.0) as usize;
         let detail = format!(
-            "// {} adaptive agents (selected from {}) + 1 fixed drone at {:.1} Hz, {} sweeps, step={} st\n\
+            "// {} adaptive agents (selected from {}) + 1 fixed drone at {:.1} Hz, {} sweeps, step={} ct\n\
              // Phase switch at step {} (dissonance -> consonance)\n\
              // audio replay downsampled to at most {} updates per segment (~{:.1}s each)\n\
              //\n\
@@ -19605,7 +19605,7 @@ pub fn generate_audio_replay_rhai() -> io::Result<()> {
                 .floor()
                 .max(2.0) as usize;
         let detail = format!(
-            "// {} adaptive agents (selected from {}) + 1 fixed drone at {:.1} Hz, {} sweeps, step={} st\n\
+            "// {} adaptive agents (selected from {}) + 1 fixed drone at {:.1} Hz, {} sweeps, step={} ct\n\
              // Phase switch at step {} (dissonance -> consonance)\n\
              // audio replay downsampled to at most {} updates per segment (~{:.1}s each)\n\
              //\n\
